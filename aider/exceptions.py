@@ -10,6 +10,12 @@ class ExInfo:
     description: str
 
 
+class EmptyLLMResponseError(Exception):
+    """Raised when the LLM returns an empty response."""
+
+    pass
+
+
 EXCEPTIONS = [
     ExInfo("APIConnectionError", True, None),
     ExInfo("APIError", True, None),
@@ -47,6 +53,7 @@ EXCEPTIONS = [
         True,
         "The API provider timed out without returning a response. They may be down or overloaded.",
     ),
+    ExInfo("EmptyLLMResponseError", True, "The LLM returned an empty response."),
 ]
 
 
@@ -66,8 +73,14 @@ class LiteLLMExceptions:
                     raise ValueError(f"{var} is in litellm but not in aider's exceptions list")
 
         for var in self.exception_info:
-            ex = getattr(litellm, var)
-            self.exceptions[ex] = self.exception_info[var]
+            # Try to get it from litellm
+            ex = getattr(litellm, var, None)
+            if ex is None:
+                # Try to get it from this module (globals)
+                ex = globals().get(var)
+
+            if ex:
+                self.exceptions[ex] = self.exception_info[var]
 
     def exceptions_tuple(self):
         return tuple(self.exceptions)

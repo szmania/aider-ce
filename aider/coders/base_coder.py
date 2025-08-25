@@ -33,7 +33,7 @@ from rich.console import Console
 from aider import __version__, models, prompts, urls, utils
 from aider.analytics import Analytics
 from aider.commands import Commands
-from aider.exceptions import LiteLLMExceptions
+from aider.exceptions import EmptyLLMResponseError, LiteLLMExceptions
 from aider.history import ChatSummary
 from aider.io import ConfirmGroup, InputOutput
 from aider.linter import Linter
@@ -2337,8 +2337,16 @@ class Coder:
             print(completion)
 
         if not completion.choices:
-            self.io.tool_error(str(completion))
-            return
+            raise EmptyLLMResponseError(f"Empty LLM response: {completion}")
+
+        # Check for empty response from LLM
+        message = completion.choices[0].message
+        if (
+            message.content is None
+            and not message.tool_calls
+            and not getattr(message, "function_call", None)
+        ):
+            raise EmptyLLMResponseError("LLM returned an empty message.")
 
         show_func_err = None
         show_content_err = None
@@ -2477,7 +2485,7 @@ class Coder:
                 yield text
 
         if not received_content and len(self.partial_response_tool_call) == 0:
-            self.io.tool_warning("Empty response received from LLM. Check your provider account?")
+            raise EmptyLLMResponseError("LLM returned an empty message stream.")
 
     def live_incremental_response(self, final):
         show_resp = self.render_incremental_response(final)
