@@ -3,7 +3,11 @@ import logging
 import os
 from contextlib import AsyncExitStack
 
-from mcp import ClientSession, StdioServerParameters
+# Resolve naming conflict between local module and installed package
+import mcp as real_mcp
+ClientSession = real_mcp.ClientSession
+StdioServerParameters = real_mcp.StdioServerParameters
+
 from mcp.client.stdio import stdio_client
 from mcp.client.streamable_http import streamablehttp_client
 
