@@ -474,7 +474,7 @@ regex==2025.7.34
     #   nltk
     #   tiktoken
     #   transformers
-requests==2.32.4
+requests==2.32.5
     # via
     #   google-api-core
     #   google-cloud-bigquery
@@ -620,7 +620,7 @@ typing-inspect==0.9.0
     #   dataclasses-json
     #   llama-index-core
 typing-inspection==0.4.1
-    # via 
+    # via
     #   pydantic
     #   pydantic-settings
 tzdata==2025.2

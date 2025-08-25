@@ -3,6 +3,10 @@ import logging
 import os
 from contextlib import AsyncExitStack
 
+from mcp import ClientSession, StdioServerParameters
+from mcp.client.stdio import stdio_client
+from mcp.client.streamable_http import streamablehttp_client
+
 
 class McpServer:
     """
@@ -42,13 +46,6 @@ class McpServer:
             logging.info(f"Using existing session for MCP server: {self.name}")
             return self.session
 
-        # Resolve naming conflict between local module and installed package
-        import mcp as real_mcp
-        from mcp.client.stdio import stdio_client
-
-        ClientSession = real_mcp.ClientSession
-        StdioServerParameters = real_mcp.StdioServerParameters
-
         logging.info(f"Establishing new connection to MCP server: {self.name}")
         command = self.config["command"]
         server_params = StdioServerParameters(
@@ -85,11 +82,6 @@ class HttpStreamingServer(McpServer):
         if self.session is not None:
             logging.info(f"Using existing session for MCP server: {self.name}")
             return self.session
-
-        import mcp as real_mcp
-        from mcp.client.streamable_http import streamablehttp_client
-
-        ClientSession = real_mcp.ClientSession
 
         logging.info(f"Establishing new connection to MCP server: {self.name}")
         try:
