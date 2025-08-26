@@ -434,4 +434,529 @@ def sanity_check_repo(repo, io):
         error_msg = str(exc)
         bad_ver = "version in (1, 2)" in error_msg
     except AssertionError as exc:
-        error
+        error_msg = str(exc)
+        bad_ver = "version in (1, 2)" in error_msg
+
+    io.tool_error(f"Error reading git repo: {error_msg}")
+    if bad_ver:
+        io.tool_error("Try running: git config core.repositoryformatversion 0")
+
+    return False
+
+
+def main(main_args=None, input_stream=None, output_stream=None):
+    report_uncaught_exceptions()
+
+    if main_args is None:
+        main_args = sys.argv[1:]
+
+    # We need to parse --env-file before we create the main parser,
+    # because the main parser's defaults depend on the git_root, which
+    # can be affected by the env file.
+    preparser = get_parser([], None)
+    pre_args, _ = preparser.parse_known_args(args=main_args)
+
+    git_root = get_git_root()
+    if git_root:
+        os.environ["AIDER_GIT_ROOT"] = git_root
+
+    # Load environment variables from file
+    loaded_dotenv_files = load_dotenv_files(git_root, pre_args.env_file)
+
+    # Now that we have the git_root, we can determine the default config files
+    default_config_files = generate_search_path_list(".aider.conf.yml", git_root, None)
+
+    # Check for deprecated 'yes: true' in config files
+    if check_config_files_for_yes(default_config_files):
+        return 1
+
+    parser = get_parser(default_config_files, git_root)
+    args = parser.parse_args(args=main_args)
+
+    if args.retry_timeout:
+        models.retry_timeout = args.retry_timeout
+    if args.retry_backoff_factor:
+        models.retry_backoff_factor = args.retry_backoff_factor
+
+    # You can't have both dark and light mode
+    if args.dark_mode and args.light_mode:
+        print("Error: You can't specify both --dark-mode and --light-mode.")
+        return 1
+
+    if args.shell_completions:
+        parser.prog = "aider"
+        print(shtab.complete(parser, shell=args.shell_completions))
+        return 0
+
+    if args.upgrade:
+        install_upgrade()
+        return 0
+
+    if args.install_main_branch:
+        install_from_main_branch()
+        return 0
+
+    if args.just_check_update:
+        return check_version(just_check=True)
+
+    if args.gui:
+        if not check_streamlit_install(InputOutput()):
+            return 1
+        launch_gui(main_args)
+        return 0
+
+    # Class to handle all user input and output
+    io = InputOutput(
+        pretty=args.pretty,
+        yes=args.yes_always,
+        input_history_file=args.input_history_file,
+        chat_history_file=args.chat_history_file,
+        llm_history_file=args.llm_history_file,
+        input_stream=input_stream,
+        output_stream=output_stream,
+        encoding=args.encoding,
+        user_input_color=args.user_input_color,
+        tool_output_color=args.tool_output_color,
+        tool_error_color=args.tool_error_color,
+        tool_warning_color=args.tool_warning_color,
+        assistant_output_color=args.assistant_output_color,
+        code_theme=args.code_theme,
+        dark_mode=args.dark_mode,
+        light_mode=args.light_mode,
+        line_endings=args.line_endings,
+        vim_mode=args.vim,
+        multiline_mode=args.multiline,
+        notifications=args.notifications,
+        notification_command=args.notifications_command,
+        fancy_input=args.fancy_input,
+        completion_menu_color=args.completion_menu_color,
+        completion_menu_bg_color=args.completion_menu_bg_color,
+        completion_menu_current_color=args.completion_menu_current_color,
+        completion_menu_current_bg_color=args.completion_menu_current_bg_color,
+        editor=args.editor,
+    )
+
+    if args.verbose:
+        io.tool_output("Loaded .env files:")
+        for fname in loaded_dotenv_files:
+            io.tool_output(f"- {fname}")
+
+    # Set up analytics
+    analytics = Analytics(
+        args.analytics,
+        args.analytics_log,
+        args.analytics_disable,
+        args.analytics_posthog_host,
+        args.analytics_posthog_project_api_key,
+    )
+    analytics.event("main", "start")
+
+    # Set SSL verification
+    if not args.verify_ssl:
+        os.environ["REQUESTS_CA_BUNDLE"] = ""
+        os.environ["SSL_CERT_FILE"] = ""
+        litellm.ssl_verify = False
+        models.model_info_manager.set_verify_ssl(False)
+
+    # Set timeout
+    if args.timeout:
+        models.request_timeout = args.timeout
+
+    # Set environment variables
+    for env_var in args.set_env:
+        try:
+            name, value = env_var.split("=", 1)
+            os.environ[name] = value
+        except ValueError:
+            io.tool_error(f"Invalid format for --set-env: {env_var}. Use NAME=value.")
+            return 1
+
+    # Set API keys
+    for api_key_arg in args.api_key:
+        try:
+            provider, key = api_key_arg.split("=", 1)
+            env_var_name = f"{provider.upper()}_API_KEY"
+            os.environ[env_var_name] = key
+        except ValueError:
+            io.tool_error(f"Invalid format for --api-key: {api_key_arg}. Use PROVIDER=key.")
+            return 1
+
+    # Handle deprecated model arguments
+    handle_deprecated_model_args(args, io)
+
+    # Register models
+    if register_models(git_root, args.model_settings_file, io, args.verbose):
+        return 1
+
+    # Register litellm models
+    if register_litellm_models(git_root, args.model_metadata_file, io, args.verbose):
+        return 1
+
+    # Handle model aliases
+    if args.alias:
+        for alias_arg in args.alias:
+            try:
+                alias, model_name = alias_arg.split(":", 1)
+                models.MODEL_ALIASES[alias] = model_name
+            except ValueError:
+                io.tool_error(f"Invalid format for --alias: {alias_arg}. Use ALIAS:MODEL_NAME.")
+                return 1
+
+    if args.list_models:
+        models.print_matching_models(io, args.list_models)
+        return 0
+
+    if args.check_update:
+        check_version(io)
+
+    if args.show_release_notes is not None:
+        io.user_settings.set("show_release_notes", args.show_release_notes)
+
+    if args.yes_always is not None:
+        io.user_settings.set("yes_always", args.yes_always)
+
+    if args.dark_mode:
+        io.user_settings.set("color_scheme", "dark")
+    elif args.light_mode:
+        io.user_settings.set("color_scheme", "light")
+
+    if args.vim:
+        io.user_settings.set("editing_mode", EditingMode.VI)
+    else:
+        io.user_settings.set("editing_mode", EditingMode.EMACS)
+
+    if args.multiline:
+        io.user_settings.set("multiline_mode", True)
+    else:
+        io.user_settings.set("multiline_mode", False)
+
+    if args.notifications:
+        io.user_settings.set("notifications", True)
+    else:
+        io.user_settings.set("notifications", False)
+
+    if args.notification_command:
+        io.user_settings.set("notification_command", args.notification_command)
+
+    if args.fancy_input:
+        io.user_settings.set("fancy_input", True)
+    else:
+        io.user_settings.set("fancy_input", False)
+
+    if args.editor:
+        io.user_settings.set("editor", args.editor)
+
+    if args.verbose:
+        io.tool_output(f"Aider v{__version__}")
+        io.tool_output(f"Default config files: {default_config_files}")
+        io.tool_output(f"Loaded config file: {parser.get_config_file_paths()}")
+        io.tool_output(format_settings(args, scrub_sensitive=False))
+
+    fnames = args.files
+    if args.file:
+        fnames += args.file
+
+    if not fnames and (args.lint or args.commit):
+        args.git = True
+
+    if args.git:
+        git_dname = setup_git(git_root, io)
+        if not git_dname:
+            args.git = False
+        else:
+            git_root = git_dname
+
+    # Now that we have the real git_root, check if our guess was wrong
+    # and we need to reload the config file.
+    wrong_repo = guessed_wrong_repo(io, git_root, fnames, git_dname)
+    if wrong_repo:
+        git_root = wrong_repo
+        os.environ["AIDER_GIT_ROOT"] = git_root
+        default_config_files = generate_search_path_list(".aider.conf.yml", git_root, None)
+        parser = get_parser(default_config_files, git_root)
+        args = parser.parse_args(args=main_args)
+
+    if args.git and args.gitignore:
+        check_gitignore(git_root, io)
+
+    if not args.model:
+        args.model = select_default_model(args, io, analytics)
+        if not args.model:
+            offer_openrouter_oauth(io, analytics)
+            return 1
+
+    try:
+        main_model = models.Model(
+            args.model,
+            args.weak_model,
+            args.editor_model,
+            args.editor_edit_format,
+            verbose=args.verbose,
+        )
+    except ValueError as e:
+        io.tool_error(str(e))
+        return 1
+
+    if args.show_model_warnings:
+        if models.sanity_check_models(io, main_model):
+            io.tool_output("Use --no-show-model-warnings to proceed.")
+            return 1
+
+    if args.check_model_accepts_settings:
+        if args.reasoning_effort and "reasoning_effort" not in main_model.accepts_settings:
+            io.tool_error(
+                f"Model {main_model.name} does not support reasoning_effort. Use"
+                " --no-check-model-accepts-settings to proceed."
+            )
+            return 1
+        if args.thinking_tokens and "thinking_tokens" not in main_model.accepts_settings:
+            io.tool_error(
+                f"Model {main_model.name} does not support thinking_tokens. Use"
+                " --no-check-model-accepts-settings to proceed."
+            )
+            return 1
+
+    if args.reasoning_effort:
+        main_model.set_reasoning_effort(args.reasoning_effort)
+
+    if args.thinking_tokens:
+        main_model.set_thinking_tokens(args.thinking_tokens)
+
+    if args.max_chat_history_tokens:
+        main_model.max_chat_history_tokens = args.max_chat_history_tokens
+
+    if args.map_tokens is None:
+        args.map_tokens = main_model.get_repo_map_tokens()
+
+    repo = None
+    if args.git:
+        try:
+            repo = GitRepo(
+                io,
+                fnames,
+                git_root,
+                aider_ignore_file=args.aiderignore,
+                models=main_model.commit_message_models(),
+                attribute_author=args.attribute_author,
+                attribute_committer=args.attribute_committer,
+                attribute_commit_message_author=args.attribute_commit_message_author,
+                attribute_commit_message_committer=args.attribute_commit_message_committer,
+                attribute_co_authored_by=args.attribute_co_authored_by,
+                commit_prompt=args.commit_prompt,
+                git_commit_verify=args.git_commit_verify,
+                subtree_only=args.subtree_only,
+            )
+            if not args.skip_sanity_check_repo and not sanity_check_repo(repo, io):
+                return 1
+        except (OSError,) + ANY_GIT_ERROR as e:
+            io.tool_error(f"Error setting up git repo: {e}")
+            return 1
+
+    if args.lint:
+        if not fnames and repo:
+            fnames = repo.get_dirty_files()
+            if not fnames:
+                io.tool_output("No dirty files to lint.")
+                return 0
+
+        if not fnames:
+            io.tool_error("No files to lint.")
+            return 1
+
+    if args.test:
+        if not args.test_cmd:
+            io.tool_error("No test command provided. Use --test-cmd to specify.")
+            return 1
+
+    if args.commit:
+        if not repo:
+            io.tool_error("Not in a git repo, cannot commit.")
+            return 1
+        repo.commit(coder=None, io=io)
+        return 0
+
+    if args.verbose:
+        io.tool_output(main_model.commit_message_models())
+
+    summarizer = ChatSummary(
+        [main_model.weak_model, main_model], main_model.max_chat_history_tokens
+    )
+
+    # Initialize MCP servers
+    mcp_servers = None
+    if args.mcp_servers or args.mcp_servers_file:
+        mcp_servers = load_mcp_servers(
+            args.mcp_servers, args.mcp_servers_file, args.mcp_transport, io
+        )
+
+    # Initialize file watcher
+    file_watcher = None
+    if args.watch_files:
+        file_watcher = FileWatcher()
+
+    coder = Coder.create(
+        main_model,
+        args.edit_format,
+        io,
+        repo,
+        fnames,
+        add_gitignore_files=args.add_gitignore_files,
+        read_only_fnames=args.read,
+        show_diffs=args.show_diffs,
+        auto_commits=args.auto_commits,
+        dirty_commits=args.dirty_commits,
+        dry_run=args.dry_run,
+        map_tokens=args.map_tokens,
+        map_mul_no_files=args.map_multiplier_no_files,
+        map_max_line_length=args.map_max_line_length,
+        verbose=args.verbose,
+        stream=args.stream,
+        use_git=args.git,
+        summarizer=summarizer,
+        analytics=analytics,
+        map_refresh=args.map_refresh,
+        cache_prompts=args.cache_prompts,
+        num_cache_warming_pings=args.cache_keepalive_pings,
+        suggest_shell_commands=args.suggest_shell_commands,
+        chat_language=args.chat_language,
+        commit_language=args.commit_language,
+        detect_urls=args.detect_urls,
+        file_watcher=file_watcher,
+        auto_copy_context=args.copy_paste,
+        auto_accept_architect=args.auto_accept_architect,
+        mcp_servers=mcp_servers,
+        enable_context_compaction=args.enable_context_compaction,
+        context_compaction_max_tokens=args.context_compaction_max_tokens,
+        context_compaction_summary_tokens=args.context_compaction_summary_tokens,
+        map_cache_dir=args.map_cache_dir,
+    )
+
+    if args.apply:
+        content = io.read_text(args.apply)
+        if content is None:
+            return 1
+        coder.apply_updates(content)
+        return 0
+
+    if args.apply_clipboard_edits:
+        try:
+            import pyperclip
+        except ImportError:
+            io.tool_error(
+                "To use clipboard edits, you need to install pyperclip: pip install pyperclip"
+            )
+            return 1
+        content = pyperclip.paste()
+        if not content:
+            io.tool_error("Clipboard is empty.")
+            return 1
+        coder.partial_response_content = content
+        coder.apply_updates()
+        return 0
+
+    if args.show_repo_map:
+        coder.get_repo_map()
+        return 0
+
+    if args.show_prompts:
+        coder.format_chat_chunks()
+        return 0
+
+    if args.lint:
+        lint_cmds = parse_lint_cmds(args.lint_cmd, io)
+        if lint_cmds is None:
+            return 1
+        coder.setup_lint_cmds(lint_cmds)
+        coder.lint_edited(fnames)
+        return 0
+
+    if args.test:
+        coder.reflected_message = coder.commands.cmd_test(args.test_cmd)
+        if coder.reflected_message:
+            io.tool_output("Fixing test errors...")
+            coder.run()
+        return 0
+
+    if args.load:
+        try:
+            with open(args.load, "r") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line or line.startswith("#"):
+                        continue
+                    io.tool_output(f"> {line}")
+                    coder.run(line)
+        except FileNotFoundError:
+            io.tool_error(f"Could not find file to load: {args.load}")
+            return 1
+
+    if args.exit:
+        return 0
+
+    coder.show_announcements()
+
+    if args.message or args.message_file:
+        if args.message:
+            message = args.message
+        else:
+            try:
+                message = Path(args.message_file).read_text()
+            except FileNotFoundError:
+                io.tool_error(f"Could not find file: {args.message_file}")
+                return 1
+
+        io.tool_output()
+        coder.run(with_message=message)
+        return 0
+
+    # Start the file watcher if enabled
+    if file_watcher:
+        file_watcher.start()
+
+    # Start the clipboard watcher if enabled
+    clipboard_watcher = None
+    if args.copy_paste:
+        clipboard_watcher = ClipboardWatcher(io)
+        clipboard_watcher.start()
+
+    try:
+        coder.run()
+    except SwitchCoder as e:
+        e.kwargs["fnames"] = list(coder.abs_fnames)
+        e.kwargs["read_only_fnames"] = list(coder.abs_read_only_fnames)
+        e.kwargs["done_messages"] = coder.done_messages
+        e.kwargs["cur_messages"] = coder.cur_messages
+        e.kwargs["aider_commit_hashes"] = coder.aider_commit_hashes
+        e.kwargs["commands"] = coder.commands.clone()
+        e.kwargs["total_cost"] = coder.total_cost
+        e.kwargs["file_watcher"] = file_watcher
+
+        coder = Coder.create(
+            from_coder=coder,
+            **e.kwargs,
+        )
+        coder.run()
+    except Exception:
+        # Display the traceback
+        traceback.print_exc()
+        # Optionally, you can log the exception to a file or another service
+        # for further analysis.
+        # For example:
+        # with open("error_log.txt", "a") as f:
+        #     traceback.print_exc(file=f)
+    finally:
+        # Stop the file watcher if it was started
+        if file_watcher:
+            file_watcher.stop()
+        # Stop the clipboard watcher if it was started
+        if clipboard_watcher:
+            clipboard_watcher.stop()
+
+        analytics.event("main", "exit")
+
+    return 0
+
+
+if __name__ == "__main__":
+    status = main()
+    sys.exit(status)

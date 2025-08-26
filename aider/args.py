@@ -14,7 +14,7 @@ from aider.args_formatter import (
     MarkdownHelpFormatter,
     YamlHelpFormatter,
 )
-from aider.deprecated import add_deprecated_model_args
+from aider/deprecated import add_deprecated_model_args
 
 from .dump import dump  # noqa: F401
 

@@ -23,7 +23,8 @@ from aider.openrouter import OpenRouterModelManager
 from aider.sendchat import ensure_alternating_roles, sanity_check_messages
 from aider.utils import check_pip_install_extra
 
-RETRY_TIMEOUT = 60
+retry_timeout = 60
+retry_backoff_factor = 2.0
 
 request_timeout = 600
 
@@ -1076,8 +1077,8 @@ class Model(ModelSettings):
                     print(ex_info.description)
                 should_retry = ex_info.retry
                 if should_retry:
-                    retry_delay *= 2
-                    if retry_delay > RETRY_TIMEOUT:
+                    retry_delay *= retry_backoff_factor
+                    if retry_delay > retry_timeout:
                         should_retry = False
                 if not should_retry:
                     return None
