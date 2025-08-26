@@ -110,6 +110,18 @@ def get_parser(default_config_files, git_root):
         ),
         default=[],
     )
+    group.add_argument(
+        "--retry-timeout",
+        type=int,
+        default=60,
+        help="Timeout in seconds for retrying API calls (default: 60)",
+    )
+    group.add_argument(
+        "--retry-backoff-factor",
+        type=float,
+        default=2.0,
+        help="Factor to increase retry delay by (default: 2.0)",
+    )
     group = parser.add_argument_group("Model settings")
     group.add_argument(
         "--list-models",
