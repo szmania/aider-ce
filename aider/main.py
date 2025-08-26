@@ -754,8 +754,8 @@ def main(argv=None, input=None, output=None, force_git_root=None, return_coder=F
     is_first_run = is_first_run_of_new_version(io, verbose=args.verbose)
     check_and_load_imports(io, is_first_run, verbose=args.verbose)
 
-    register_models(git_root, args.model_settings_fname, io, verbose=args.verbose)
-    register_litellm_models(git_root, args.model_metadata_fname, io, verbose=args.verbose)
+    register_models(git_root, args.model_settings_file, io, verbose=args.verbose)
+    register_litellm_models(git_root, args.model_metadata_file, io, verbose=args.verbose)
 
     if args.list_models:
         models.print_matching_models(io, args.list_models)

@@ -23,6 +23,8 @@ from aider.openrouter import OpenRouterModelManager
 from aider.sendchat import ensure_alternating_roles, sanity_check_messages
 from aider.utils import check_pip_install_extra
 
+RETRY_TIMEOUT = 60
+
 request_timeout = 600
 
 DEFAULT_MODEL_NAME = "gpt-4o"
@@ -314,7 +316,7 @@ class Model(ModelSettings):
         editor_model=None,
         editor_edit_format=None,
         verbose=False,
-        retry_timeout=60,
+        retry_timeout=RETRY_TIMEOUT,
         retry_backoff_factor=2.0,
     ):
         # Map any alias to its canonical name
@@ -1097,3 +1099,259 @@ class Model(ModelSettings):
                 continue
             except AttributeError:
                 return None
+
+
+def register_models(model_settings_fnames):
+    files_loaded = []
+    for model_settings_fname in model_settings_fnames:
+        if not os.path.exists(model_settings_fname):
+            continue
+
+        if not Path(model_settings_fname).read_text().strip():
+            continue
+
+        try:
+            with open(model_settings_fname, "r") as model_settings_file:
+                model_settings_list = yaml.safe_load(model_settings_file)
+
+            for model_settings_dict in model_settings_list:
+                model_settings = ModelSettings(**model_settings_dict)
+
+                # Remove all existing settings for this model name
+                MODEL_SETTINGS[:] = [ms for ms in MODEL_SETTINGS if ms.name != model_settings.name]
+                # Add the new settings
+                MODEL_SETTINGS.append(model_settings)
+        except Exception as e:
+            raise Exception(f"Error loading model settings from {model_settings_fname}: {e}")
+        files_loaded.append(model_settings_fname)
+
+    return files_loaded
+
+
+def register_litellm_models(model_fnames):
+    files_loaded = []
+    for model_fname in model_fnames:
+        if not os.path.exists(model_fname):
+            continue
+
+        try:
+            data = Path(model_fname).read_text()
+            if not data.strip():
+                continue
+            model_def = json5.loads(data)
+            if not model_def:
+                continue
+
+            # Defer registration with litellm to faster path.
+            model_info_manager.local_model_metadata.update(model_def)
+        except Exception as e:
+            raise Exception(f"Error loading model definition from {model_fname}: {e}")
+
+        files_loaded.append(model_fname)
+
+    return files_loaded
+
+
+def validate_variables(vars):
+    missing = []
+    for var in vars:
+        if var not in os.environ:
+            missing.append(var)
+    if missing:
+        return dict(keys_in_environment=False, missing_keys=missing)
+    return dict(keys_in_environment=True, missing_keys=missing)
+
+
+def sanity_check_models(io, main_model):
+    problem_main = sanity_check_model(io, main_model)
+
+    problem_weak = None
+    if main_model.weak_model and main_model.weak_model is not main_model:
+        problem_weak = sanity_check_model(io, main_model.weak_model)
+
+    problem_editor = None
+    if (
+        main_model.editor_model
+        and main_model.editor_model is not main_model
+        and main_model.editor_model is not main_model.weak_model
+    ):
+        problem_editor = sanity_check_model(io, main_model.editor_model)
+
+    return problem_main or problem_weak or problem_editor
+
+
+def sanity_check_model(io, model):
+    show = False
+
+    if model.missing_keys:
+        show = True
+        io.tool_warning(f"Warning: {model} expects these environment variables")
+        for key in model.missing_keys:
+            value = os.environ.get(key, "")
+            status = "Set" if value else "Not set"
+            io.tool_output(f"- {key}: {status}")
+
+        if platform.system() == "Windows":
+            io.tool_output(
+                "Note: You may need to restart your terminal or command prompt for `setx` to take"
+                " effect."
+            )
+
+    elif not model.keys_in_environment:
+        show = True
+        io.tool_warning(f"Warning for {model}: Unknown which environment variables are required.")
+
+    # Check for model-specific dependencies
+    check_for_dependencies(io, model.name)
+
+    if not model.info:
+        show = True
+        io.tool_warning(
+            f"Warning for {model}: Unknown context window size and costs, using sane defaults."
+        )
+
+        possible_matches = fuzzy_match_models(model.name)
+        if possible_matches:
+            io.tool_output("Did you mean one of these?")
+            for match in possible_matches:
+                io.tool_output(f"- {match}")
+
+    return show
+
+
+def check_for_dependencies(io, model_name):
+    """
+    Check for model-specific dependencies and install them if needed.
+
+    Args:
+        io: The IO object for user interaction
+        model_name: The name of the model to check dependencies for
+    """
+    # Check if this is a Bedrock model and ensure boto3 is installed
+    if model_name.startswith("bedrock/"):
+        check_pip_install_extra(
+            io, "boto3", "AWS Bedrock models require the boto3 package.", ["boto3"]
+        )
+
+    # Check if this is a Vertex AI model and ensure google-cloud-aiplatform is installed
+    elif model_name.startswith("vertex_ai/"):
+        check_pip_install_extra(
+            io,
+            "google.cloud.aiplatform",
+            "Google Vertex AI models require the google-cloud-aiplatform package.",
+            ["google-cloud-aiplatform"],
+        )
+
+
+def fuzzy_match_models(name):
+    name = name.lower()
+
+    chat_models = set()
+    model_metadata = list(litellm.model_cost.items())
+    model_metadata += list(model_info_manager.local_model_metadata.items())
+
+    for orig_model, attrs in model_metadata:
+        model = orig_model.lower()
+        if attrs.get("mode") != "chat":
+            continue
+        provider = attrs.get("litellm_provider", "").lower()
+        if not provider:
+            continue
+        provider += "/"
+
+        if model.startswith(provider):
+            fq_model = orig_model
+        else:
+            fq_model = provider + orig_model
+
+        chat_models.add(fq_model)
+        chat_models.add(orig_model)
+
+    chat_models = sorted(chat_models)
+    # exactly matching model
+    # matching_models = [
+    #    (fq,m) for fq,m in chat_models
+    #    if name == fq or name == m
+    # ]
+    # if matching_models:
+    #    return matching_models
+
+    # Check for model names containing the name
+    matching_models = [m for m in chat_models if name in m]
+    if matching_models:
+        return sorted(set(matching_models))
+
+    # Check for slight misspellings
+    models = set(chat_models)
+    matching_models = difflib.get_close_matches(name, models, n=3, cutoff=0.8)
+
+    return sorted(set(matching_models))
+
+
+def print_matching_models(io, search):
+    matches = fuzzy_match_models(search)
+    if matches:
+        io.tool_output(f'Models which match "{search}":')
+        for model in matches:
+            io.tool_output(f"- {model}")
+    else:
+        io.tool_output(f'No models match "{search}".')
+
+
+def get_model_settings_as_yaml():
+    from dataclasses import fields
+
+    import yaml
+
+    model_settings_list = []
+    # Add default settings first with all field values
+    defaults = {}
+    for field in fields(ModelSettings):
+        defaults[field.name] = field.default
+    defaults["name"] = "(default values)"
+    model_settings_list.append(defaults)
+
+    # Sort model settings by name
+    for ms in sorted(MODEL_SETTINGS, key=lambda x: x.name):
+        # Create dict with explicit field order
+        model_settings_dict = {}
+        for field in fields(ModelSettings):
+            value = getattr(ms, field.name)
+            if value != field.default:
+                model_settings_dict[field.name] = value
+        model_settings_list.append(model_settings_dict)
+        # Add blank line between entries
+        model_settings_list.append(None)
+
+    # Filter out None values before dumping
+    yaml_str = yaml.dump(
+        [ms for ms in model_settings_list if ms is not None],
+        default_flow_style=False,
+        sort_keys=False,  # Preserve field order from dataclass
+    )
+    # Add actual blank lines between entries
+    return yaml_str.replace("\n- ", "\n\n- ")
+
+
+def main():
+    if len(sys.argv) < 2:
+        print("Usage: python models.py <model_name> or python models.py --yaml")
+        sys.exit(1)
+
+    if sys.argv[1] == "--yaml":
+        yaml_string = get_model_settings_as_yaml()
+        print(yaml_string)
+    else:
+        model_name = sys.argv[1]
+        matching_models = fuzzy_match_models(model_name)
+
+        if matching_models:
+            print(f"Matching models for '{model_name}':")
+            for model in matching_models:
+                print(model)
+        else:
+            print(f"No matching models found for '{model_name}'.")
+
+
+if __name__ == "__main__":
+    main()
