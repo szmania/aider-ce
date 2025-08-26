@@ -530,6 +530,9 @@ def main(argv=None, input=None, output=None, force_git_root=None, return_coder=F
     if args.timeout:
         models.request_timeout = args.timeout
 
+    models.RETRY_TIMEOUT = args.retry_timeout
+    models.RETRY_BACKOFF_FACTOR = args.retry_backoff_factor
+
     if args.dark_mode:
         args.user_input_color = "#32FF32"
         args.tool_error_color = "#FF3333"
