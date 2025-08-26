@@ -39,7 +39,7 @@ from aider.io import ConfirmGroup, InputOutput
 from aider.linter import Linter
 from aider.llm import litellm
 from aider.mcp.server import LocalServer
-from aider.models import RETRY_TIMEOUT
+from aider.models import RETRY_BACKOFF_FACTOR, RETRY_TIMEOUT
 from aider.reasoning_tags import (
     REASONING_TAG,
     format_reasoning_content,
@@ -1626,7 +1626,7 @@ class Coder:
 
                     should_retry = ex_info.retry
                     if should_retry:
-                        retry_delay *= 2
+                        retry_delay *= RETRY_BACKOFF_FACTOR
                         if retry_delay > RETRY_TIMEOUT:
                             should_retry = False
 
