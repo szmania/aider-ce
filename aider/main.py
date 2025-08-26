@@ -530,9 +530,6 @@ def main(argv=None, input=None, output=None, force_git_root=None, return_coder=F
     if args.timeout:
         models.request_timeout = args.timeout
 
-    models.RETRY_TIMEOUT = args.retry_timeout
-    models.RETRY_BACKOFF_FACTOR = args.retry_backoff_factor
-
     if args.dark_mode:
         args.user_input_color = "#32FF32"
         args.tool_error_color = "#FF3333"
@@ -757,8 +754,8 @@ def main(argv=None, input=None, output=None, force_git_root=None, return_coder=F
     is_first_run = is_first_run_of_new_version(io, verbose=args.verbose)
     check_and_load_imports(io, is_first_run, verbose=args.verbose)
 
-    register_models(git_root, args.model_settings_file, io, verbose=args.verbose)
-    register_litellm_models(git_root, args.model_metadata_file, io, verbose=args.verbose)
+    register_models(git_root, args.model_settings_fname, io, verbose=args.verbose)
+    register_litellm_models(git_root, args.model_metadata_fname, io, verbose=args.verbose)
 
     if args.list_models:
         models.print_matching_models(io, args.list_models)
@@ -829,6 +826,8 @@ def main(argv=None, input=None, output=None, force_git_root=None, return_coder=F
         editor_model=args.editor_model,
         editor_edit_format=args.editor_edit_format,
         verbose=args.verbose,
+        retry_timeout=args.retry_timeout,
+        retry_backoff_factor=args.retry_backoff_factor,
     )
 
     # Check if deprecated remove_reasoning is set
@@ -1027,6 +1026,8 @@ def main(argv=None, input=None, output=None, force_git_root=None, return_coder=F
             context_compaction_max_tokens=args.context_compaction_max_tokens,
             context_compaction_summary_tokens=args.context_compaction_summary_tokens,
             map_cache_dir=args.map_cache_dir,
+            retry_timeout=args.retry_timeout,
+            retry_backoff_factor=args.retry_backoff_factor,
         )
     except UnknownEditFormat as err:
         io.tool_error(str(err))
