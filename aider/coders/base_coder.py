@@ -14,6 +14,8 @@ import sys
 import threading
 import time
 import traceback
+import importlib.util
+import inspect
 from collections import defaultdict
 from datetime import datetime
 
@@ -49,6 +51,7 @@ from aider.reasoning_tags import (
 from aider.repo import ANY_GIT_ERROR, GitRepo
 from aider.repomap import RepoMap
 from aider.run_cmd import run_cmd
+from aider.tools.base_tool import BaseAiderTool
 from aider.utils import format_content, format_messages, format_tokens, is_image_file
 from aider.waiting import WaitingSpinner
 
@@ -2054,6 +2057,43 @@ class Coder:
 
         return tool_responses
 
+    async def _execute_local_tool_calls(self, tool_calls_list):
+        """Executes tool calls for locally loaded tools."""
+        tool_responses = []
+        for tool_call in tool_calls_list:
+            tool_name = tool_call.function.name
+            if hasattr(self, "local_tool_instances") and tool_name in self.local_tool_instances:
+                tool_instance = self.local_tool_instances[tool_name]
+                try:
+                    args = json.loads(tool_call.function.arguments)
+                    result = tool_instance.run(**args)
+                    tool_responses.append(
+                        {
+                            "role": "tool",
+                            "tool_call_id": tool_call.id,
+                            "content": str(result),
+                        }
+                    )
+                except Exception as e:
+                    error_message = f"Error executing tool {tool_name}: {e}"
+                    self.io.tool_error(error_message)
+                    tool_responses.append(
+                        {
+                            "role": "tool",
+                            "tool_call_id": tool_call.id,
+                            "content": error_message,
+                        }
+                    )
+            else:
+                tool_responses.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": tool_call.id,
+                        "content": f"Local tool not found: {tool_name}",
+                    }
+                )
+        return tool_responses
+
     def initialize_mcp_tools(self):
         """
         Initialize tools from all configured MCP servers. MCP Servers that fail to be
@@ -2116,6 +2156,76 @@ class Coder:
             for _, server_tools in self.mcp_tools:
                 tool_list.extend(server_tools)
         return tool_list
+
+    def tool_add_from_path(self, file_path_str: str):
+        """
+        Dynamically loads a tool from a Python file.
+        """
+        file_path = Path(file_path_str).resolve()
+        module_name = file_path.stem
+
+        spec = importlib.util.spec_from_file_location(module_name, file_path)
+        if not spec or not spec.loader:
+            raise ImportError(f"Could not create module spec for {file_path}")
+
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[module_name] = module
+        spec.loader.exec_module(module)
+
+        tool_class = None
+        for name, obj in inspect.getmembers(module, inspect.isclass):
+            if issubclass(obj, BaseAiderTool) and obj is not BaseAiderTool:
+                tool_class = obj
+                break
+
+        if not tool_class:
+            raise TypeError(f"No class inheriting from BaseAiderTool found in {file_path}")
+
+        # Instantiate the tool
+        tool_instance = tool_class(self)
+        tool_definition = tool_instance.get_tool_definition()
+        tool_name = tool_definition.get("function", {}).get("name")
+
+        if not tool_name:
+            raise ValueError("Tool definition must include a name.")
+
+        # Add or replace the tool
+        if not self.mcp_tools:
+            self.mcp_tools = []
+        if not self.mcp_servers:
+            self.mcp_servers = []
+        if not hasattr(self, "local_tool_instances"):
+            self.local_tool_instances = {}
+
+        server_name = "local_tools"
+
+        # Ensure a LocalServer instance exists
+        local_server = next(
+            (s for s in self.mcp_servers if isinstance(s, LocalServer) and s.name == server_name),
+            None,
+        )
+        if not local_server:
+            local_server = LocalServer(name=server_name)
+            self.mcp_servers.append(local_server)
+
+        # Find if local server tools already exist in mcp_tools
+        local_tools_entry = next((item for item in self.mcp_tools if item[0] == server_name), None)
+
+        if local_tools_entry:
+            # Server entry exists, update its tool list
+            server_tools = local_tools_entry[1]
+            # Remove existing tool with the same name
+            server_tools[:] = [
+                t for t in server_tools if t.get("function", {}).get("name") != tool_name
+            ]
+            server_tools.append(tool_definition)
+        else:
+            # No local server entry, create one
+            self.mcp_tools.append((server_name, [tool_definition]))
+
+        self.local_tool_instances[tool_name] = tool_instance
+
+        self.io.tool_output(f"Successfully loaded tool: {tool_name}")
 
     def reply_completed(self):
         pass
