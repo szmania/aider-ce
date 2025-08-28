@@ -1869,6 +1869,58 @@ class Commands:
         announcements = "\n".join(self.coder.get_announcements())
         self.io.tool_output(announcements)
 
+    def cmd_tool_add(self, args):
+        "Load a custom tool from a Python file"
+        file_path_str = args.strip()
+        if not file_path_str:
+            self.io.tool_error("Please provide the path to a Python file containing a tool.")
+            return
+
+        file_path = Path(file_path_str).resolve()
+
+        if not file_path.exists():
+            self.io.tool_error(f"File not found: {file_path}")
+            return
+
+        if not file_path.is_file() or not file_path.suffix == ".py":
+            self.io.tool_error("Please provide a valid Python (.py) file.")
+            return
+
+        if not hasattr(self.coder, "tool_add_from_path"):
+            self.io.tool_error("The current coder does not support adding custom tools.")
+            return
+
+        warning_message = (
+            f"WARNING: This will execute the Python code in `{file_path}`."
+            " Only load tools from sources you trust."
+        )
+        if not self.io.confirm_ask(warning_message, default="n", subject=warning_message):
+            return
+
+        try:
+            # This method will be implemented in the coder
+            self.coder.tool_add_from_path(str(file_path))
+        except Exception as e:
+            self.io.tool_error(f"Failed to load tool: {e}")
+
+    def cmd_tool_create(self, args):
+        "Create a new tool with AI assistance"
+        if not args.strip():
+            self.io.tool_error("Please provide a description of the tool to create.")
+            return
+
+        if not hasattr(self.coder, "tool_add_from_path"):
+            self.io.tool_error("The current coder does not support adding custom tools.")
+            return
+
+        self.io.tool_output("Tool creation is not yet implemented.")
+        # Placeholder for future implementation
+        # 1. Use a temporary Coder with a specific prompt to generate tool code.
+        # 2. Save the generated code to a file.
+        # 3. Add the file to the chat for review.
+        # 4. Prompt the user to load the new tool.
+        # 5. If confirmed, call self.cmd_tool_add with the new file path.
+
     def cmd_copy_context(self, args=None):
         """Copy the current chat context as markdown, suitable to paste into a web UI"""
 
