@@ -7,13 +7,14 @@ import tempfile
 from collections import OrderedDict
 from os.path import expanduser
 from pathlib import Path
+import importlib.resources
 
 import pyperclip
 from PIL import Image, ImageGrab
 from prompt_toolkit.completion import Completion, PathCompleter
 from prompt_toolkit.document import Document
 
-from aider import models, prompts, voice
+from aider import models, prompts, voice, utils
 from aider.editor import pipe_editor
 from aider.format_settings import format_settings
 from aider.help import Help, install_help_extra
@@ -22,7 +23,7 @@ from aider.llm import litellm
 from aider.repo import ANY_GIT_ERROR
 from aider.run_cmd import run_cmd
 from aider.scrape import Scraper, install_playwright
-from aider.utils import is_image_file, run_fzf
+from aider.utils import is_image_file, run_fzf, strip_fenced_code
 
 from .dump import dump  # noqa: F401
 
@@ -1225,7 +1226,9 @@ class Commands:
             )
             if hasattr(self.coder, "context_block_tokens"):
                 available_blocks = list(self.coder.context_block_tokens.keys())
-                formatted_blocks = [name.replace("_", " ").title() for name in available_blocks]
+                formatted_blocks = [
+                    name.replace("_", " ").title() for name in available_blocks
+                ]
                 self.io.tool_output(f"Available blocks: {', '.join(formatted_blocks)}")
                 self.io.tool_output("Use '/context-blocks [block name]' to view a specific block.")
         else:
@@ -1905,7 +1908,8 @@ class Commands:
 
     def cmd_tool_create(self, args):
         "Create a new tool with AI assistance"
-        if not args.strip():
+        description = args.strip()
+        if not description:
             self.io.tool_error("Please provide a description of the tool to create.")
             return
 
@@ -1913,13 +1917,89 @@ class Commands:
             self.io.tool_error("The current coder does not support adding custom tools.")
             return
 
-        self.io.tool_output("Tool creation is not yet implemented.")
-        # Placeholder for future implementation
-        # 1. Use a temporary Coder with a specific prompt to generate tool code.
-        # 2. Save the generated code to a file.
-        # 3. Add the file to the chat for review.
-        # 4. Prompt the user to load the new tool.
-        # 5. If confirmed, call self.cmd_tool_add with the new file path.
+        try:
+            tool_create_prompt_content = (
+                importlib.resources.files("aider.prompts")
+                .joinpath("tool_create.md")
+                .read_text(encoding="utf-8")
+            )
+        except (FileNotFoundError, ModuleNotFoundError):
+            self.io.tool_error("Could not find the tool creation prompt template.")
+            return
+
+        self.io.tool_output("Generating new tool with AI...")
+
+        # Create a temporary coder for tool generation
+        tool_coder = self.coder.clone(
+            edit_format="whole",
+            # Don't carry over chat history for this task
+            cur_messages=[],
+            done_messages=[],
+            fnames=[],
+            read_only_fnames=[],
+            summarize_from_coder=False,
+        )
+
+        # Monkey-patch the system prompt
+        tool_coder.gpt_prompts.main_system = tool_create_prompt_content
+
+        user_message = f"Here is the description of the tool I want to create:\n\n{description}"
+        tool_code = tool_coder.run(with_message=user_message)
+
+        if not tool_code:
+            self.io.tool_error("The model did not generate any code for the tool.")
+            return
+
+        # The model often returns the code in a markdown block
+        tool_code = strip_fenced_code(tool_code).strip()
+
+        if not tool_code:
+            self.io.tool_error("The model generated an empty response.")
+            return
+
+        def camel_to_snake(name):
+            name = re.sub(r"(.)([A-Z][a-z]+)", r"\1_\2", name)
+            return re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", name).lower()
+
+        class_name_match = re.search(r"class\s+(\w+)\(BaseAiderTool\):", tool_code)
+        if class_name_match:
+            class_name = class_name_match.group(1)
+            tool_filename = camel_to_snake(class_name) + ".py"
+        else:
+            self.io.tool_warning(
+                "Could not determine tool name from generated code. Using 'new_tool.py'."
+            )
+            tool_filename = "new_tool.py"
+
+        if self.coder.repo:
+            tools_dir = Path(self.coder.repo.root) / ".aider" / "tools"
+        else:
+            # Fallback to current working directory if not in a repo
+            tools_dir = Path.cwd() / ".aider" / "tools"
+
+        tools_dir.mkdir(parents=True, exist_ok=True)
+        tool_path = tools_dir / tool_filename
+
+        if tool_path.exists():
+            if not self.io.confirm_ask(f"File {tool_path} already exists. Overwrite?"):
+                self.io.tool_warning("Tool creation cancelled.")
+                return
+
+        try:
+            with open(tool_path, "w", encoding=self.io.encoding) as f:
+                f.write(tool_code)
+            self.io.tool_output(f"Saved new tool to {tool_path}")
+        except IOError as e:
+            self.io.tool_error(f"Error saving tool: {e}")
+            return
+
+        # Add to chat for review
+        self.io.tool_output("Adding the new tool to the chat for your review.")
+        self.cmd_add(f'"{str(tool_path)}"')
+
+        # Ask to load
+        if self.io.confirm_ask(f"Load the new tool from {tool_path}?"):
+            self.cmd_tool_add(f'"{str(tool_path)}"')
 
     def cmd_copy_context(self, args=None):
         """Copy the current chat context as markdown, suitable to paste into a web UI"""
