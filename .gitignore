@@ -6,6 +6,7 @@
 
 # Recursively allow files under subtree
 !/.github/**
+!/.aider/**
 !/aider/**
 !/benchmark/**
 !/docker/**
@@ -32,3 +33,7 @@
 aider/__version__.py
 aider/_version.py
 *.pyc
+.aider*
+.aider*
+.aider*
+.aider*
