@@ -450,6 +450,16 @@ def sanity_check_repo(repo, io):
 
 
 def discover_and_load_tools(coder, git_root, args):
+    from aider.coders.navigator_coder import NavigatorCoder
+
+    # Only proceed if the current coder is a NavigatorCoder
+    if not isinstance(coder, NavigatorCoder):
+        return
+
+    # Only run tool discovery once per session
+    if coder.did_discover_tools:
+        return
+
     if not hasattr(coder, "tool_add_from_path"):
         return
 
@@ -478,6 +488,7 @@ def discover_and_load_tools(coder, git_root, args):
     if not tool_dirs:
         if coder.verbose:
             coder.io.tool_output("No tool directories configured or found.")
+        coder.did_discover_tools = True # Mark as discovered even if empty
         return
 
     discovered_tools = []
@@ -505,6 +516,7 @@ def discover_and_load_tools(coder, git_root, args):
     if not discovered_tools:
         if coder.verbose:
             coder.io.tool_output("No custom tools found in scanned directories.")
+        coder.did_discover_tools = True # Mark as discovered even if empty
         return
 
     coder.io.tool_output("Discovered custom tools:")
@@ -522,6 +534,7 @@ def discover_and_load_tools(coder, git_root, args):
             except Exception as e:
                 coder.io.tool_error(f"Failed to load tool {tool_path}: {e}")
 
+    coder.did_discover_tools = True # Mark as discovered after processing
 
 def main(argv=None, input=None, output=None, force_git_root=None, return_coder=False):
     report_uncaught_exceptions()
@@ -1278,6 +1291,7 @@ def main(argv=None, input=None, output=None, force_git_root=None, return_coder=F
             kwargs["num_cache_warming_pings"] = 0
 
             coder = Coder.create(**kwargs)
+            discover_and_load_tools(coder, git_root, args) # Call discovery after new coder is created
 
             if switch.kwargs.get("show_announcements") is not False:
                 coder.show_announcements()
