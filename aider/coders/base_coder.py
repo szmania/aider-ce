@@ -48,7 +48,7 @@ from aider.reasoning_tags import (
     remove_reasoning_content,
     replace_reasoning_tags,
 )
-from aider.repo import ANY_GIT_ERROR, GitRepo
+from aider.repo import ANY_GIT_ERROR
 from aider.repomap import RepoMap
 from aider.run_cmd import run_cmd
 from aider.utils import format_content, format_messages, format_tokens, is_image_file
@@ -359,6 +359,7 @@ class Coder:
         auto_copy_context=False,
         auto_accept_architect=True,
         mcp_servers=None,
+        mcp_tools=None,  # Added mcp_tools parameter
         enable_context_compaction=False,
         context_compaction_max_tokens=None,
         context_compaction_summary_tokens=8192,
@@ -400,6 +401,7 @@ class Coder:
 
         self.num_cache_warming_pings = num_cache_warming_pings
         self.mcp_servers = mcp_servers
+        self.mcp_tools = mcp_tools  # Initialized mcp_tools attribute
         self.enable_context_compaction = enable_context_compaction
 
         self.context_compaction_max_tokens = context_compaction_max_tokens
