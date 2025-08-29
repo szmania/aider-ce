@@ -1919,8 +1919,8 @@ class Commands:
 
         try:
             tool_create_prompt_content = (
-                importlib.resources.files("aider.coders.navigator_prompts")
-                .joinpath("tool_create.md")
+                importlib.resources.files("aider.coders.prompts")
+                .joinpath("navigator_tool_create.md")
                 .read_text(encoding="utf-8")
             )
         except (FileNotFoundError, ModuleNotFoundError):
