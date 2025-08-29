@@ -13,6 +13,9 @@ import traceback
 from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
+import importlib.util
+import inspect
+import sys
 
 from litellm import experimental_mcp_client
 
@@ -22,6 +25,7 @@ from aider import urls, utils
 from aider.change_tracker import ChangeTracker
 from aider.mcp.server import LocalServer
 from aider.repo import ANY_GIT_ERROR
+from aider.tools.base_tool import BaseAiderTool
 
 # Import run_cmd for potentially interactive execution and run_cmd_subprocess for guaranteed non-interactive
 from aider.tools.command import _execute_command
@@ -116,6 +120,10 @@ class NavigatorCoder(Coder):
 
         super().__init__(*args, **kwargs)
         self.initialize_local_tools()
+
+        # Initialize tool tracking attributes
+        self.custom_tools = {}
+        self.local_tool_instances = {}
 
     def initialize_local_tools(self):
         if not self.use_granular_editing:
@@ -623,6 +631,80 @@ class NavigatorCoder(Coder):
                 },
             },
         ]
+
+    def tool_add_from_path(self, file_path: str):
+        from aider.tools.base_tool import BaseAiderTool
+
+        try:
+            # Create a module spec from the file path
+            spec = importlib.util.spec_from_file_location("custom_tool_module", file_path)
+            if spec is None:
+                raise ImportError(f"Could not create module spec for {file_path}")
+
+            # Create a new module from the spec
+            module = importlib.util.module_from_spec(spec)
+
+            # Add the module to sys.modules so it can be imported by other modules if needed
+            # and to prevent re-importing the same file multiple times.
+            # Use a unique name to avoid conflicts.
+            module_name = f"aider.custom_tools.{Path(file_path).stem}"
+            sys.modules[module_name] = module
+
+            # Execute the module to load its contents
+            spec.loader.exec_module(module)
+
+            tool_class = None
+            for name, obj in inspect.getmembers(module):
+                if inspect.isclass(obj) and issubclass(obj, BaseAiderTool) and obj is not BaseAiderTool:
+                    tool_class = obj
+                    break
+
+            if tool_class is None:
+                raise ValueError(f"No class inheriting from BaseAiderTool found in {file_path}")
+
+            # Instantiate the tool
+            tool_instance = tool_class(self)
+            tool_definition = tool_instance.get_tool_definition()
+            tool_name = tool_definition["function"]["name"]
+            tool_description = tool_definition["function"]["description"]
+
+            # Store the instantiated tool object
+            self.local_tool_instances[tool_name] = tool_instance
+
+            # Update self.mcp_tools
+            local_tools_entry_index = -1
+            for i, (server_name, _) in enumerate(self.mcp_tools):
+                if server_name == "local_tools":
+                    local_tools_entry_index = i
+                    break
+
+            if local_tools_entry_index != -1:
+                # Get the current list of tools for 'local_tools'
+                _, current_local_tools = self.mcp_tools[local_tools_entry_index]
+                # Remove any existing tool with the same name
+                updated_tools = [t for t in current_local_tools if t["function"]["name"] != tool_name]
+                # Add the new/updated tool definition
+                updated_tools.append(tool_definition)
+                self.mcp_tools[local_tools_entry_index] = ("local_tools", updated_tools)
+            else:
+                # This case should ideally not happen if initialize_local_tools was called,
+                # but as a fallback, add a new entry.
+                self.mcp_tools.append(("local_tools", [tool_definition]))
+
+            # Update the master list of functions for the LLM
+            self.functions = self.get_tool_list()
+
+            # Store tool metadata
+            self.custom_tools[tool_name] = {
+                'path': file_path,
+                'description': tool_description,
+            }
+
+            self.io.tool_output(f"Successfully loaded tool: {tool_name} from {self.get_rel_fname(file_path)}")
+
+        except Exception as e:
+            # Re-raise the exception for the calling command to handle
+            raise Exception(f"Error loading tool from {file_path}: {e}")
 
     async def _execute_local_tool_calls(self, tool_calls_list):
         tool_responses = []

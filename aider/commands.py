@@ -96,8 +96,8 @@ class Commands:
 
         model = models.Model(
             model_name,
-            editor_model=self.coder.main_model.editor_model.name,
             weak_model=self.coder.main_model.weak_model.name,
+            editor_model=self.coder.main_model.editor_model.name,
         )
         models.sanity_check_models(self.io, model)
 
@@ -1365,9 +1365,9 @@ class Commands:
             edit_format=self.coder.edit_format,
             summarize_from_coder=False,
             from_coder=coder,
+            show_announcements=False,
             map_tokens=map_tokens,
             map_mul_no_files=map_mul_no_files,
-            show_announcements=False,
         )
 
     def completions_ask(self):
@@ -2007,6 +2007,31 @@ class Commands:
         # Ask to load
         if self.io.confirm_ask(f"Load the new tool from {tool_path}?"):
             self.cmd_tool_add(f'"{str(tool_path)}"')
+
+    def cmd_tools(self, args):
+        "List all available standard and custom tools"
+
+        if not hasattr(self.coder, "get_local_tool_schemas"):
+            self.io.tool_error("The current coder does not support tools.")
+            return
+
+        self.io.tool_output("Standard Tools:", bold=True)
+        standard_tools = self.coder.get_local_tool_schemas()
+        if standard_tools:
+            for tool_schema in standard_tools:
+                name = tool_schema["function"]["name"]
+                description = tool_schema["function"]["description"]
+                self.io.tool_output(f"- {name}: {description}")
+        else:
+            self.io.tool_output("  No standard tools available.")
+
+        if hasattr(self.coder, "custom_tools") and self.coder.custom_tools:
+            self.io.tool_output("\nCustom Tools:", bold=True)
+            for tool_name, tool_info in sorted(self.coder.custom_tools.items()):
+                rel_path = self.coder.get_rel_fname(tool_info['path'])
+                self.io.tool_output(f"- {tool_name}: {tool_info['description']} (Source: {rel_path})")
+        else:
+            self.io.tool_output("\nNo custom tools loaded.")
 
     def cmd_copy_context(self, args=None):
         """Copy the current chat context as markdown, suitable to paste into a web UI"""
