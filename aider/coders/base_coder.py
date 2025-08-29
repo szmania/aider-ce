@@ -376,6 +376,7 @@ class Coder:
         self.retry_timeout = retry_timeout
         self.retry_backoff_factor = retry_backoff_factor
         self.retry_on_unavailable = retry_on_unavailable
+        self.did_discover_tools = did_discover_tools # Assign the new flag
 
         # Fill in a dummy Analytics if needed, but it is never .enable()'d
         self.analytics = analytics if analytics is not None else Analytics()
