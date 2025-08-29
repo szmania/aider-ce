@@ -1979,10 +1979,10 @@ class Commands:
             tool_filename = "new_tool.py"
 
         if self.coder.repo:
-            tools_dir = Path(self.coder.repo.root) / ".aider" / "tools"
+            tools_dir = Path(self.coder.repo.root) / ".aider.tools"
         else:
             # Fallback to current working directory if not in a repo
-            tools_dir = Path.cwd() / ".aider" / "tools"
+            tools_dir = Path.cwd() / ".aider.tools"
 
         tools_dir.mkdir(parents=True, exist_ok=True)
         tool_path = tools_dir / tool_filename

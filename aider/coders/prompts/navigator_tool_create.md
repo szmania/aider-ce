@@ -113,5 +113,5 @@ Important guidelines:
 6. Use the coder's methods like `self.coder.abs_root_path()` for file operations
 7. Use `self.coder.io.tool_output()` for user-facing messages
 8. Use `self.coder.io.tool_error()` for error messages
-9. Save the tool file to `.aider/tools/` directory by default
-10. For cross-project tools, consider saving to `~/.aider/tools/` (global tools directory)
+9. Save the tool file to .aider.tools/ directory by default
+10. For cross-project tools, consider saving to ~/.aider.tools/ (global tools directory)

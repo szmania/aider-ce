@@ -456,13 +456,13 @@ def discover_and_load_tools(coder, git_root, args):
     tool_dirs = []
 
     # 1. Global tools directory
-    global_tools_dir = Path.home() / ".aider" / "tools"
+    global_tools_dir = Path.home() / ".aider.tools"
     if global_tools_dir.is_dir():
         tool_dirs.append(global_tools_dir)
 
     # 2. Project-specific tools directory
     if git_root:
-        project_tools_dir = Path(git_root) / ".aider" / "tools"
+        project_tools_dir = Path(git_root) / ".aider.tools"
         if project_tools_dir.is_dir():
             tool_dirs.append(project_tools_dir)
 
@@ -1230,8 +1230,8 @@ def main(argv=None, input=None, output=None, force_git_root=None, return_coder=F
             analytics.event("exit", reason="Message file IO error")
             return 1
 
-        analytics.event("exit", reason="Completed --message-file")
-        return
+    analytics.event("exit", reason="Completed --message-file")
+    return
 
     if args.exit:
         analytics.event("exit", reason="Exit flag set")

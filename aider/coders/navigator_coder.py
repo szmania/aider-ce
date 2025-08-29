@@ -921,7 +921,7 @@ class NavigatorCoder(Coder):
     def cmd_copy_context(self, args=None):
         """Copy the current chat context as markdown, suitable to paste into a web UI"""
 
-        chunks = self.format_chat_chunks()
+        chunks = self.coder.format_chat_chunks()
 
         markdown = ""
 
