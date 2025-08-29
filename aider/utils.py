@@ -5,6 +5,7 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
+import re
 
 import oslex
 
@@ -452,3 +453,10 @@ def split_concatenated_json(s: str) -> list[str]:
             break
 
     return res
+
+
+def strip_fenced_code(text):
+    """
+    Removes fenced code blocks (```...```) from a string.
+    """
+    return re.sub(r"```.*?```", "", text, flags=re.DOTALL)
