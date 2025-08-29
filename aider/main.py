@@ -1230,8 +1230,8 @@ def main(argv=None, input=None, output=None, force_git_root=None, return_coder=F
             analytics.event("exit", reason="Message file IO error")
             return 1
 
-    analytics.event("exit", reason="Completed --message-file")
-    return
+        analytics.event("exit", reason="Completed --message-file")
+        return
 
     if args.exit:
         analytics.event("exit", reason="Exit flag set")
