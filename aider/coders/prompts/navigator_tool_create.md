@@ -42,7 +42,7 @@ class BaseAiderTool(ABC):
         The keyword arguments passed to this method are determined by the
         'parameters' in the tool's JSON schema.
 
-        :param kwargs: The arguments for the tool, as provided by the LLM.
+        :param kwargs: Additional keyword arguments.
         :return: The output of the tool, to be sent back to the LLM.
         """
         pass
@@ -67,23 +67,23 @@ class ExampleTool(BaseAiderTool):
     """
 
     def get_tool_definition(self):
-        return {
+        return {{
             "type": "function",
-            "function": {
+            "function": {{
                 "name": "ExampleTool",
                 "description": "Reads a file and returns its contents.",
-                "parameters": {
+                "parameters": {{
                     "type": "object",
-                    "properties": {
-                        "file_path": {
+                    "properties": {{
+                        "file_path": {{
                             "type": "string",
                             "description": "The path to the file to read.",
-                        },
-                    },
+                        }},
+                    }},
                     "required": ["file_path"],
-                },
-            },
-        }
+                }},
+            }},
+        }}
 
     def run(self, file_path):
         """
@@ -96,9 +96,9 @@ class ExampleTool(BaseAiderTool):
             abs_path = self.coder.abs_root_path(file_path)
             with open(abs_path, 'r') as f:
                 content = f.read()
-            return f"Contents of {file_path}:\n{content}"
+            return f"Contents of {{file_path}}:\n{{content}}"
         except Exception as e:
-            return f"Error reading file {file_path}: {str(e)}"
+            return f"Error reading file {{file_path}}: {{str(e)}}"
 
 def _execute_example_tool(coder, file_path):
     return ExampleTool(coder).run(file_path=file_path)
@@ -115,4 +115,3 @@ Important guidelines:
 8. Use `self.coder.io.tool_error()` for error messages
 9. Save the tool file to `.aider/tools/` directory by default
 10. For cross-project tools, consider saving to `~/.aider/tools/` (global tools directory)
-
