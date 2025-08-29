@@ -1138,7 +1138,7 @@ class Coder:
             self.io.tool_output("Finished summarizing chat history.")
 
     def summarize_end(self):
-        if self.summarizer_thread == None:
+        if self.summarizer_thread is None:
             return
 
         self.summarizer_thread.join()
