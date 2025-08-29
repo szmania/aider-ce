@@ -476,18 +476,35 @@ def discover_and_load_tools(coder, git_root, args):
                 coder.io.tool_warning(f"Tools directory not found: {d}")
 
     if not tool_dirs:
+        if coder.verbose:
+            coder.io.tool_output("No tool directories configured or found.")
         return
 
     discovered_tools = []
     discovered_paths = set()
+
+    if coder.verbose:
+        coder.io.tool_output("Scanning for custom tools...")
+
     for tool_dir in tool_dirs:
-        for tool_file in tool_dir.glob("*.py"):
-            resolved_path = tool_file.resolve()
-            if resolved_path not in discovered_paths:
-                discovered_tools.append(tool_file)
-                discovered_paths.add(resolved_path)
+        if coder.verbose:
+            coder.io.tool_output(f"  Scanning directory: {tool_dir}")
+        try:
+            for entry in os.scandir(tool_dir):
+                if entry.is_file() and entry.name.endswith(".py"):
+                    tool_file = Path(entry.path)
+                    resolved_path = tool_file.resolve()
+                    if resolved_path not in discovered_paths:
+                        discovered_tools.append(tool_file)
+                        discovered_paths.add(resolved_path)
+                        if coder.verbose:
+                            coder.io.tool_output(f"    Discovered tool: {tool_file}")
+        except OSError as e:
+            coder.io.tool_warning(f"  Warning: Could not scan directory {tool_dir}: {e}")
 
     if not discovered_tools:
+        if coder.verbose:
+            coder.io.tool_output("No custom tools found in scanned directories.")
         return
 
     coder.io.tool_output("Discovered custom tools:")
