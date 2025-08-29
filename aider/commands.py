@@ -1919,7 +1919,7 @@ class Commands:
 
         try:
             tool_create_prompt_content = (
-                importlib.resources.files("aider.prompts")
+                importlib.resources.files("aider.coders.navigator_prompts")
                 .joinpath("tool_create.md")
                 .read_text(encoding="utf-8")
             )
