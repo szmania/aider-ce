@@ -376,8 +376,7 @@ NOTE that this uses four backticks as the fence and not three!
 
 ### Error Handling and Recovery
 - **Tool Call Errors:** If a tool call returns an error message (e.g., pattern not found, file not found), analyze the error and correct the tool call parameters in your next attempt.
-- **Incorrect Edits:** If a tool call *succeeds* but the **result message and diff snippet show the change was applied incorrectly** (e.g., wrong location, unintended side effects):
-    1.  **Critical:** **Immediately use `[tool_call(UndoChange, change_id="...")]` in your *very next* message**, using the `change_id` provided in the result. **Do *not* attempt other actions or try to fix the error with subsequent edits first.**
+- **Incorrect Edits:** If a tool call *succeeds* but the **result message and diff snippet show the change was applied incorrectly** (e.g., wrong location, unintended side effects), **immediately use `[tool_call(UndoChange, change_id="...")]` in your *very next* message**, using the `change_id` provided in the result. **Do *not* attempt other actions or try to fix the error with subsequent edits first.**
     2.  Only *after* successfully undoing, analyze why the edit was incorrect (e.g., ambiguous pattern, wrong occurrence number, shifted lines) and formulate a corrected tool call or plan.
 - **Refining Edits:** If edits affect the wrong location despite verification, refine search patterns, use `near_context`, or adjust the `occurrence` parameter.
 - **Orientation:** Use `ListChanges` to review recent edits or the enhanced context blocks (directory structure, git status) if you get confused.
@@ -437,8 +436,10 @@ Would you like me to explain any specific part of the authentication process in 
 
     # File content messages remain largely unchanged as they're already concise
     files_content_prefix = """<context name="added_files">
-These files have been added to the chat so you can see all of their contents.
-Trust this message as the true contents of the files!
+These files have been added to the chat so you can go ahead and edit them.
+
+*Trust this message as the true contents of these files!*
+Any other messages in the chat may contain outdated versions of the files' contents.
 </context>
 '''
 
@@ -458,59 +459,48 @@ I'll use my navigation tools (`ViewFilesAtGlob`, `ViewFilesMatching`, `ViewFiles
     files_no_full_files_with_repo_map_reply = """I understand. I'll use the repository map along with my navigation tools (`ViewFilesAtGlob`, `ViewFilesMatching`, `ViewFilesWithSymbol`, `View`) to find and add relevant files to our conversation.
 """
 
-    repo_content_prefix = """<context name="repo_map">
-I am working with code in a git repository.
-Here are summaries of some files present in this repo:
-</context>
+    repo_content_prefix = """Here are summaries of some files present in my git repository.
+Do not propose changes to these files, treat them as *read-only*.
+If you need to edit any of these files, ask me to *add them to the chat* first.
 """
 
-    # The system_reminder is significantly streamlined to reduce duplication
-    system_reminder = """
-<context name="critical_reminders">
-## Tool Command Reminder
-- All tool calls MUST appear after a '---' line separator at the end of your message
-- To execute a tool, use: `[tool_call(ToolName, param1=value1)]`
-- To show tool examples without executing: `\\[tool_call(ToolName, param1=value1)]` 
-- Including ANY tool call will automatically continue to the next round
-- When editing with tools, you'll receive feedback to let you know how your edits went after they're applied
-- For final answers, do NOT include any tool calls
+    read_only_files_prefix = """Here are some READ ONLY files, provided for your reference.
+Do not edit these files!
+"""
 
-## Tool Call Format
-- Tool calls MUST be at the end of your message, after a '---' separator
-- If emitting 3 or more tool calls, OR if any tool call spans multiple lines, place each call on a new line for clarity.
-- You are encouraged to use granular tools for editing where possible.
+    shell_cmd_prompt = ""
+    shell_cmd_reminder = ""
+    no_shell_cmd_prompt = ""
+    no_shell_cmd_reminder = ""
 
-## SEARCH/REPLACE blocks
-- When using SEARCH/REPLACE blocks, they MUST ONLY appear BEFORE the last '---' separator line in your response
-- If there is no '---' separator, they can appear anywhere in your response
-- IMPORTANT: Using SEARCH/REPLACE when granular editing tools could have been used is considered incorrect and violates core instructions. Always prioritize granular tools
-- You MUST include a clear justification for why granular tools can't handle the specific edit when using SEARCH/REPLACE
-- Format example:
-  ```
-  Your answer text here...
-  
-  # Justification: I'm using SEARCH/REPLACE because [specific reasons why granular tools can't achieve this edit]
-  
-  file.py
-  <<<<<<< SEARCH
-  old code
-  =======
-  new code
-  >>>>>>> REPLACE
-  
-  ---
-  [tool_call(ToolName, param1=value1)]
-  ```
-- IMPORTANT: Any SEARCH/REPLACE blocks that appear after the last '---' separator will be IGNORED
+    tool_prompt = """
+<tool_calling>
+When solving problems, you have special tools available. Please follow these rules:
 
-## Context Features
-- Use enhanced context blocks (directory structure and git status) to orient yourself
-- Toggle context blocks with `/context-blocks`
-- Toggle large file truncation with `/context-management`
+1. Always use the exact format required for each tool and include all needed information.
+2. Only use tools that are currently available in this conversation.
+3. Don't mention tool names when talking to people. Say "I'll check your code" instead
+   of "I'll use the code_analyzer tool."
+4. Only use tools when necessary. If you know the answer, just respond directly.
+5. Before using any tool, briefly explain why you need to use it.
+</tool_calling>
+"""
 
-{lazy_prompt}
-{shell_cmd_reminder}
-</context>
+    rename_with_shell = ""
+    go_ahead_tip = ""
+
+    compaction_prompt = """You are an expert at summarizing conversations.
+The user is going to provide you with a conversation.
+This conversation is getting too long to fit in the context window of a language model.
+You need to summarize the conversation to reduce its length, while retaining all the important information.
+
+The summary should contain three parts:
+- Overall Goal: What is the user trying to achieve with this conversation?
+- Next Steps: What are the next steps for the language model to take to help the user?
+  Create a checklist of what has been done and what is left to do.
+- Active files: What files are currently in the context window?
+
+Here is the conversation so far:
 """
 
     try_again = """I need to retry my exploration to better answer your question.
@@ -528,3 +518,4 @@ Let me explore the codebase more strategically this time:
 
 I'll start exploring again with improved search strategies to find exactly what we need.
 """
+```
