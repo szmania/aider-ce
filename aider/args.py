@@ -122,6 +122,12 @@ def get_parser(default_config_files, git_root):
         default=2.0,
         help="Factor to increase retry delay by (default: 2.0)",
     )
+    group.add_argument(
+        "--retry-on-unavailable",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Retry on ServiceUnavailableError and MidStreamFallbackError (default: False)",
+    )
     group = parser.add_argument_group("Model settings")
     group.add_argument(
         "--list-models",
