@@ -449,6 +449,63 @@ def sanity_check_repo(repo, io):
     return False
 
 
+def discover_and_load_tools(coder, git_root, args):
+    if not hasattr(coder, "tool_add_from_path"):
+        return
+
+    tool_dirs = []
+
+    # 1. Global tools directory
+    global_tools_dir = Path.home() / ".aider" / "tools"
+    if global_tools_dir.is_dir():
+        tool_dirs.append(global_tools_dir)
+
+    # 2. Project-specific tools directory
+    if git_root:
+        project_tools_dir = Path(git_root) / ".aider" / "tools"
+        if project_tools_dir.is_dir():
+            tool_dirs.append(project_tools_dir)
+
+    # 3. Directories from --tools-dir argument
+    if args.tools_dir:
+        for d in args.tools_dir:
+            path = Path(d)
+            if path.is_dir():
+                tool_dirs.append(path)
+            else:
+                coder.io.tool_warning(f"Tools directory not found: {d}")
+
+    if not tool_dirs:
+        return
+
+    discovered_tools = []
+    discovered_paths = set()
+    for tool_dir in tool_dirs:
+        for tool_file in tool_dir.glob("*.py"):
+            resolved_path = tool_file.resolve()
+            if resolved_path not in discovered_paths:
+                discovered_tools.append(tool_file)
+                discovered_paths.add(resolved_path)
+
+    if not discovered_tools:
+        return
+
+    coder.io.tool_output("Discovered custom tools:")
+    tool_paths_str = "\n".join([f"  - {path}" for path in discovered_tools])
+
+    warning_message = (
+        f"WARNING: This will execute the Python code in the following files:\n{tool_paths_str}\n"
+        "Only load tools from sources you trust."
+    )
+
+    if coder.io.confirm_ask(warning_message, default="n", subject=warning_message):
+        for tool_path in discovered_tools:
+            try:
+                coder.tool_add_from_path(str(tool_path))
+            except Exception as e:
+                coder.io.tool_error(f"Failed to load tool {tool_path}: {e}")
+
+
 def main(argv=None, input=None, output=None, force_git_root=None, return_coder=False):
     report_uncaught_exceptions()
 
@@ -1038,6 +1095,8 @@ def main(argv=None, input=None, output=None, force_git_root=None, return_coder=F
         io.tool_error(str(err))
         analytics.event("exit", reason="ValueError during coder creation")
         return 1
+
+    discover_and_load_tools(coder, git_root, args)
 
     if return_coder:
         analytics.event("exit", reason="Returning coder object")

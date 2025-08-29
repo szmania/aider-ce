@@ -789,6 +789,12 @@ def get_parser(default_config_files, git_root):
         default=False,
     )
     group.add_argument(
+        "--tools-dir",
+        action="append",
+        metavar="DIRECTORY",
+        help="Specify a directory to scan for tools on startup (can be used multiple times)",
+    ).complete = shtab.DIR
+    group.add_argument(
         "--file",
         action="append",
         metavar="FILE",
