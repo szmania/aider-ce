@@ -2224,6 +2224,7 @@ class Coder:
             self.mcp_tools.append((server_name, [tool_definition]))
 
         self.local_tool_instances[tool_name] = tool_instance
+        self.functions = self.get_tool_list()
 
         self.io.tool_output(f"Successfully loaded tool: {tool_name}")
 
