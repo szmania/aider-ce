@@ -198,6 +198,8 @@ class Coder:
                 total_tokens_sent=from_coder.total_tokens_sent,
                 total_tokens_received=from_coder.total_tokens_received,
                 file_watcher=from_coder.file_watcher,
+                mcp_servers=from_coder.mcp_servers,
+                mcp_tools=from_coder.mcp_tools,
             )
             use_kwargs.update(update)  # override to complete the switch
             use_kwargs.update(kwargs)  # override passed kwargs
@@ -345,7 +347,7 @@ class Coder:
         total_cost=0.0,
         analytics=None,
         map_refresh="auto",
-        cache_prompts=False,
+        cache_prompts=Cache_prompts,
         num_cache_warming_pings=0,
         suggest_shell_commands=True,
         chat_language=None,
@@ -473,7 +475,7 @@ class Coder:
                 self.repo = GitRepo(
                     self.io,
                     fnames,
-                    None,
+                    git_dname,
                     models=main_model.commit_message_models(),
                 )
             except FileNotFoundError:
