@@ -56,6 +56,11 @@ from .editblock_coder import do_replace, find_original_update_blocks, find_simil
 from .navigator_legacy_prompts import NavigatorLegacyPrompts
 from .navigator_prompts import NavigatorPrompts
 
+try:
+    import pyperclip
+except ImportError:
+    pyperclip = None
+
 
 class NavigatorCoder(Coder):
     """Mode where the LLM autonomously manages which files are in context."""
@@ -916,7 +921,7 @@ class NavigatorCoder(Coder):
     def cmd_copy_context(self, args=None):
         """Copy the current chat context as markdown, suitable to paste into a web UI"""
 
-        chunks = self.coder.format_chat_chunks()
+        chunks = self.format_chat_chunks()
 
         markdown = ""
 
@@ -947,8 +952,15 @@ Just show me the edits I need to make.
 """
 
         try:
-            pyperclip.copy(markdown)
-            self.io.tool_output("Copied code context to clipboard.")
+            if pyperclip:
+                pyperclip.copy(markdown)
+                self.io.tool_output("Copied code context to clipboard.")
+            else:
+                self.io.tool_error("pyperclip is not installed.")
+                self.io.tool_output(
+                    "You may need to install xclip or xsel on Linux, or pbcopy on macOS."
+                )
+
         except pyperclip.PyperclipException as e:
             self.io.tool_error(f"Failed to copy to clipboard: {str(e)}")
             self.io.tool_output(
