@@ -361,11 +361,13 @@ class Coder:
         map_cache_dir=".",
         retry_timeout=RETRY_TIMEOUT,
         retry_backoff_factor=2.0,
+        retry_on_unavailable=False,
     ):
         # initialize from args.map_cache_dir
         self.map_cache_dir = map_cache_dir
         self.retry_timeout = retry_timeout
         self.retry_backoff_factor = retry_backoff_factor
+        self.retry_on_unavailable = retry_on_unavailable
 
         # Fill in a dummy Analytics if needed, but it is never .enable()'d
         self.analytics = analytics if analytics is not None else Analytics()
@@ -1629,6 +1631,12 @@ class Coder:
                         break
 
                     should_retry = ex_info.retry
+                    if self.retry_on_unavailable and ex_info.name in (
+                        "ServiceUnavailableError",
+                        "MidStreamFallbackError",
+                    ):
+                        should_retry = True
+
                     if should_retry:
                         retry_delay *= self.retry_backoff_factor
                         if retry_delay > self.retry_timeout:
