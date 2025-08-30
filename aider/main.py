@@ -526,8 +526,9 @@ def discover_and_load_tools(coder, git_root, args):
         f"WARNING: This will execute the Python code in the following files:\n{tool_paths_str}\n"
         "Only load tools from sources you trust."
     )
+    question = "Load these tools?"
 
-    if coder.io.confirm_ask(warning_message, default="y", subject=warning_message):
+    if coder.io.confirm_ask(question, default="y", subject=warning_message):
         for tool_path in discovered_tools:
             try:
                 coder.tool_add_from_path(str(tool_path))
