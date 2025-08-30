@@ -96,8 +96,8 @@ class Commands:
 
         model = models.Model(
             model_name,
-            weak_model=self.coder.main_model.weak_model.name,
             editor_model=self.coder.main_model.editor_model.name,
+            weak_model=self.coder.main_model.weak_model.name,
         )
         models.sanity_check_models(self.io, model)
 
@@ -1355,7 +1355,7 @@ class Commands:
         coder.run(user_msg, preproc=False)
 
         if self.coder.repo_map:
-            map_tokens = self.coder.repo.repo_map.max_map_tokens
+            map_tokens = self.coder.repo_map.max_map_tokens
             map_mul_no_files = self.coder.repo_map.map_mul_no_files
         else:
             map_tokens = 0
@@ -1365,9 +1365,9 @@ class Commands:
             edit_format=self.coder.edit_format,
             summarize_from_coder=False,
             from_coder=coder,
-            show_announcements=False,
             map_tokens=map_tokens,
             map_mul_no_files=map_mul_no_files,
+            show_announcements=False,
         )
 
     def completions_ask(self):
@@ -1927,8 +1927,9 @@ class Commands:
             + "\n".join([f"- {f}" for f in tool_files_list])
             + "\nOnly load tools from sources you trust."
         )
+        question = "Load these tools?"
 
-        if not self.io.confirm_ask(warning_message, default="n", subject=warning_message):
+        if not self.io.confirm_ask(warning_message, default="y", subject=warning_message):
             self.io.tool_output("Tool loading cancelled.")
             return
 

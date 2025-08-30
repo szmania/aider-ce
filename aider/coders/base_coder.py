@@ -81,7 +81,7 @@ def wrap_fence(name):
 
 all_fences = [
     ("`" * 3, "`" * 3),
-    ("`" * 4, "`" * 4),  # LLMs ignore and revert to triple-backtick, causing #2879
+    ("`" * 4, "`" * 4), # LLMs ignore and revert to triple-backtick, causing #2879
     wrap_fence("source"),
     wrap_fence("code"),
     wrap_fence("pre"),
@@ -133,9 +133,9 @@ class Coder:
     did_discover_tools = False # New class attribute for session-wide tool discovery
 
     # Context management settings (for all modes)
-    context_management_enabled = False  # Disabled by default except for navigator mode
+    context_management_enabled = False # Disabled by default except for navigator mode
     large_file_token_threshold = (
-        25000  # Files larger than this will be truncated when context management is enabled
+        25000 # Files larger than this will be truncated when context management is enabled
     )
 
     @classmethod
@@ -168,7 +168,7 @@ class Coder:
             io = from_coder.io
 
         if from_coder:
-            use_kwargs = dict(from_coder.original_kwargs)  # copy orig kwargs
+            use_kwargs = dict(from_coder.original_kwargs) # copy orig kwargs
 
             # If the edit format changes, we can't leave old ASSISTANT
             # messages in the chat history. The old edit format will
@@ -202,8 +202,8 @@ class Coder:
                 mcp_tools=from_coder.mcp_tools,
                 did_discover_tools=from_coder.did_discover_tools, # Pass the new flag
             )
-            use_kwargs.update(update)  # override to complete the switch
-            use_kwargs.update(kwargs)  # override passed kwargs
+            use_kwargs.update(update) # override to complete the switch
+            use_kwargs.update(kwargs) # override passed kwargs
 
             kwargs = use_kwargs
             from_coder.ok_to_warm_cache = False
@@ -751,7 +751,7 @@ class Coder:
                         # Keep the first and last parts of the file with a marker in between
                         keep_lines = (
                             self.large_file_token_threshold // 40
-                        )  # Rough estimate of tokens per line
+                        ) # Rough estimate of tokens per line
                         first_chunk = lines[: keep_lines // 2]
                         last_chunk = lines[-(keep_lines // 2) :]
 
@@ -800,7 +800,7 @@ class Coder:
                         # Keep the first and last parts of the file with a marker in between
                         keep_lines = (
                             self.large_file_token_threshold // 40
-                        )  # Rough estimate of tokens per line
+                        ) # Rough estimate of tokens per line
                         first_chunk = lines[: keep_lines // 2]
                         last_chunk = lines[-(keep_lines // 2) :]
 
@@ -851,7 +851,7 @@ class Coder:
             try:
                 # Handle dotfiles properly
                 path = Path(fname)
-                base = path.stem.lower()  # Use stem instead of with_suffix("").name
+                base = path.stem.lower() # Use stem instead of with_suffix("").name
                 if len(base) >= 5:
                     all_fnames[base].add(fname)
             except ValueError:
@@ -1104,6 +1104,16 @@ class Coder:
             self.num_reflections += 1
             message = self.reflected_message
 
+        # Call the post-edit actions hook after the entire turn is complete
+        self.post_edit_actions()
+
+    def post_edit_actions(self):
+        """
+        Hook for actions to be performed after edits are applied in a turn.
+        Subclasses can override this method to implement post-turn logic.
+        """
+        pass
+
     def check_and_open_urls(self, exc, friendly_msg=None):
         """Check exception for URLs, offer to open in a browser, with user-friendly error msgs."""
         text = str(exc)
@@ -1119,7 +1129,7 @@ class Coder:
         # Use set to remove duplicates
         urls = list(set(url_pattern.findall(text)))
         for url in urls:
-            url = url.rstrip(".',\"}")  # Added } to the characters to strip
+            url = url.rstrip(".',\"}") # Added } to the characters to strip
             self.io.offer_url(url)
         return urls
 
@@ -1152,7 +1162,7 @@ class Coder:
 
         now = time.time()
 
-        thresh = 2  # seconds
+        thresh = 2 # seconds
         if self.last_keyboard_interrupt and now - self.last_keyboard_interrupt < thresh:
             self.io.tool_warning("\n\n^C KeyboardInterrupt")
             self.event("exit", reason="Control-C")
@@ -1254,7 +1264,7 @@ class Coder:
     def normalize_language(self, lang_code):
         """
         Convert a locale code such as ``en_US`` or ``fr`` into a readable
-        language name (e.e.g. ``English`` or ``French``).  If Babel is
+        language name (e.e.g. ``English`` or ``French``). If Babel is
         available it is used for reliable conversion; otherwise a small
         built-in fallback map handles common languages.
         """
@@ -1279,7 +1289,7 @@ class Coder:
                 loc = Locale.parse(lang_code.replace("-", "_"))
                 return loc.get_display_name("en").capitalize()
             except Exception:
-                pass  # Fall back to manual mapping
+                pass # Fall back to manual mapping
 
         # Simple fallback for common languages
         fallback = {
@@ -1325,7 +1335,7 @@ class Coder:
         for env_var in ("LANG", "LANGUAGE", "LC_ALL", "LC_MESSAGES"):
             lang = os.environ.get(env_var)
             if lang:
-                lang = lang.split(".")[0]  # Strip encoding if present
+                lang = lang.split(".")[0] # Strip encoding if present
                 return self.normalize_language(lang)
 
         return None
@@ -1407,7 +1417,7 @@ class Coder:
             )
             rename_with_shell = ""
 
-        if user_lang:  # user_lang is the result of self.get_user_language()
+        if user_lang: # user_lang is the result of self.get_user_language()
             language = user_lang
         else:
             # Default if no specific lang detected
@@ -2014,7 +2024,7 @@ class Coder:
                                     continue
 
                         if not parsed_args_list and not args_string:
-                            parsed_args_list.append({})  # For tool calls with no arguments
+                            parsed_args_list.append({}) # For tool calls with no arguments
 
                         all_results_content = []
                         for args in parsed_args_list:
@@ -2029,11 +2039,11 @@ class Coder:
                             content_parts = []
                             if call_result.content:
                                 for item in call_result.content:
-                                    if hasattr(item, "resource"):  # EmbeddedResource
+                                    if hasattr(item, "resource"): # EmbeddedResource
                                         resource = item.resource
-                                        if hasattr(resource, "text"):  # TextResourceContents
+                                        if hasattr(resource, "text"): # TextResourceContents
                                             content_parts.append(resource.text)
-                                        elif hasattr(resource, "blob"):  # BlobResourceContents
+                                        elif hasattr(resource, "blob"): # BlobResourceContents
                                             try:
                                                 decoded_blob = base64.b64decode(
                                                     resource.blob
@@ -2049,7 +2059,7 @@ class Coder:
                                                     "[embedded binary resource:"
                                                     f" {name} ({mime_type})]"
                                                 )
-                                    elif hasattr(item, "text"):  # TextContent
+                                    elif hasattr(item, "text"): # TextContent
                                         content_parts.append(item.text)
 
                             result_text = "".join(content_parts)
@@ -2103,7 +2113,7 @@ class Coder:
                     break
                 except asyncio.exceptions.CancelledError:
                     if i < max_retries - 1:
-                        time.sleep(0.1)  # Brief pause before retrying
+                        time.sleep(0.1) # Brief pause before retrying
                     else:
                         self.io.tool_warning(
                             "MCP tool execution failed after multiple retries due to cancellation."
@@ -2154,7 +2164,7 @@ class Coder:
                     break
                 except asyncio.exceptions.CancelledError:
                     if i < max_retries - 1:
-                        time.sleep(0.1)  # Brief pause before retrying
+                        time.sleep(0.1) # Brief pause before retrying
                     else:
                         self.io.tool_warning(
                             "MCP tool initialization failed after multiple retries due to"
@@ -2969,7 +2979,7 @@ class Coder:
             else:
                 occurrences.append(index)
 
-            start = index + 1  # Move past this occurrence's start
+            start = index + 1 # Move past this occurrence's start
         return occurrences
 
     # commits...

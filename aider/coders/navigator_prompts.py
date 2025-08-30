@@ -75,6 +75,10 @@ Act as an expert software engineer with the ability to autonomously navigate and
 - **MakeReadonly**: `[tool_call(MakeReadonly, file_path="src/main.py")]`
   Convert an editable file back to read-only status.
 
+### Tool Creation Tools
+- **CreateTool**: `[tool_call(CreateTool, description="a tool to count lines of code in a file", file_name="line_counter.py")]`
+  Create a new custom tool by providing a natural language `description` of its functionality and a `file_name` (must end with .py and not contain path separators). The new tool will be automatically loaded and available for use in subsequent turns.
+
 ### Granular Editing Tools
 - **ReplaceText**: `[tool_call(ReplaceText, file_path="...", find_text="...", replace_text="...", near_context="...", occurrence=1, dry_run=False)]`
   Replace specific text. `near_context` (optional) helps find the right spot. `occurrence` (optional, default 1) specifies which match (-1 for last). `dry_run=True` simulates the change.
@@ -438,7 +442,7 @@ Would you like me to explain any specific part of the authentication process in 
     # File content messages remain largely unchanged as they're already concise
     files_content_prefix = """<context name="added_files">
 These files have been added to the chat so you can see all of their contents.
-Trust this message as the true contents of the files!
+Trust this message as the true contents of these files!
 </context>
 '''
 
