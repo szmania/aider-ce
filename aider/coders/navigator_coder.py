@@ -161,7 +161,7 @@ class NavigatorCoder(Coder):
             self.mcp_tools[local_tools_entry_index] = ("local_tools", current_local_tool_schemas)
         else:
             # Add a new entry for "local_tools" with the schemas
-            self.mcp_tools.append(("local_tools", [current_local_tool_schemas]))
+            self.mcp_tools.append(("local_tools", current_local_tool_schemas))
 
         # Finally, always call self.functions = self.get_tool_list() to ensure the master list
         # of tools available to the LLM is refreshed.
@@ -418,10 +418,6 @@ class NavigatorCoder(Coder):
                             },
                         },
                         "required": ["description", "file_name"],
-                    },
-                    "returns": {
-                        "type": "string",
-                        "description": "A message indicating whether the tool was successfully created and loaded, or an error message.",
                     },
                 },
             },
