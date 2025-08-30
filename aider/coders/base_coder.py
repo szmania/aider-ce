@@ -386,6 +386,7 @@ class Coder:
         self.commit_language = commit_language
         self.commit_before_message = []
         self.aider_commit_hashes = set()
+        self.reflected_message = None # ARCHITECT: Added initialization for reflected_message
         self.rejected_urls = set()
         self.abs_root_path_cache = {}
 
@@ -1048,6 +1049,12 @@ class Coder:
 
     def run(self, with_message=None, preproc=True):
         try:
+            # ARCHITECT: Added logic to trigger fix prompts at startup
+            if self.reflected_message:
+                message_to_run = self.reflected_message
+                self.reflected_message = None # Clear it after retrieving
+                self.run_one(message_to_run, preproc=False)
+
             if with_message:
                 self.io.user_input(with_message)
                 self.run_one(with_message, preproc)
