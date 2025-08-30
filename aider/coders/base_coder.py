@@ -1186,7 +1186,7 @@ class Coder:
             self.io.tool_output("Finished summarizing chat history.")
 
     def summarize_end(self):
-        if self.summarizer_thread is None:
+        if self.summarizer_thread == None:
             return
 
         self.summarizer_thread.join()
@@ -2783,7 +2783,7 @@ class Coder:
             self.check_for_dirty_commit(path)
             return True
 
-        if self.repo and self.repo.git_ignored_file(path):
+        if self.repo and self.repo.git_ignored_file(path) and not self.add_gitignore_files:
             self.io.tool_warning(f"Skipping edits to {path} that matches gitignore spec.")
             return
 
