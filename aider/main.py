@@ -527,7 +527,7 @@ def discover_and_load_tools(coder, git_root, args):
         "Only load tools from sources you trust."
     )
 
-    if coder.io.confirm_ask(warning_message, default="n", subject=warning_message):
+    if coder.io.confirm_ask(warning_message, default="y", subject=warning_message):
         for tool_path in discovered_tools:
             try:
                 coder.tool_add_from_path(str(tool_path))
@@ -596,9 +596,6 @@ def main(argv=None, input=None, output=None, force_git_root=None, return_coder=F
         parser.prog = "aider"
         print(shtab.complete(parser, shell=args.shell_completions))
         sys.exit(0)
-
-    if git is None:
-        args.git = False
 
     if args.analytics_disable:
         analytics = Analytics(permanently_disable=True)
@@ -1126,7 +1123,7 @@ def main(argv=None, input=None, output=None, force_git_root=None, return_coder=F
         analytics.event("exit", reason="ValueError during coder creation")
         return 1
 
-    discover_and_load_tools(coder, git_root, args)
+    discover_and_load_tools(coder, git_root, args) # Call discovery after new coder is created
 
     if return_coder:
         analytics.event("exit", reason="Returning coder object")
