@@ -491,7 +491,24 @@ class Coder:
 
         for fname in fnames:
             fname = Path(fname)
-            if self.repo and self.repo.git_ignored_file(fname) and not self.add_gitignore_files:
+
+            # Don't gitignore files in .aider.tools
+            is_tool_file = False
+            if self.repo and self.repo.root:
+                try:
+                    # Get path relative to repo root
+                    rel_path = fname.resolve().relative_to(Path(self.repo.root).resolve())
+                    if ".aider.tools" in rel_path.parts:
+                        is_tool_file = True
+                except ValueError:
+                    pass  # Not a subpath of repo root
+
+            if (
+                self.repo
+                and self.repo.git_ignored_file(fname)
+                and not self.add_gitignore_files
+                and not is_tool_file
+            ):
                 self.io.tool_warning(f"Skipping {fname} that matches gitignore spec.")
                 continue
 
@@ -2823,7 +2840,20 @@ class Coder:
             self.check_for_dirty_commit(path)
             return True
 
-        if self.repo and self.repo.git_ignored_file(path) and not self.add_gitignore_files:
+        # Don't gitignore files in .aider.tools
+        is_tool_file = False
+        try:
+            if ".aider.tools" in Path(path).parts:
+                is_tool_file = True
+        except Exception:
+            pass
+
+        if (
+            self.repo
+            and self.repo.git_ignored_file(path)
+            and not self.add_gitignore_files
+            and not is_tool_file
+        ):
             self.io.tool_warning(f"Skipping edits to {path} that matches gitignore spec.")
             return
 
