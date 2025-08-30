@@ -695,15 +695,6 @@ class NavigatorCoder(Coder):
                         "name": {"type": "string", "pattern": r"^[a-zA-Z0-9_]{1,64}$"},
                         "description": {"type": "string"},
                         "parameters": {"type": "object"}, # Will be validated separately as a JSON schema
-                        "returns": { # Optional returns object
-                            "type": "object",
-                            "properties": {
-                                "type": "string",
-                                "description": "string",
-                            },
-                            "required": ["type", "description"],
-                            "additionalProperties": False,
-                        },
                     },
                     "required": ["name", "description", "parameters"],
                     "additionalProperties": False,
@@ -827,12 +818,16 @@ class NavigatorCoder(Coder):
                 self.io.tool_output(
                     f"'{rel_file_path}' added to the chat. Attempting to fix the error automatically..."
                 )
+                # ARCHITECT: Added logic to queue the fix prompt
                 fix_prompt = (
                     f"The tool at `{rel_file_path}` failed to load with this error:\n\n"
                     f"```\n{e}\n```\n\n"
                     "Please fix the code in the file."
                 )
-                self.reflected_message = fix_prompt
+                if self.reflected_message:
+                    self.reflected_message += "\n\n" + fix_prompt
+                else:
+                    self.reflected_message = fix_prompt
             else:
                 self.io.tool_output(f"Skipping automatic fix for '{rel_file_path}'.")
 
@@ -1857,6 +1852,7 @@ class NavigatorCoder(Coder):
                 self.io.tool_warning(
                     f"Malformed tool call for '{tool_name}'. Missing closing parenthesis or"
                     " bracket. Skipping."
+
                 )
                 # Append the start marker itself to processed content so it's not lost
                 processed_content += start_marker
