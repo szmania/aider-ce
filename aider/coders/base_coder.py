@@ -2831,7 +2831,7 @@ class Coder:
             need_to_add = False
 
         def add_to_git(path_to_add):
-            if self.repo.git_ignored_file(path_to_add) and self.add_gitignore_files:
+            if (self.repo.git_ignored_file(path_to_add) and self.add_gitignore_files) or is_tool_file:
                 self.repo.repo.git.add(path_to_add, force=True)
             else:
                 self.repo.repo.git.add(path_to_add)
@@ -2870,7 +2870,7 @@ class Coder:
                 # Seems unlikely that we needed to create the file, but it was
                 # actually already part of the repo.
                 # But let's only add if we need to, just to be safe.
-                if need_to_add:
+                if need_to_add and not is_tool_file:
                     add_to_git(full_path)
 
             self.abs_fnames.add(full_path)

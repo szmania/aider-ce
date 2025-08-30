@@ -879,6 +879,9 @@ class NavigatorCoder(Coder):
                         single_result = _execute_command_interactive(self, **params)
                     elif norm_tool_name == "grep":
                         single_result = _execute_grep(self, **params)
+                    elif norm_tool_name == "createtool":
+                        tool_instance = CreateTool(self)
+                        single_result = tool_instance.run(**params)
                     elif norm_tool_name == "replacetext":
                         single_result = _execute_replace_text(self, **params)
                     elif norm_tool_name == "replaceall":
@@ -2109,6 +2112,11 @@ class NavigatorCoder(Coder):
                         )
                     else:
                         result_message = "Error: Missing required 'pattern' parameter for Grep"
+
+                elif norm_tool_name == "createtool":
+                    tool_instance = CreateTool(self)
+                    single_result = tool_instance.run(**params)
+                    result_message = single_result
 
                 # Granular editing tools
                 elif norm_tool_name == "replacetext":
