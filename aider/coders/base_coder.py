@@ -2114,7 +2114,11 @@ class Coder:
                 await server.disconnect()
 
         async def get_all_server_tools():
-            tasks = [get_server_tools(server) for server in self.mcp_servers]
+            tasks = [
+                get_server_tools(server)
+                for server in self.mcp_servers
+                if not isinstance(server, LocalServer)
+            ]
             results = await asyncio.gather(*tasks)
             return [result for result in results if result is not None]
 
@@ -2696,10 +2700,6 @@ class Coder:
             return os.path.relpath(fname, self.root)
         except ValueError:
             return fname
-
-    def get_inchat_relative_files(self):
-        files = [self.get_rel_fname(fname) for fname in self.abs_fnames]
-        return sorted(set(files))
 
     def is_file_safe(self, fname):
         try:
