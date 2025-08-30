@@ -699,6 +699,34 @@ class Coder:
             else:
                 yield fname, content
 
+    def choose_fence(self):
+        all_content = ""
+        for _fname, content in self.get_abs_fnames_content():
+            all_content += content + "\n"
+        for _fname in self.abs_read_only_fnames:
+            content = self.io.read_text(_fname)
+            if content is not None:
+                all_content += content + "\n"
+
+        lines = all_content.splitlines()
+        good = False
+        for fence_open, fence_close in self.fences:
+            if any(line.startswith(fence_open) or line.startswith(fence_close) for line in lines):
+                continue
+            good = True
+            break
+
+        if good:
+            self.fence = (fence_open, fence_close)
+        else:
+            self.fence = self.fences[0]
+            self.io.tool_warning(
+                "Unable to find a fencing strategy! Falling back to:"
+                f" {self.fence[0]}...{self.fence[1]}"
+            )
+
+        return
+
     def get_files_content(self, fnames=None):
         if not fnames:
             fnames = self.abs_fnames
@@ -1158,7 +1186,7 @@ class Coder:
             self.io.tool_output("Finished summarizing chat history.")
 
     def summarize_end(self):
-        if self.summarizer_thread == None:
+        if self.summarizer_thread is None:
             return
 
         self.summarizer_thread.join()
