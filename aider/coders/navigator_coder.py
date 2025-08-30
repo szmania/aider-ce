@@ -56,7 +56,6 @@ from aider.tools.view_files_matching import execute_view_files_matching
 from aider.tools.view_files_with_symbol import _execute_view_files_with_symbol
 
 from .base_coder import ChatChunks, Coder
-from .editblock_coder import do_replace, find_original_update_blocks, find_similar_lines
 from .navigator_legacy_prompts import NavigatorLegacyPrompts
 from .navigator_prompts import NavigatorPrompts
 
@@ -126,6 +125,10 @@ class NavigatorCoder(Coder):
         self.local_tool_instances = {}
 
     def initialize_local_tools(self):
+        # Ensure self.mcp_tools is always a list, even if empty
+        if not self.mcp_tools:
+            self.mcp_tools = []
+
         if not self.use_granular_editing:
             return
 
@@ -140,9 +143,6 @@ class NavigatorCoder(Coder):
             self.mcp_servers = []
         if not any(isinstance(s, LocalServer) for s in self.mcp_servers):
             self.mcp_servers.append(local_server)
-
-        if not self.mcp_tools:
-            self.mcp_tools = []
 
         if "local_tools" not in [name for name, _ in self.mcp_tools]:
             self.mcp_tools.append((local_server.name, local_tools))
