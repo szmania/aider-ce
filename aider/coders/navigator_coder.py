@@ -119,6 +119,9 @@ class NavigatorCoder(Coder):
         self.context_blocks_cache = {}
         self.tokens_calculated = False
 
+        # Track a tool file that failed to load and might need reloading after a fix
+        self.tool_file_to_reload_after_fix = None
+
         super().__init__(*args, **kwargs)
         self.initialize_local_tools()
 
@@ -669,8 +672,8 @@ class NavigatorCoder(Coder):
                         "returns": { # Optional returns object
                             "type": "object",
                             "properties": {
-                                "type": {"type": "string"},
-                                "description": {"type": "string"},
+                                "type": "string",
+                                "description": "string",
                             },
                             "required": ["type", "description"],
                             "additionalProperties": False,
@@ -785,6 +788,7 @@ class NavigatorCoder(Coder):
 
         except Exception as e:
             rel_file_path = self.get_rel_fname(file_path)
+            self.tool_file_to_reload_after_fix = rel_file_path # Flag the file for potential reload
             self.io.tool_error(f"Error loading tool from {rel_file_path}: {e}")
             # Automatically add the file to the chat and attempt to fix it
             self.add_rel_fname(rel_file_path)
@@ -1660,6 +1664,30 @@ class NavigatorCoder(Coder):
         )  # Pass None as we handled commit message earlier if needed
         return True  # Indicate exploration is finished for this round
 
+    def post_edit_actions(self):
+        """
+        Hook for actions to be performed after edits are applied in a turn.
+        This implementation checks if a failed tool file was fixed and prompts for reload.
+        """
+        if self.tool_file_to_reload_after_fix:
+            rel_file_path = self.tool_file_to_reload_after_fix
+            if rel_file_path in self.aider_edited_files:
+                # The AI has just edited the tool file that previously failed to load.
+                # Prompt the user to reload it.
+                self.tool_file_to_reload_after_fix = None # Reset to prevent re-prompting
+                abs_file_path = self.abs_root_path(rel_file_path)
+
+                if self.io.confirm_ask(
+                    f"The tool file '{rel_file_path}' was just edited. Do you want to reload it?",
+                    subject="Tool file updated",
+                ):
+                    self.io.tool_output(f"Reloading tool from '{rel_file_path}'...")
+                    self.tool_add_from_path(abs_file_path)
+                else:
+                    self.io.tool_output(f"Skipping reload of tool from '{rel_file_path}'.")
+
+        super().post_edit_actions()
+
     def _process_tool_commands(self, content):
         """
         Process tool commands in the `[tool_call(name, param=value)]` format within the content.
@@ -1698,7 +1726,7 @@ class NavigatorCoder(Coder):
 
         # Support any [tool_...(...)] format
         tool_call_pattern = re.compile(r"\[tool_.*?\(", re.DOTALL)
-        end_marker = "]"  # The parenthesis balancing finds the ')', we just need the final ']'
+        end_marker = "]" # The parenthesis balancing finds the ')', we just need the final ']'
 
         while True:
             match = tool_call_pattern.search(content_after_separator, last_index)
@@ -1760,14 +1788,14 @@ class NavigatorCoder(Coder):
             expected_end_marker_start = end_paren_pos + 1
             actual_end_marker_start = -1
             end_marker_found = False
-            if end_paren_pos != -1:  # Only search if we found a closing parenthesis
+            if end_paren_pos != -1: # Only search if we found a closing parenthesis
                 for j in range(expected_end_marker_start, len(content_after_separator)):
                     if not content_after_separator[j].isspace():
                         actual_end_marker_start = j
                         # Check if the found character is the end marker ']'
                         if content_after_separator[actual_end_marker_start] == end_marker:
                             end_marker_found = True
-                        break  # Stop searching after first non-whitespace char
+                        break # Stop searching after first non-whitespace char
 
             if not end_marker_found:
                 # Try to extract the tool name for better error message
@@ -1776,7 +1804,7 @@ class NavigatorCoder(Coder):
                     # Look for the first comma after the tool call start
                     partial_content = content_after_separator[
                         scan_start_pos : scan_start_pos + 100
-                    ]  # Limit to avoid huge strings
+                    ] # Limit to avoid huge strings
                     comma_pos = partial_content.find(",")
                     if comma_pos > 0:
                         tool_name = partial_content[:comma_pos].strip()
@@ -1789,7 +1817,7 @@ class NavigatorCoder(Coder):
                         elif paren_pos > 0:
                             tool_name = partial_content[:paren_pos].strip()
                 except Exception:
-                    pass  # Silently fail if we can't extract the name
+                    pass # Silently fail if we can't extract the name
 
                 # Malformed call: couldn't find matching ')' or the subsequent ']'
                 self.io.tool_warning(
@@ -1798,16 +1826,16 @@ class NavigatorCoder(Coder):
                 )
                 # Append the start marker itself to processed content so it's not lost
                 processed_content += start_marker
-                last_index = scan_start_pos  # Continue searching after the marker
+                last_index = scan_start_pos # Continue searching after the marker
                 continue
 
             # Found a potential tool call
             # Adjust full_match_str and last_index based on the actual end marker ']' position
             full_match_str = content_after_separator[
                 start_pos : actual_end_marker_start + 1
-            ]  # End marker ']' is 1 char
+            ] # End marker ']' is 1 char
             inner_content = content_after_separator[scan_start_pos:end_paren_pos].strip()
-            last_index = actual_end_marker_start + 1  # Move past the processed call (including ']')
+            last_index = actual_end_marker_start + 1 # Move past the processed call (including ']')
 
             call_count += 1
             if call_count > max_calls:
@@ -1815,7 +1843,7 @@ class NavigatorCoder(Coder):
                     f"Exceeded maximum tool calls ({max_calls}). Skipping remaining calls."
                 )
                 # Don't append the skipped call to processed_content
-                continue  # Skip processing this call
+                continue # Skip processing this call
 
             tool_calls_found = True
             tool_name = None
@@ -1891,7 +1919,7 @@ class NavigatorCoder(Coder):
                                 if hasattr(value_node, "end_lineno")
                                 else lineno
                             )
-                            if end_lineno > lineno:  # It's a multiline string
+                            if end_lineno > lineno: # It's a multiline string
                                 # Trim exactly one leading and one trailing newline if present
                                 if value.startswith("\n"):
                                     value = value[1:]
@@ -1899,7 +1927,7 @@ class NavigatorCoder(Coder):
                                     value = value[:-1]
                     elif isinstance(
                         value_node, ast.Name
-                    ):  # Handle unquoted values like True/False/None or variables
+                    ): # Handle unquoted values like True/False/None or variables
                         id_val = value_node.id.lower()
                         if id_val == "true":
                             value = True
@@ -1908,7 +1936,7 @@ class NavigatorCoder(Coder):
                         elif id_val == "none":
                             value = None
                         else:
-                            value = value_node.id  # Keep as string if it's something else
+                            value = value_node.id # Keep as string if it's something else
                     # Add more types if needed (e.g., ast.List, ast.Dict)
                     else:
                         # Attempt to reconstruct the source for complex types, or raise error
@@ -1916,7 +1944,7 @@ class NavigatorCoder(Coder):
                             # Note: ast.unparse requires Python 3.9+
                             # If using older Python, might need a different approach or limit supported types
                             value = ast.unparse(value_node)
-                        except AttributeError:  # Handle case where ast.unparse is not available
+                        except AttributeError: # Handle case where ast.unparse is not available
                             raise ValueError(
                                 f"Unsupported argument type for key '{key}': {type(value_node)}"
                             )
@@ -1941,8 +1969,8 @@ class NavigatorCoder(Coder):
                 self.io.tool_error(f"Failed to parse tool call: {full_match_str}\nError: {e}")
                 # Don't append the malformed call to processed_content
                 result_messages.append(f"[Result (Parse Error): {result_message}]")
-                continue  # Skip execution
-            except Exception as e:  # Catch any other unexpected parsing errors
+                continue # Skip execution
+            except Exception as e: # Catch any other unexpected parsing errors
                 result_message = f"Unexpected error parsing tool call '{inner_content}': {e}"
                 self.io.tool_error(
                     f"Unexpected error during parsing: {full_match_str}\nError:"
@@ -1965,8 +1993,8 @@ class NavigatorCoder(Coder):
                         result_message = "Error: Missing 'pattern' parameter for ViewFilesAtGlob"
                 elif norm_tool_name == "viewfilesmatching":
                     pattern = params.get("pattern")
-                    file_pattern = params.get("file_pattern")  # Optional
-                    regex = params.get("regex", False)  # Default to False if not provided
+                    file_pattern = params.get("file_pattern") # Optional
+                    regex = params.get("regex", False) # Default to False if not provided
                     if pattern is not None:
                         result_message = execute_view_files_matching(
                             self, pattern, file_pattern, regex
@@ -2030,12 +2058,12 @@ class NavigatorCoder(Coder):
                 # Grep tool
                 elif norm_tool_name == "grep":
                     pattern = params.get("pattern")
-                    file_pattern = params.get("file_pattern", "*")  # Default to all files
-                    directory = params.get("directory", ".")  # Default to current directory
-                    use_regex = params.get("use_regex", False)  # Default to literal search
+                    file_pattern = params.get("file_pattern", "*") # Default to all files
+                    directory = params.get("directory", ".") # Default to current directory
+                    use_regex = params.get("use_regex", False) # Default to literal search
                     case_insensitive = params.get(
                         "case_insensitive", False
-                    )  # Default to case-sensitive
+                    ) # Default to case-sensitive
                     context_before = params.get("context_before", 5)
                     context_after = params.get("context_after", 5)
 
@@ -2062,9 +2090,9 @@ class NavigatorCoder(Coder):
                     find_text = params.get("find_text")
                     replace_text = params.get("replace_text")
                     near_context = params.get("near_context")
-                    occurrence = params.get("occurrence", 1)  # Default to first occurrence
+                    occurrence = params.get("occurrence", 1) # Default to first occurrence
                     change_id = params.get("change_id")
-                    dry_run = params.get("dry_run", False)  # Default to False
+                    dry_run = params.get("dry_run", False) # Default to False
 
                     if file_path is not None and find_text is not None and replace_text is not None:
                         result_message = _execute_replace_text(
@@ -2088,7 +2116,7 @@ class NavigatorCoder(Coder):
                     find_text = params.get("find_text")
                     replace_text = params.get("replace_text")
                     change_id = params.get("change_id")
-                    dry_run = params.get("dry_run", False)  # Default to False
+                    dry_run = params.get("dry_run", False) # Default to False
 
                     if file_path is not None and find_text is not None and replace_text is not None:
                         result_message = _execute_replace_all(
@@ -2105,12 +2133,12 @@ class NavigatorCoder(Coder):
                     content = params.get("content")
                     after_pattern = params.get("after_pattern")
                     before_pattern = params.get("before_pattern")
-                    occurrence = params.get("occurrence", 1)  # Default 1
+                    occurrence = params.get("occurrence", 1) # Default 1
                     change_id = params.get("change_id")
-                    dry_run = params.get("dry_run", False)  # Default False
+                    dry_run = params.get("dry_run", False) # Default False
                     position = params.get("position")
-                    auto_indent = params.get("auto_indent", True)  # Default True
-                    use_regex = params.get("use_regex", False)  # Default False
+                    auto_indent = params.get("auto_indent", True) # Default True
+                    use_regex = params.get("use_regex", False) # Default False
 
                     if (
                         file_path is not None
@@ -2145,10 +2173,10 @@ class NavigatorCoder(Coder):
                     start_pattern = params.get("start_pattern")
                     end_pattern = params.get("end_pattern")
                     line_count = params.get("line_count")
-                    near_context = params.get("near_context")  # New
-                    occurrence = params.get("occurrence", 1)  # New, default 1
+                    near_context = params.get("near_context") # New
+                    occurrence = params.get("occurrence", 1) # New, default 1
                     change_id = params.get("change_id")
-                    dry_run = params.get("dry_run", False)  # New, default False
+                    dry_run = params.get("dry_run", False) # New, default False
 
                     if file_path is not None and start_pattern is not None:
                         result_message = _execute_delete_block(
@@ -2173,7 +2201,7 @@ class NavigatorCoder(Coder):
                     line_number = params.get("line_number")
                     new_content = params.get("new_content")
                     change_id = params.get("change_id")
-                    dry_run = params.get("dry_run", False)  # New, default False
+                    dry_run = params.get("dry_run", False) # New, default False
 
                     if (
                         file_path is not None
@@ -2195,7 +2223,7 @@ class NavigatorCoder(Coder):
                     end_line = params.get("end_line")
                     new_content = params.get("new_content")
                     change_id = params.get("change_id")
-                    dry_run = params.get("dry_run", False)  # New, default False
+                    dry_run = params.get("dry_run", False) # New, default False
 
                     if (
                         file_path is not None
@@ -2217,11 +2245,11 @@ class NavigatorCoder(Coder):
                     start_pattern = params.get("start_pattern")
                     end_pattern = params.get("end_pattern")
                     line_count = params.get("line_count")
-                    indent_levels = params.get("indent_levels", 1)  # Default to indent 1 level
-                    near_context = params.get("near_context")  # New
-                    occurrence = params.get("occurrence", 1)  # New, default 1
+                    indent_levels = params.get("indent_levels", 1) # Default to indent 1 level
+                    near_context = params.get("near_context") # New
+                    occurrence = params.get("occurrence", 1) # New, default 1
                     change_id = params.get("change_id")
-                    dry_run = params.get("dry_run", False)  # New, default False
+                    dry_run = params.get("dry_run", False) # New, default False
 
                     if file_path is not None and start_pattern is not None:
                         result_message = _execute_indent_lines(
@@ -2319,7 +2347,7 @@ class NavigatorCoder(Coder):
                     file_path = params.get("file_path")
                     pattern = params.get("pattern")
                     line_number = params.get("line_number")
-                    context_lines = params.get("context_lines", 3)  # Default context
+                    context_lines = params.get("context_lines", 3) # Default context
 
                     if file_path is not None and (pattern is not None or line_number is not None):
                         result_message = execute_show_numbered_context(
@@ -2397,7 +2425,7 @@ class NavigatorCoder(Coder):
             # 2. Prepare edits (check permissions, commit dirty files)
             prepared_edits = []
             seen_paths = dict()
-            self.need_commit_before_edits = set()  # Reset before checking
+            self.need_commit_before_edits = set() # Reset before checking
 
             for edit in edits:
                 path = edit[0]
@@ -2412,7 +2440,7 @@ class NavigatorCoder(Coder):
 
             # Commit any dirty files identified by allowed_to_edit
             self.dirty_commit()
-            self.need_commit_before_edits = set()  # Clear after commit
+            self.need_commit_before_edits = set() # Clear after commit
 
             # 3. Apply edits (logic adapted from EditBlockCoder.apply_edits)
             failed = []
@@ -2449,7 +2477,7 @@ class NavigatorCoder(Coder):
                         self.io.tool_output(f"Applied edit to {path}")
                     else:
                         self.io.tool_output(f"Did not apply edit to {path} (--dry-run)")
-                    passed.append((path, original, updated))  # Store path relative to root
+                    passed.append((path, original, updated)) # Store path relative to root
                 else:
                     failed.append(edit)
 
@@ -2460,7 +2488,7 @@ class NavigatorCoder(Coder):
                 for edit in failed:
                     path, original, updated = edit
                     full_path = self.abs_root_path(path)
-                    content = self.io.read_text(full_path)  # Read content again for context
+                    content = self.io.read_text(full_path) # Read content again for context
 
                     error_message += f"""
 ## SearchReplaceNoExactMatch: This SEARCH block failed to exactly match lines in {path}
@@ -2498,18 +2526,18 @@ Just reply with fixed versions of the {blocks} above that failed to match.
                 # Set reflected_message to prompt LLM to fix the failed blocks
                 self.reflected_message = error_message
 
-            edited_files = set(edit[0] for edit in passed)  # Use relative paths stored in passed
+            edited_files = set(edit[0] for edit in passed) # Use relative paths stored in passed
 
             # 4. Post-edit actions (commit, lint, test, shell commands)
             if edited_files:
-                self.aider_edited_files.update(edited_files)  # Track edited files
+                self.aider_edited_files.update(edited_files) # Track edited files
                 self.auto_commit(edited_files)
                 # We don't use saved_message here as we are not moving history back
 
                 if self.auto_lint:
                     lint_errors = self.lint_edited(edited_files)
                     self.auto_commit(edited_files, context="Ran the linter")
-                    if lint_errors and not self.reflected_message:  # Reflect only if no edit errors
+                    if lint_errors and not self.reflected_message: # Reflect only if no edit errors
                         ok = self.io.confirm_ask("Attempt to fix lint errors?")
                         if ok:
                             self.reflected_message = lint_errors
@@ -2520,7 +2548,7 @@ Just reply with fixed versions of the {blocks} above that failed to match.
                     # Let's just display for now to avoid complex history manipulation
                     self.io.tool_output("Shell command output:\n" + shared_output)
 
-                if self.auto_test and not self.reflected_message:  # Reflect only if no prior errors
+                if self.auto_test and not self.reflected_message: # Reflect only if no prior errors
                     test_errors = self.commands.cmd_test(self.test_cmd)
                     if test_errors:
                         ok = self.io.confirm_ask("Attempt to fix test errors?")
@@ -2537,7 +2565,7 @@ Just reply with fixed versions of the {blocks} above that failed to match.
             self.io.tool_output(urls.edit_errors)
             self.io.tool_output()
             self.io.tool_output(str(error_message))
-            self.reflected_message = str(error_message)  # Reflect parsing errors
+            self.reflected_message = str(error_message) # Reflect parsing errors
         except ANY_GIT_ERROR as err:
             self.io.tool_error(f"Git error during edit application: {str(err)}")
             self.reflected_message = f"Git error during edit application: {str(err)}"
@@ -2716,11 +2744,11 @@ Just reply with fixed versions of the {blocks} above that failed to match.
                 parts = file.split("/")
                 current = tree
                 for i, part in enumerate(parts):
-                    if i == len(parts) - 1:  # Last part (file)
+                    if i == len(parts) - 1: # Last part (file)
                         if "." not in current:
                             current["."] = []
                         current["."].append(part)
-                    else:  # Directory
+                    else: # Directory
                         if part not in current:
                             current[part] = {}
                         current = current[part]
@@ -2809,7 +2837,7 @@ Just reply with fixed versions of the {blocks} above that failed to match.
                     untracked = []
 
                     for line in status_lines:
-                        if len(line) < 4:  # Ensure the line has enough characters
+                        if len(line) < 4: # Ensure the line has enough characters
                             continue
 
                         status_code = line[:2]
@@ -2865,7 +2893,7 @@ Just reply with fixed versions of the {blocks} above that failed to match.
                 commits = list(self.repo.repo.iter_commits(max_count=5))
                 for commit in commits:
                     short_hash = commit.hexsha[:8]
-                    message = commit.message.strip().split("\n")[0]  # First line only
+                    message = commit.message.strip().split("\n")[0] # First line only
                     result += f"{short_hash} {message}\n"
             except Exception:
                 result += "Unable to get recent commits\n"
