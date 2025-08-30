@@ -802,7 +802,7 @@ class Commands:
         sorted_completions = sorted(all_completions, key=lambda c: c.text)
 
         # Yield the sorted completions
-        for completion in sorted(all_completions:
+        for completion in sorted_completions:
             yield completion
 
     def completions_add(self):
@@ -1355,7 +1355,7 @@ class Commands:
         coder.run(user_msg, preproc=False)
 
         if self.coder.repo_map:
-            map_tokens = self.coder.repo_map.max_map_tokens
+            map_tokens = self.coder.repo.repo_map.max_map_tokens
             map_mul_no_files = self.coder.repo_map.map_mul_no_files
         else:
             map_tokens = 0
