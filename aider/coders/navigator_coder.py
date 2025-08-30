@@ -2249,7 +2249,7 @@ class NavigatorCoder(Coder):
                     dry_run = params.get("dry_run", False)
 
                     if file_path is not None and line_number is not None:
-                        result_message = _execute_deleteline(
+                        result_message = _execute_delete_line(
                             self, file_path, line_number, change_id, dry_run
                         )
                     else:
@@ -2402,11 +2402,11 @@ class NavigatorCoder(Coder):
             for edit in edits:
                 path = edit[0]
                 if path in seen_paths:
-                    allowed = seen[path]
+                    allowed = seen_paths[path]
                 else:
                     # Use the base Coder's permission check method
                     allowed = self.allowed_to_edit(path)
-                    seen[path] = allowed
+                    seen_paths[path] = allowed
                 if allowed:
                     prepared_edits.append(edit)
 
