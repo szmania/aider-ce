@@ -2387,6 +2387,17 @@ class NavigatorCoder(Coder):
                             " and either pattern or line_number)"
                         )
 
+                elif hasattr(self, "local_tool_instances") and tool_name in self.local_tool_instances:
+                    tool_instance = self.local_tool_instances[tool_name]
+                    try:
+                        result_message = tool_instance.run(**params)
+                    except Exception as e:
+                        result_message = f"Error executing custom tool {tool_name}: {e}"
+                        self.io.tool_error(
+                            "Error during custom tool"
+                            f" {tool_name} execution: {e}\n{traceback.format_exc()}"
+                        )
+
                 else:
                     result_message = f"Error: Unknown tool name '{tool_name}'"
                     if self.mcp_tools:
