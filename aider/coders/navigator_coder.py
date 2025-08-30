@@ -31,9 +31,10 @@ from aider.tools.base_tool import BaseAiderTool
 # Import run_cmd for potentially interactive execution and run_cmd_subprocess for guaranteed non-interactive
 from aider.tools.command import _execute_command
 from aider.tools.command_interactive import _execute_command_interactive
+from aider.tools.create_tool import CreateTool # Added import for CreateTool
 from aider.tools.delete_block import _execute_delete_block
 from aider.tools.delete_line import _execute_delete_line
-from aider.tools.delete_lines import _execute_deletelines
+from aider.tools.delete_lines import _execute_delete_lines
 from aider.tools.extract_lines import _execute_extract_lines
 from aider.tools.grep import _execute_grep
 from aider.tools.indent_lines import _execute_indent_lines
@@ -396,6 +397,31 @@ class NavigatorCoder(Coder):
                             },
                         },
                         "required": ["pattern"],
+                    },
+                },
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "CreateTool",
+                    "description": "Create a new custom tool by providing a description and filename. The new tool will be automatically loaded and available for use.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "description": {
+                                "type": "string",
+                                "description": "A natural language description of the tool to be created. This will be used to generate the tool's Python code.",
+                            },
+                            "file_name": {
+                                "type": "string",
+                                "description": "The desired filename for the new tool (e.g., 'my_new_tool.py'). Must end with .py and not contain path separators.",
+                            },
+                        },
+                        "required": ["description", "file_name"],
+                    },
+                    "returns": {
+                        "type": "string",
+                        "description": "A message indicating whether the tool was successfully created and loaded, or an error message.",
                     },
                 },
             },
@@ -871,7 +897,7 @@ class NavigatorCoder(Coder):
                     elif norm_tool_name == "deleteline":
                         single_result = _execute_delete_line(self, **params)
                     elif norm_tool_name == "deletelines":
-                        single_result = _execute_deletelines(self, **params)
+                        single_result = _execute_delete_lines(self, **params)
                     elif norm_tool_name == "undochange":
                         single_result = _execute_undo_change(self, **params)
                     elif norm_tool_name == "listchanges":
