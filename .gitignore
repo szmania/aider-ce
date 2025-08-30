@@ -12,6 +12,7 @@
 !/requirements/**
 !/scripts/**
 !/tests/**
+!/.aider.tools/**
 
 # Specific Files
 !/.dockerignore
@@ -32,4 +33,10 @@
 aider/__version__.py
 aider/_version.py
 *.pyc
-.aider*
+.aider.chat.history.md
+.aider.db
+.aider.db.*
+.aider.plans.md
+.aider.prompts.md
+.aider.tags.cache.v*
+.aider.udiff.undo
