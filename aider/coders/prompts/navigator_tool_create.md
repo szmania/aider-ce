@@ -28,6 +28,7 @@ class BaseAiderTool(ABC):
 
         This definition is used by the LLM to understand how to use the tool.
         It should be a dictionary with 'name', 'description', and 'parameters'.
+        Optionally, it can include a 'returns' object to describe the tool's output.
 
         :return: A dictionary representing the tool's JSON schema.
         """
@@ -81,6 +82,10 @@ class ExampleTool(BaseAiderTool):
                     },
                     "required": ["file_path"],
                 },
+                "returns": {
+                    "type": "string",
+                    "description": "The complete content of the file as a string.",
+                },
             },
         }
 
@@ -89,7 +94,7 @@ class ExampleTool(BaseAiderTool):
         Reads a file and returns its contents.
         
         :param file_path: The path to the file to read.
-        :return: The contents of the file.
+        :return: The complete content of the file as a string.
         """
         try:
             abs_path = self.coder.abs_root_path(file_path)
@@ -108,4 +113,5 @@ Important guidelines:
 5. Use `self.coder.io.tool_output()` for user-facing messages
 6. Use `self.coder.io.tool_error()` for error messages
 7. Save the tool file to .aider.tools/ directory by default
-8. For cross-project tools, consider saving to ~/.aider.tools/ (global tools directory)
+8. Include a `returns` object in the tool definition to describe the tool's output.
+9. For cross-project tools, consider saving to ~/.aider.tools/ (global tools directory)

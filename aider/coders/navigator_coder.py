@@ -17,6 +17,7 @@ import importlib.util
 import inspect
 import sys
 
+import jsonschema # Added import for jsonschema
 from litellm import experimental_mcp_client
 
 from aider import urls, utils
@@ -649,6 +650,54 @@ class NavigatorCoder(Coder):
             return navigation_tools + editing_tools
         return navigation_tools
 
+    def validate_tool_definition(self, tool_definition):
+        """
+        Validates a tool definition against a schema and checks its parameters.
+        """
+        # Schema for the overall tool definition structure
+        tool_schema = {
+            "type": "object",
+            "properties": {
+                "type": {"type": "string", "enum": ["function"]},
+                "function": {
+                    "type": "object",
+                    "properties": {
+                        "name": {"type": "string", "pattern": r"^[a-zA-Z0-9_]{1,64}$"},
+                        "description": {"type": "string"},
+                        "parameters": {"type": "object"}, # Will be validated separately as a JSON schema
+                        "returns": { # Optional returns object
+                            "type": "object",
+                            "properties": {
+                                "type": {"type": "string"},
+                                "description": {"type": "string"},
+                            },
+                            "required": ["type", "description"],
+                            "additionalProperties": False,
+                        },
+                    },
+                    "required": ["name", "description", "parameters"],
+                    "additionalProperties": False,
+                },
+            },
+            "required": ["type", "function"],
+            "additionalProperties": False,
+        }
+
+        try:
+            # Validate the overall structure
+            jsonschema.validate(instance=tool_definition, schema=tool_schema)
+
+            # Validate the 'parameters' object as a JSON schema itself
+            parameters_schema = tool_definition["function"]["parameters"]
+            jsonschema.Draft7Validator.check_schema(parameters_schema)
+
+        except jsonschema.ValidationError as e:
+            raise ValueError(f"Invalid tool definition: {e.message} at {e.path}")
+        except jsonschema.SchemaError as e:
+            raise ValueError(f"Invalid JSON schema in tool parameters: {e.message} at {e.path}")
+        except Exception as e:
+            raise ValueError(f"Unexpected error during tool definition validation: {e}")
+
     def tool_add_from_path(self, file_path: str):
         from aider.tools.base_tool import BaseAiderTool
 
@@ -692,6 +741,10 @@ class NavigatorCoder(Coder):
             # Instantiate the tool
             tool_instance = tool_class(self)
             tool_definition = tool_instance.get_tool_definition()
+
+            # Validate the tool definition
+            self.validate_tool_definition(tool_definition)
+
             tool_name = tool_definition["function"]["name"]
             tool_description = tool_definition["function"]["description"]
 

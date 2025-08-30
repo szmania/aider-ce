@@ -48,7 +48,7 @@ from aider.reasoning_tags import (
     remove_reasoning_content,
     replace_reasoning_tags,
 )
-from aider.repo import ANY_GIT_ERROR, GitRepo
+from aider.repo import ANY_GIT_ERROR
 from aider.repomap import RepoMap
 from aider.run_cmd import run_cmd
 from aider.utils import format_content, format_messages, format_tokens, is_image_file
@@ -580,10 +580,32 @@ class Coder:
             self.initialize_mcp_tools()
         # validate the functions jsonschema
         if self.functions:
-            from jsonschema import Draft7Validator
+            from jsonschema import Draft7Validator, SchemaError
 
             for function in self.functions:
-                Draft7Validator.check_schema(function)
+                if not isinstance(function, dict) or "function" not in function:
+                    self.io.tool_warning(f"Invalid tool definition structure: {function}")
+                    continue
+
+                func_def = function["function"]
+                if "parameters" not in func_def or not isinstance(func_def["parameters"], dict):
+                    self.io.tool_warning(
+                        f"Tool '{func_def.get('name', 'unknown')}' has invalid or missing"
+                        " 'parameters' schema."
+                    )
+                    continue
+
+                try:
+                    Draft7Validator.check_schema(func_def["parameters"])
+                except SchemaError as e:
+                    self.io.tool_warning(
+                        f"Tool '{func_def.get('name', 'unknown')}' has an invalid JSON schema for"
+                        f" its parameters: {e.message}"
+                    )
+                except Exception as e:
+                    self.io.tool_warning(
+                        f"An unexpected error occurred validating tool '{func_def.get('name', 'unknown')}' parameters: {e}"
+                    )
 
             if self.verbose:
                 self.io.tool_output("JSON Schema:")
@@ -867,7 +889,7 @@ class Coder:
         repo_content = self.get_repo_map()
         if repo_content:
             repo_messages += [
-                dict(role="user", content=repo_content),
+                dict(role="user", content=self.gpt_prompts.repo_content_prefix + repo_content),
                 dict(
                     role="assistant",
                     content="Ok, I won't try and edit those files without asking first.",
