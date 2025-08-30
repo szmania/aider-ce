@@ -47,6 +47,10 @@ class ShowNumberedContext(BaseAiderTool):
                     },
                     "required": ["file_path"],
                 },
+                "returns": {
+                    "type": "string",
+                    "description": "The numbered lines of context from the file, or an error message.",
+                },
             },
         }
 

@@ -24,6 +24,10 @@ class Ls(BaseAiderTool):
                     },
                     "required": ["dir_path"],
                 },
+                "returns": {
+                    "type": "string",
+                    "description": "A list of files found in the directory, or an error message.",
+                },
             },
         }
 

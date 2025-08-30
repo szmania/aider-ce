@@ -28,6 +28,10 @@ class UndoChange(BaseAiderTool):
                     },
                     "required": [],
                 },
+                "returns": {
+                    "type": "string",
+                    "description": "A message indicating whether the change was successfully undone.",
+                },
             },
         }
 

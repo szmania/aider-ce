@@ -48,6 +48,10 @@ class DeleteLines(BaseAiderTool):
                     },
                     "required": ["file_path", "start_line", "end_line"],
                 },
+                "returns": {
+                    "type": "string",
+                    "description": "A message indicating the result of the delete operation, including a diff snippet if successful.",
+                },
             },
         }
 

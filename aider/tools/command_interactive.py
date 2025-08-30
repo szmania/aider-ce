@@ -23,6 +23,10 @@ class CommandInteractive(BaseAiderTool):
                     },
                     "required": ["command_string"],
                 },
+                "returns": {
+                    "type": "string",
+                    "description": "A message indicating the result of the command execution, including stdout/stderr if applicable.",
+                },
             },
         }
 

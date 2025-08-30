@@ -59,6 +59,10 @@ class Grep(BaseAiderTool):
                     },
                     "required": ["pattern"],
                 },
+                "returns": {
+                    "type": "string",
+                    "description": "The search results, including matching lines with file names and line numbers, or an error message.",
+                },
             },
         }
 

@@ -26,6 +26,10 @@ class ViewFilesWithSymbol(BaseAiderTool):
                     },
                     "required": ["symbol"],
                 },
+                "returns": {
+                    "type": "string",
+                    "description": "A message indicating which files containing the symbol were found and added to the context.",
+                },
             },
         }
 

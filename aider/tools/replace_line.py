@@ -42,6 +42,10 @@ class ReplaceLine(BaseAiderTool):
                     },
                     "required": ["file_path", "line_number", "new_content"],
                 },
+                "returns": {
+                    "type": "string",
+                    "description": "A message indicating the result of the replace operation, including a diff if successful.",
+                },
             },
         }
 

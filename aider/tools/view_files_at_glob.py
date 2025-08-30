@@ -27,6 +27,10 @@ class ViewFilesAtGlob(BaseAiderTool):
                     },
                     "required": ["pattern"],
                 },
+                "returns": {
+                    "type": "string",
+                    "description": "A message listing the files that were added to the context, or a message indicating no files were found.",
+                },
             },
         }
 

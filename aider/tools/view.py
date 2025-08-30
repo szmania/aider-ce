@@ -22,6 +22,10 @@ class View(BaseAiderTool):
                     },
                     "required": ["file_path"],
                 },
+                "returns": {
+                    "type": "string",
+                    "description": "A message indicating the file has been added to the context for viewing.",
+                },
             },
         }
 

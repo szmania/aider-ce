@@ -30,6 +30,10 @@ class ListChanges(BaseAiderTool):
                     },
                     "required": [],
                 },
+                "returns": {
+                    "type": "string",
+                    "description": "A formatted list of recent changes with their IDs, timestamps, types, and file paths.",
+                },
             },
         }
 

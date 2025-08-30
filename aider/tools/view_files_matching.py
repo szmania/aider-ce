@@ -43,6 +43,10 @@ class ViewFilesMatching(BaseAiderTool):
                     },
                     "required": ["search_pattern"],
                 },
+                "returns": {
+                    "type": "string",
+                    "description": "A message listing the files where the pattern was found and that were added to the context.",
+                },
             },
         }
 
