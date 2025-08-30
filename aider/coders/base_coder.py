@@ -2673,6 +2673,10 @@ class Coder:
         except ValueError:
             return fname
 
+    def get_inchat_relative_files(self):
+        files = [self.get_rel_fname(fname) for fname in self.abs_fnames]
+        return sorted(set(files))
+
     def is_file_safe(self, fname):
         try:
             return Path(self.abs_root_path(fname)).is_file()
