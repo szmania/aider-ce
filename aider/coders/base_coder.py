@@ -582,33 +582,56 @@ class Coder:
         if self.functions:
             from jsonschema import Draft7Validator, SchemaError
 
+            valid_functions = []
+            tools_to_fix = []
+
             for function in self.functions:
                 if not isinstance(function, dict) or "function" not in function:
                     self.io.tool_warning(f"Invalid tool definition structure: {function}")
                     continue
 
                 func_def = function["function"]
+                tool_name = func_def.get("name", "unknown")
+
                 if "parameters" not in func_def or not isinstance(func_def["parameters"], dict):
                     self.io.tool_warning(
-                        f"Tool '{func_def.get('name', 'unknown')}' has invalid or missing"
-                        " 'parameters' schema."
+                        f"Tool '{tool_name}' has invalid or missing 'parameters' schema."
                     )
                     continue
 
                 try:
                     Draft7Validator.check_schema(func_def["parameters"])
+                    valid_functions.append(function)
                 except SchemaError as e:
                     self.io.tool_warning(
-                        f"Tool '{func_def.get('name', 'unknown')}' has an invalid JSON schema for"
-                        f" its parameters: {e.message}"
+                        f"Tool '{tool_name}' has an invalid JSON schema for its parameters and will be skipped."
                     )
+                    if "_source_path" in function:
+                        tools_to_fix.append((function["_source_path"], tool_name, e.message))
                 except Exception as e:
                     self.io.tool_warning(
-                        f"An unexpected error occurred validating tool '{func_def.get('name', 'unknown')}' parameters: {e}"
+                        f"An unexpected error occurred validating tool '{tool_name}' parameters: {e}"
                     )
+                    if "_source_path" in function:
+                        tools_to_fix.append((function["_source_path"], tool_name, str(e)))
 
-            if self.verbose:
-                self.io.tool_output("JSON Schema:")
+            self.functions = valid_functions
+
+            if tools_to_fix:
+                self.io.tool_output("\nSome custom tools have invalid schemas:")
+                for source_path, tool_name, error_message in tools_to_fix:
+                    self.io.tool_output(f"- Tool: {tool_name}, File: {source_path}")
+                    if self.io.confirm_ask(
+                        f"Add '{source_path}' to the chat to fix the schema for tool '{tool_name}'?",
+                        subject=error_message,
+                    ):
+                        self.add_rel_fname(source_path)
+                        self.io.tool_output(
+                            f"'{source_path}' added to the chat. You can now instruct the AI to fix the schema for '{tool_name}'."
+                        )
+
+            if self.verbose and self.functions:
+                self.io.tool_output("Valid JSON Schema for tools:")
                 self.io.tool_output(json.dumps(self.functions, indent=4))
 
     def setup_lint_cmds(self, lint_cmds):
