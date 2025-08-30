@@ -2793,6 +2793,12 @@ class Coder:
         else:
             need_to_add = False
 
+        def add_to_git(path_to_add):
+            if self.repo.git_ignored_file(path_to_add) and self.add_gitignore_files:
+                self.repo.repo.git.add(path_to_add, force=True)
+            else:
+                self.repo.repo.git.add(path_to_add)
+
         if full_path in self.abs_fnames:
             self.check_for_dirty_commit(path)
             return True
@@ -2815,7 +2821,7 @@ class Coder:
                 # actually already part of the repo.
                 # But let's only add if we need to, just to be safe.
                 if need_to_add:
-                    self.repo.repo.git.add(full_path)
+                    add_to_git(full_path)
 
             self.abs_fnames.add(full_path)
             self.check_added_files()
@@ -2829,7 +2835,7 @@ class Coder:
             return
 
         if need_to_add:
-            self.repo.repo.git.add(full_path)
+            add_to_git(full_path)
 
         self.abs_fnames.add(full_path)
         self.check_added_files()

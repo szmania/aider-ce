@@ -76,8 +76,8 @@ Act as an expert software engineer with the ability to autonomously navigate and
   Convert an editable file back to read-only status.
 
 ### Tool Creation Tools
-- **CreateTool**: `[tool_call(CreateTool, description="a tool to count lines of code in a file", file_name="line_counter.py")]`
-  Create a new custom tool by providing a natural language `description` of its functionality and a `file_name` (must end with .py and not contain path separators). The new tool will be automatically loaded and available for use in subsequent turns.
+- **CreateTool**: `[tool_call(CreateTool, description="a tool to count lines of code in a file", file_name="line_counter.py", scope="local")]`
+  Create a new custom tool by providing a natural language `description` of its functionality and a `file_name` (must end with .py and not contain path separators). The `scope` parameter (optional, default "local") can be "local" for the current project or "global" to make the tool available across all projects. The new tool will be automatically loaded and available for use in subsequent turns.
 
 ### Granular Editing Tools
 - **ReplaceText**: `[tool_call(ReplaceText, file_path="...", find_text="...", replace_text="...", near_context="...", occurrence=1, dry_run=False)]`

@@ -1941,7 +1941,15 @@ class Commands:
 
     def cmd_tools_create(self, args):
         "Create a new tool with AI assistance"
+        
+        scope = "local"
         description = args.strip()
+
+        # Check for --global flag
+        if "--global" in description:
+            scope = "global"
+            description = description.replace("--global", "").strip()
+
         if not description:
             self.io.tool_error("Please provide a description of the tool to create.")
             return
@@ -1976,7 +1984,20 @@ class Commands:
         # Monkey-patch the system prompt
         tool_coder.gpt_prompts.main_system = tool_create_prompt_content
 
-        user_message = f"Here is the description of the tool I want to create:\n\n{description}"
+        if scope == "global":
+            user_message = (
+                f"Here is the description of the tool I want to create. This should be a global tool"
+                f" saved in the `~/.aider.tools/` directory:\n\n{description}"
+            )
+            tools_dir = Path.home() / ".aider.tools"
+        else:
+            user_message = (
+                f"Here is the description of the tool I want to create. This should be a local tool"
+                f" saved in the `.aider.tools/` directory:\n\n{description}"
+            )
+            tools_dir = Path(self.coder.repo.root) / ".aider.tools" if self.coder.repo else Path.cwd() / ".aider.tools"
+
+
         tool_code = tool_coder.run(with_message=user_message)
 
         if not tool_code:
@@ -2003,12 +2024,6 @@ class Commands:
                 "Could not determine tool name from generated code. Using 'new_tool.py'."
             )
             tool_filename = "new_tool.py"
-
-        if self.coder.repo:
-            tools_dir = Path(self.coder.repo.root) / ".aider.tools"
-        else:
-            # Fallback to current working directory if not in a repo
-            tools_dir = Path.cwd() / ".aider.tools"
 
         tools_dir.mkdir(parents=True, exist_ok=True)
         tool_path = tools_dir / tool_filename

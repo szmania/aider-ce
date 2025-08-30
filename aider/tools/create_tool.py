@@ -29,6 +29,12 @@ class CreateTool(BaseAiderTool):
                             "type": "string",
                             "description": "The desired filename for the new tool (e.g., 'my_new_tool.py'). Must end with .py and not contain path separators.",
                         },
+                        "scope": {
+                            "type": "string",
+                            "enum": ["local", "global"],
+                            "default": "local",
+                            "description": "The scope of the tool. 'local' for the current project, 'global' for all projects. Defaults to 'local'.",
+                        },
                     },
                     "required": ["description", "file_name"],
                 },
@@ -39,7 +45,7 @@ class CreateTool(BaseAiderTool):
             },
         }
 
-    def run(self, description: str, file_name: str):
+    def run(self, description: str, file_name: str, scope: str = "local"):
         """
         Creates a new custom tool based on the provided description and filename.
         The new tool is then automatically loaded into the current session.
@@ -47,6 +53,7 @@ class CreateTool(BaseAiderTool):
         :param description: A natural language description of the tool to be created.
         :param file_name: The desired filename for the new tool (e.g., 'my_new_tool.py').
                           Must end with .py and not contain path separators.
+        :param scope: The scope of the tool, either "local" (for the current project) or "global" (for all projects).
         :return: A message indicating success or failure.
         """
         # 1. Validate Inputs
@@ -54,6 +61,8 @@ class CreateTool(BaseAiderTool):
             return f"Error: file_name '{file_name}' must end with '.py'."
         if "/" in file_name or "\\" in file_name:
             return f"Error: file_name '{file_name}' must not contain path separators."
+        if scope not in ["local", "global"]:
+            return f"Error: scope '{scope}' must be either 'local' or 'global'."
 
         # Define the path to the prompt file
         prompt_file_path = (
@@ -70,6 +79,14 @@ class CreateTool(BaseAiderTool):
         except Exception as e:
             return f"Error reading tool creation prompt file: {e}"
 
+        # Determine the target directory based on scope
+        if scope == "global":
+            target_dir_description = "global tools directory `~/.aider.tools/`"
+            expected_dir_prefix = str(Path.home() / ".aider.tools")
+        else:  # local
+            target_dir_description = "local project tools directory `.aider.tools/`"
+            expected_dir_prefix = ".aider.tools"
+
         # 3. Construct LLM Request
         messages = [
             {"role": "system", "content": tool_creation_prompt_content},
@@ -77,7 +94,7 @@ class CreateTool(BaseAiderTool):
                 "role": "user",
                 "content": (
                     f"Create a tool with the following description and save it as '{file_name}'. The"
-                    " tool should be saved in the '.aider.tools/' directory.\n\nTool Description:\n"
+                    f" tool should be saved in the {target_dir_description}.\n\nTool Description:\n"
                     f"{description}"
                 ),
             },
@@ -120,25 +137,29 @@ class CreateTool(BaseAiderTool):
             if not target_file_path_from_llm:
                 return "Error: Target file path not specified in LLM's InsertBlock call."
 
-            # Ensure the LLM's suggested file_path is within the .aider.tools directory
-            # and matches the requested file_name.
-            expected_dir = ".aider.tools"
-            if not target_file_path_from_llm.startswith(expected_dir + os.sep) and not (
-                target_file_path_from_llm.startswith(expected_dir + "/")
-            ):
+            # Normalize paths for validation
+            normalized_target_path = Path(target_file_path_from_llm).resolve()
+            normalized_expected_prefix = Path(expected_dir_prefix).resolve()
+
+            # Ensure the LLM's suggested file_path is within the correct directory
+            if not normalized_target_path.is_relative_to(normalized_expected_prefix):
                 return (
-                    f"Error: LLM attempted to save tool outside of '{expected_dir}/' directory:"
-                    f" {target_file_path_from_llm}"
+                    f"Error: LLM attempted to save tool outside of '{normalized_expected_prefix}/'"
+                    f" directory: {target_file_path_from_llm}"
                 )
-            if not target_file_path_from_llm.endswith(file_name):
+            if not normalized_target_path.name == file_name:
                 return (
                     f"Error: LLM attempted to save tool with a different filename than requested:"
                     f" {target_file_path_from_llm}"
                 )
 
             # 6. Save and Load
-            # Construct the absolute path for the new tool file
-            tools_dir = self.coder.abs_root_path(expected_dir)
+            # Determine the final save directory based on scope
+            if scope == "global":
+                tools_dir = Path.home() / ".aider.tools"
+            else:  # local
+                tools_dir = self.coder.abs_root_path(".aider.tools")
+
             os.makedirs(tools_dir, exist_ok=True)
             abs_new_tool_path = Path(tools_dir) / file_name
 
