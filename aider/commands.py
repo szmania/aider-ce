@@ -1984,54 +1984,57 @@ class Commands:
         # Monkey-patch the system prompt
         tool_coder.gpt_prompts.main_system = tool_create_prompt_content
 
+        # Define target_dir_description
         if scope == "global":
-            user_message = (
-                f"Here is the description of the tool I want to create. This should be a global tool"
-                f" saved in the `~/.aider.tools/` directory:\n\n{description}"
-            )
+            target_dir_description = "global tools directory `~/.aider.tools/`"
             tools_dir = Path.home() / ".aider.tools"
         else:
-            user_message = (
-                f"Here is the description of the tool I want to create. This should be a local tool"
-                f" saved in the `.aider.tools/` directory:\n\n{description}"
-            )
+            target_dir_description = "local project tools directory `.aider.tools/`"
             tools_dir = Path(self.coder.repo.root) / ".aider.tools" if self.coder.repo else Path.cwd() / ".aider.tools"
 
+        user_message = (
+            "On the first line, provide a suitable Python filename for this tool (e.g.,"
+            " `my_tool.py`).\n"
+            "On the following lines, provide the complete Python code for the tool.\n\n"
+            f"The tool should be saved in the {target_dir_description}.\n\n"
+            f"Tool Description:\n{description}"
+        )
 
-        tool_code = tool_coder.run(with_message=user_message)
+        tool_code_response = tool_coder.run(with_message=user_message)
 
-        if not tool_code:
+        if not tool_code_response or not tool_code_response.strip():
             self.io.tool_error("The model did not generate any code for the tool.")
             return
 
-        # The model often returns the code in a markdown block
+        lines = tool_code_response.strip().split('\n')
+        tool_filename = lines[0].strip()
+        tool_code = '\n'.join(lines[1:])
+
         tool_code = strip_fenced_code(tool_code).strip()
 
-        if not tool_code:
-            self.io.tool_error("The model generated an empty response.")
-            return
-
-        def camel_to_snake(name):
-            name = re.sub(r"(.)([A-Z][a-z]+)", r"\1_\2", name)
-            return re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", name).lower()
-
-        class_name_match = re.search(r"class\s+(\w+)\(BaseAiderTool\):", tool_code)
-        if class_name_match:
-            class_name = class_name_match.group(1)
-            tool_filename = camel_to_snake(class_name) + ".py"
-        else:
+        if not tool_filename.endswith(".py") or "/" in tool_filename or "\\" in tool_filename:
             self.io.tool_warning(
-                "Could not determine tool name from generated code. Using 'new_tool.py'."
+                f"Model provided an invalid filename '{tool_filename}'. Using 'new_tool.py'."
             )
             tool_filename = "new_tool.py"
 
-        tools_dir.mkdir(parents=True, exist_ok=True)
-        tool_path = tools_dir / tool_filename
+        if not tool_code:
+            self.io.tool_error("The model generated an empty response for the tool code.")
+            return
+
+        original_tool_path = tools_dir / tool_filename
+        tool_path = original_tool_path
 
         if tool_path.exists():
-            if not self.io.confirm_ask(f"File {tool_path} already exists. Overwrite?"):
-                self.io.tool_warning("Tool creation cancelled.")
-                return
+            base, ext = os.path.splitext(tool_filename)
+            i = 1
+            while tool_path.exists():
+                tool_filename = f"{base}_{i}{ext}"
+                tool_path = tools_dir / tool_filename
+                i += 1
+            self.io.tool_output(
+                f"File '{original_tool_path.name}' already exists. Saving as '{tool_path.name}'."
+            )
 
         try:
             with open(tool_path, "w", encoding=self.io.encoding) as f:
