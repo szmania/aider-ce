@@ -109,29 +109,36 @@ class ViewFilesMatching(BaseAiderTool):
                 matches = dict(sorted_matches[: self.coder.max_files_per_glob])
 
             # Add matching files to context
-            for file in matches:
-                self.coder._add_file_to_context(file)
-
-            # Return a user-friendly result
             if matches:
-                # Sort by number of matches (most matches first)
+                # Sort by number of matches (most matches first) for preview
                 sorted_matches = sorted(matches.items(), key=lambda x: x[1], reverse=True)
-                match_list = [f"{file} ({count} matches)" for file, count in sorted_matches[:5]]
+                match_list_preview = [f"{file} ({count} matches)" for file, count in sorted_matches[:5]]
 
+                if not self.coder.io.confirm_ask(
+                    f"Allow adding {len(matches)} files containing '{search_pattern}' to chat as read-only?",
+                    subject=", ".join(match_list_preview) + (f" and {len(matches) - 5} more" if len(sorted_matches) > 5 else ""),
+                ):
+                    self.coder.io.tool_output(f"Skipped adding files matching '{search_pattern}'.")
+                    return "Action skipped by user."
+
+                for file in matches:
+                    self.coder._add_file_to_context(file)
+
+                # Return a user-friendly result
                 if len(sorted_matches) > 5:
                     self.coder.io.tool_output(
                         f"🔍 Found '{search_pattern}' in {len(matches)} files:"
-                        f" {', '.join(match_list)} and {len(matches) - 5} more"
+                        f" {', '.join(match_list_preview)} and {len(matches) - 5} more"
                     )
                     return (
-                        f"Found in {len(matches)} files: {', '.join(match_list)} and"
+                        f"Found in {len(matches)} files: {', '.join(match_list_preview)} and"
                         f" {len(matches) - 5} more"
                     )
                 else:
                     self.coder.io.tool_output(
-                        f"🔍 Found '{search_pattern}' in: {', '.join(match_list)}"
+                        f"🔍 Found '{search_pattern}' in: {', '.join(match_list_preview)}"
                     )
-                    return f"Found in {len(matches)} files: {', '.join(match_list)}"
+                    return f"Found in {len(matches)} files: {', '.join(match_list_preview)}"
             else:
                 self.coder.io.tool_output(f"⚠️ Pattern '{search_pattern}' not found in any files")
                 return "Pattern not found in any files"

@@ -53,6 +53,14 @@ class MakeEditable(BaseAiderTool):
             if abs_path in self.coder.abs_read_only_fnames:
                 self.coder.abs_read_only_fnames.remove(abs_path)
                 was_read_only = True
+            else:
+                # File is not in context, ask for permission to add it as editable
+                if not self.coder.io.confirm_ask(
+                    "Allow adding new file to chat to make it editable?",
+                    subject=file_path,
+                ):
+                    self.coder.io.tool_output(f"Skipped making {file_path} editable.")
+                    return "Action skipped by user."
 
             # Add to editable files
             self.coder.abs_fnames.add(abs_path)

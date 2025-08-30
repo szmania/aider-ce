@@ -66,12 +66,24 @@ class ViewFilesAtGlob(BaseAiderTool):
                 matching_files = matching_files[: self.coder.max_files_per_glob]
 
             # Add files to context
-            for file in matching_files:
-                # Use the coder's internal method to add files
-                self.coder._add_file_to_context(file)
-
-            # Return a user-friendly result
             if matching_files:
+                # Ask for confirmation for the batch of files
+                file_list_preview = ", ".join(matching_files[:5])
+                if len(matching_files) > 5:
+                    file_list_preview += f", and {len(matching_files) - 5} more"
+
+                if not self.coder.io.confirm_ask(
+                    f"Allow adding {len(matching_files)} files matching '{pattern}' to chat as read-only?",
+                    subject=file_list_preview,
+                ):
+                    self.coder.io.tool_output(f"Skipped adding files matching '{pattern}'.")
+                    return "Action skipped by user."
+
+                for file in matching_files:
+                    # Use the coder's internal method to add files
+                    self.coder._add_file_to_context(file)
+
+                # Return a user-friendly result
                 if len(matching_files) > 10:
                     brief = ", ".join(matching_files[:5]) + f", and {len(matching_files) - 5} more"
                     self.coder.io.tool_output(

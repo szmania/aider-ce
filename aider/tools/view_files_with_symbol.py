@@ -122,20 +122,33 @@ class ViewFilesWithSymbol(BaseAiderTool):
             # Add files to context (as read-only)
             added_count = 0
             added_files_rel = []
-            for abs_file_path in found_files:
-                rel_path = self.coder.get_rel_fname(abs_file_path)
-                # Double check it's not already added somehow
-                if (
-                    abs_file_path not in self.coder.abs_fnames
-                    and abs_file_path not in self.coder.abs_read_only_fnames
+
+            if found_files:
+                file_list_preview = ", ".join(sorted([self.coder.get_rel_fname(f) for f in list(found_files)[:5]]))
+                if len(found_files) > 5:
+                    file_list_preview += f", and {len(found_files) - 5} more"
+
+                if not self.coder.io.confirm_ask(
+                    f"Allow adding {len(found_files)} files containing symbol '{symbol}' to chat as read-only?",
+                    subject=file_list_preview,
                 ):
-                    # Use explicit=True for clear output, even though it's an external search result
-                    add_result = self.coder._add_file_to_context(rel_path, explicit=True)
+                    self.coder.io.tool_output(f"Skipped adding files containing symbol '{symbol}'.")
+                    return "Action skipped by user."
+
+                for abs_file_path in found_files:
+                    rel_path = self.coder.get_rel_fname(abs_file_path)
+                    # Double check it's not already added somehow
                     if (
-                        "Added" in add_result or "Viewed" in add_result
-                    ):  # Count successful adds/views
-                        added_count += 1
-                        added_files_rel.append(rel_path)
+                        abs_file_path not in self.coder.abs_fnames
+                        and abs_file_path not in self.coder.abs_read_only_fnames
+                    ):
+                        # Use explicit=True for clear output, even though it's an external search result
+                        add_result = self.coder._add_file_to_context(rel_path, explicit=True)
+                        if (
+                            "Added" in add_result or "Viewed" in add_result
+                        ):  # Count successful adds/views
+                            added_count += 1
+                            added_files_rel.append(rel_path)
 
             if added_count > 0:
                 if added_count > 5:
