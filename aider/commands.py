@@ -1879,41 +1879,60 @@ class Commands:
         announcements = "\n".join(self.coder.get_announcements())
         self.io.tool_output(announcements)
 
-    def cmd_tool_add(self, args):
-        "Load a custom tool from a Python file"
-        file_path_str = args.strip()
-        if not file_path_str:
-            self.io.tool_error("Please provide the path to a Python file containing a tool.")
-            return
-
-        file_path = Path(file_path_str).resolve()
-
-        if not file_path.exists():
-            self.io.tool_error(f"File not found: {file_path}")
-            return
-
-        if not file_path.is_file() or not file_path.suffix == ".py":
-            self.io.tool_error("Please provide a valid Python (.py) file.")
+    def cmd_tools_add(self, args):
+        "Load custom tools from Python files or directories"
+        paths_str = args.strip()
+        if not paths_str:
+            self.io.tool_error("Please provide the path(s) to Python files or directories containing tools.")
             return
 
         if not hasattr(self.coder, "tool_add_from_path"):
             self.io.tool_error("The current coder does not support adding custom tools.")
             return
 
-        warning_message = (
-            f"WARNING: This will execute the Python code in `{file_path}`."
-            " Only load tools from sources you trust."
-        )
-        if not self.io.confirm_ask(warning_message, default="n", subject=warning_message):
+        all_tool_files = set()
+        filenames = parse_quoted_filenames(paths_str)
+
+        for path_str in filenames:
+            path = Path(path_str).resolve()
+
+            if not path.exists():
+                self.io.tool_error(f"Path not found: {path}")
+                continue
+
+            if path.is_file():
+                if path.suffix == ".py":
+                    all_tool_files.add(str(path))
+                else:
+                    self.io.tool_error(f"Skipping non-Python file: {path}")
+            elif path.is_dir():
+                for tool_file in path.rglob("*.py"):
+                    all_tool_files.add(str(tool_file.resolve()))
+            else:
+                self.io.tool_error(f"Skipping invalid path: {path}")
+
+        if not all_tool_files:
+            self.io.tool_output("No Python tool files found to load.")
             return
 
-        try:
-            # This method will be implemented in the coder
-            self.coder.tool_add_from_path(str(file_path))
-        except Exception as e:
-            self.io.tool_error(f"Failed to load tool: {e}")
+        tool_files_list = sorted(list(all_tool_files))
+        warning_message = (
+            "WARNING: This will execute the Python code in the following files:\n"
+            + "\n".join([f"- {f}" for f in tool_files_list])
+            + "\nOnly load tools from sources you trust."
+        )
 
-    def cmd_tool_create(self, args):
+        if not self.io.confirm_ask(warning_message, default="n", subject=warning_message):
+            self.io.tool_output("Tool loading cancelled.")
+            return
+
+        for tool_file in tool_files_list:
+            try:
+                self.coder.tool_add_from_path(tool_file)
+            except Exception as e:
+                self.io.tool_error(f"Failed to load tool from {tool_file}: {e}")
+
+    def cmd_tools_create(self, args):
         "Create a new tool with AI assistance"
         description = args.strip()
         if not description:
@@ -2006,7 +2025,7 @@ class Commands:
 
         # Ask to load
         if self.io.confirm_ask(f"Load the new tool from {tool_path}?"):
-            self.cmd_tool_add(f'"{str(tool_path)}"')
+            self.cmd_tools_add(f'"{str(tool_path)}"')
 
     def cmd_tools(self, args):
         "List all available standard and custom tools"
