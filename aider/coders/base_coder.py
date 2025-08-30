@@ -1254,7 +1254,7 @@ class Coder:
     def normalize_language(self, lang_code):
         """
         Convert a locale code such as ``en_US`` or ``fr`` into a readable
-        language name (e.g. ``English`` or ``French``).  If Babel is
+        language name (e.e.g. ``English`` or ``French``).  If Babel is
         available it is used for reliable conversion; otherwise a small
         built-in fallback map handles common languages.
         """
@@ -2359,12 +2359,16 @@ class Coder:
         try:
             tool_list = self.get_tool_list()
 
+            # Logic to prioritize 'tools' over 'functions'
+            functions_for_api = None
+            if not tool_list:
+                functions_for_api = functions
+
             hash_object, completion = model.send_completion(
                 messages,
-                functions,
+                functions_for_api, # Use the new variable here
                 self.stream,
                 self.temperature,
-                # This could include any tools, but for now it is just MCP tools
                 tools=tool_list,
             )
             self.chat_completion_call_hashes.append(hash_object.hexdigest())
