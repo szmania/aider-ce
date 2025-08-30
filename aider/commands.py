@@ -1893,23 +1893,29 @@ class Commands:
         all_tool_files = set()
         filenames = parse_quoted_filenames(paths_str)
 
-        for path_str in filenames:
-            path = Path(path_str).resolve()
-
-            if not path.exists():
-                self.io.tool_error(f"Path not found: {path}")
+        for pattern in filenames:
+            matched_paths = glob.glob(pattern, recursive=True) # Use glob to expand patterns
+            if not matched_paths:
+                self.io.tool_error(f"Path not found or no match for: {pattern}")
                 continue
 
-            if path.is_file():
-                if path.suffix == ".py":
-                    all_tool_files.add(str(path))
+            for path_str_matched in matched_paths:
+                path = Path(path_str_matched).resolve()
+
+                if not path.exists():
+                    self.io.tool_error(f"Path not found: {path}")
+                    continue
+
+                if path.is_file():
+                    if path.suffix == ".py":
+                        all_tool_files.add(str(path))
+                    else:
+                        self.io.tool_error(f"Skipping non-Python file: {path}")
+                elif path.is_dir():
+                    for tool_file in path.rglob("*.py"):
+                        all_tool_files.add(str(tool_file.resolve()))
                 else:
-                    self.io.tool_error(f"Skipping non-Python file: {path}")
-            elif path.is_dir():
-                for tool_file in path.rglob("*.py"):
-                    all_tool_files.add(str(tool_file.resolve()))
-            else:
-                self.io.tool_error(f"Skipping invalid path: {path}")
+                    self.io.tool_error(f"Skipping invalid path: {path}")
 
         if not all_tool_files:
             self.io.tool_output("No Python tool files found to load.")
