@@ -816,17 +816,25 @@ class NavigatorCoder(Coder):
             rel_file_path = self.get_rel_fname(file_path)
             self.tool_file_to_reload_after_fix = rel_file_path # Flag the file for potential reload
             self.io.tool_error(f"Error loading tool from {rel_file_path}: {e}")
-            # Automatically add the file to the chat and attempt to fix it
-            self.add_rel_fname(rel_file_path)
-            self.io.tool_output(
-                f"'{rel_file_path}' added to the chat. Attempting to fix the error automatically..."
-            )
-            fix_prompt = (
-                f"The tool at `{rel_file_path}` failed to load with this error:\n\n"
-                f"```\n{e}\n```\n\n"
-                "Please fix the code in the file."
-            )
-            self.reflected_message = fix_prompt
+
+            # Ask for confirmation before attempting to fix
+            if self.io.confirm_ask(
+                f"The tool at '{rel_file_path}' failed to load. Do you want to add it to the chat to attempt an automatic fix?",
+                subject=f"Error loading tool: {e}",
+            ):
+                # Automatically add the file to the chat and attempt to fix it
+                self.add_rel_fname(rel_file_path)
+                self.io.tool_output(
+                    f"'{rel_file_path}' added to the chat. Attempting to fix the error automatically..."
+                )
+                fix_prompt = (
+                    f"The tool at `{rel_file_path}` failed to load with this error:\n\n"
+                    f"```\n{e}\n```\n\n"
+                    "Please fix the code in the file."
+                )
+                self.reflected_message = fix_prompt
+            else:
+                self.io.tool_output(f"Skipping automatic fix for '{rel_file_path}'.")
 
     async def _execute_local_tool_calls(self, tool_calls_list):
         tool_responses = []
