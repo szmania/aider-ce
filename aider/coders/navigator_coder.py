@@ -786,14 +786,17 @@ class NavigatorCoder(Coder):
         except Exception as e:
             rel_file_path = self.get_rel_fname(file_path)
             self.io.tool_error(f"Error loading tool from {rel_file_path}: {e}")
-            if self.io.confirm_ask(
-                f"Add '{rel_file_path}' to the chat to fix the error?",
-                subject=str(e),
-            ):
-                self.add_rel_fname(rel_file_path)
-                self.io.tool_output(
-                    f"'{rel_file_path}' added to the chat. You can now instruct the AI to fix the tool."
-                )
+            # Automatically add the file to the chat and attempt to fix it
+            self.add_rel_fname(rel_file_path)
+            self.io.tool_output(
+                f"'{rel_file_path}' added to the chat. Attempting to fix the error automatically..."
+            )
+            fix_prompt = (
+                f"The tool at `{rel_file_path}` failed to load with this error:\n\n"
+                f"```\n{e}\n```\n\n"
+                "Please fix the code in the file."
+            )
+            self.reflected_message = fix_prompt
 
     async def _execute_local_tool_calls(self, tool_calls_list):
         tool_responses = []
@@ -2246,7 +2249,7 @@ class NavigatorCoder(Coder):
                     dry_run = params.get("dry_run", False)
 
                     if file_path is not None and line_number is not None:
-                        result_message = _execute_delete_line(
+                        result_message = _execute_deleteline(
                             self, file_path, line_number, change_id, dry_run
                         )
                     else:
@@ -2263,7 +2266,7 @@ class NavigatorCoder(Coder):
                     dry_run = params.get("dry_run", False)
 
                     if file_path is not None and start_line is not None and end_line is not None:
-                        result_message = _execute_delete_lines(
+                        result_message = _execute_deletelines(
                             self, file_path, start_line, end_line, change_id, dry_run
                         )
                     else:
