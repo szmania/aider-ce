@@ -48,7 +48,7 @@ from aider.reasoning_tags import (
     remove_reasoning_content,
     replace_reasoning_tags,
 )
-from aider.repo import ANY_GIT_ERROR
+from aider.repo import ANY_GIT_ERROR, GitRepo # Added GitRepo import
 from aider.repomap import RepoMap
 from aider.run_cmd import run_cmd
 from aider.utils import format_content, format_messages, format_tokens, is_image_file
@@ -760,7 +760,7 @@ class Coder:
         for fname in self.abs_read_only_fnames:
             content = self.io.read_text(fname)
             if content is not None and not is_image_file(fname):
-                relative_fname = self.get_rel_fname(fname)
+                relative_fname = self.coder.get_rel_fname(fname)
                 prompt += "\n"
                 prompt += relative_fname
                 prompt += f"\n{self.fence[0]}\n"
