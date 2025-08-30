@@ -930,7 +930,7 @@ class Commands:
                     self.coder.abs_fnames.add(abs_file_path)
                     self.io.tool_output(
                         f"Moved {matched_file} from read-only to editable files in the chat"
-                    )
+                        )
                 else:
                     self.io.tool_error(
                         f"Cannot add {matched_file} as it's not part of the repository"
@@ -2030,27 +2030,39 @@ class Commands:
     def cmd_tools(self, args):
         "List all available standard and custom tools"
 
-        if not hasattr(self.coder, "get_local_tool_schemas"):
-            self.io.tool_error("The current coder does not support tools.")
+        if not self.coder.mcp_tools:
+            self.io.tool_output("No tools are currently available.")
             return
 
+        custom_tool_names = set(self.coder.custom_tools.keys()) if hasattr(self.coder, 'custom_tools') else set()
+
+        standard_tools = []
+        all_tools_schemas = []
+        for _, server_tools in self.coder.mcp_tools:
+            all_tools_schemas.extend(server_tools)
+
+        for tool_schema in all_tools_schemas:
+            tool_name = tool_schema["function"]["name"]
+            if tool_name not in custom_tool_names:
+                standard_tools.append({
+                    "name": tool_name,
+                    "description": tool_schema["function"]["description"],
+                })
+
+        standard_tools.sort(key=lambda x: x["name"])
+
         self.io.tool_output("Standard Tools:", bold=True)
-        standard_tools = self.coder.get_local_tool_schemas()
         if standard_tools:
-            for tool_schema in standard_tools:
-                name = tool_schema["function"]["name"]
-                description = tool_schema["function"]["description"]
-                self.io.tool_output(f"- {name}: {description}")
+            for tool in standard_tools:
+                self.io.tool_output(f"- {tool['name']}: {tool['description']}")
         else:
             self.io.tool_output("  No standard tools available.")
 
-        if hasattr(self.coder, "custom_tools") and self.coder.custom_tools:
+        if custom_tool_names:
             self.io.tool_output("\nCustom Tools:", bold=True)
             for tool_name, tool_info in sorted(self.coder.custom_tools.items()):
                 rel_path = self.coder.get_rel_fname(tool_info['path'])
                 self.io.tool_output(f"- {tool_name}: {tool_info['description']} (Source: {rel_path})")
-        else:
-            self.io.tool_output("\nNo custom tools loaded.")
 
     def cmd_copy_context(self, args=None):
         """Copy the current chat context as markdown, suitable to paste into a web UI"""
