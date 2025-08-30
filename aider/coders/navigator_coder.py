@@ -188,10 +188,7 @@ class NavigatorCoder(Coder):
                             },
                             "regex": {
                                 "type": "boolean",
-                                "description": (
-                                    "Whether the pattern is a regular expression. Defaults to"
-                                    " False."
-                                ),
+                                "description": "Whether the pattern is a regular expression. Defaults to False.",
                             },
                         },
                         "required": ["pattern"],
@@ -635,6 +632,10 @@ class NavigatorCoder(Coder):
     def tool_add_from_path(self, file_path: str):
         from aider.tools.base_tool import BaseAiderTool
 
+        # Safeguard: Only process Python files
+        if not file_path.lower().endswith(".py"):
+            return
+
         try:
             # Create a unique module name that places it under aider.tools
             # This allows relative imports like 'from .base_tool import BaseAiderTool' to work
@@ -665,7 +666,7 @@ class NavigatorCoder(Coder):
                     tool_class = obj
                     break
 
-            if tool_class is None:
+            if tool_class == None:
                 raise ValueError(f"No class inheriting from BaseAiderTool found in {file_path}")
 
             # Instantiate the tool
