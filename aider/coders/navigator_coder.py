@@ -126,6 +126,20 @@ class NavigatorCoder(Coder):
         self.custom_tools = {}
         self.local_tool_instances = {}
 
+        self.load_custom_tools()
+
+    def load_custom_tools(self):
+        """
+        Scans the .aider.tools directory for custom tool definitions and loads them.
+        """
+        tools_dir = Path(self.root) / ".aider.tools"
+        if not tools_dir.is_dir():
+            return
+
+        for tool_file in tools_dir.glob("*.py"):
+            if tool_file.is_file() and tool_file.name != "__init__.py":
+                self.tool_add_from_path(str(tool_file))
+
     def initialize_local_tools(self):
         # Ensure self.mcp_tools is always a list
         if not hasattr(self, "mcp_tools") or self.mcp_tools is None:
