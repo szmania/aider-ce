@@ -48,7 +48,7 @@ from aider.reasoning_tags import (
     remove_reasoning_content,
     replace_reasoning_tags,
 )
-from aider.repo import ANY_GIT_ERROR, GitRepo
+from aider.repo import ANY_GIT_ERROR
 from aider.repomap import RepoMap
 from aider.run_cmd import run_cmd
 from aider.utils import format_content, format_messages, format_tokens, is_image_file
@@ -1142,7 +1142,7 @@ class Coder:
             self.io.tool_output("Finished summarizing chat history.")
 
     def summarize_end(self):
-        if self.summarizer_thread is None:
+        if self.summarizer_thread == None:
             return
 
         self.summarizer_thread.join()
@@ -2102,7 +2102,7 @@ class Coder:
             max_retries = 3
             for i in range(max_retries):
                 try:
-                    tools = asyncio.run(get_all_server_tools())
+                    all_results = asyncio.run(get_all_server_tools())
                     break
                 except asyncio.exceptions.CancelledError:
                     if i < max_retries - 1:
@@ -2112,7 +2112,8 @@ class Coder:
                             "MCP tool initialization failed after multiple retries due to"
                             " cancellation."
                         )
-                        tools = []
+                        all_results = []
+            tools = all_results
 
         if len(tools) > 0:
             self.io.tool_output("MCP servers configured:")

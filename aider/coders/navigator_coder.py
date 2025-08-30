@@ -636,18 +636,24 @@ class NavigatorCoder(Coder):
         from aider.tools.base_tool import BaseAiderTool
 
         try:
+            # Create a unique module name that places it under aider.tools
+            # This allows relative imports like 'from .base_tool import BaseAiderTool' to work
+            # if the tool was generated with the old prompt.
+            # For new tools, the prompt will generate 'from aider.tools.base_tool import BaseAiderTool'.
+            tool_stem = Path(file_path).stem
+            module_name = f"aider.tools.{tool_stem}"
+
             # Create a module spec from the file path
-            spec = importlib.util.spec_from_file_location("custom_tool_module", file_path)
+            spec = importlib.util.spec_from_file_location(module_name, file_path)
             if spec is None:
                 raise ImportError(f"Could not create module spec for {file_path}")
 
             # Create a new module from the spec
             module = importlib.util.module_from_spec(spec)
 
-            # Add the module to sys.modules so it can be imported by other modules if needed
-            # and to prevent re-importing the same file multiple times.
-            # Use a unique name to avoid conflicts.
-            module_name = f"aider.custom_tools.{Path(file_path).stem}"
+            # Crucially, set the __package__ and add to sys.modules *before* executing.
+            # This establishes the package context for relative imports.
+            module.__package__ = "aider.tools"
             sys.modules[module_name] = module
 
             # Execute the module to load its contents

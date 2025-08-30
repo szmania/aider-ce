@@ -53,13 +53,12 @@ When implementing a tool, you must:
 1. Create a class that inherits from `BaseAiderTool`
 2. Implement the `get_tool_definition()` method to return a JSON schema
 3. Implement the `run()` method to execute the tool's functionality
-4. Create a module-level function named `_execute_<tool_name_lowercase>` that creates an instance of your tool and calls its `run()` method
 
 Here is a complete example of a tool implementation:
 
 ```python
 import os
-from .base_tool import BaseAiderTool
+from aider.tools.base_tool import BaseAiderTool
 
 class ExampleTool(BaseAiderTool):
     """
@@ -99,19 +98,14 @@ class ExampleTool(BaseAiderTool):
             return f"Contents of {file_path}:\n{content}"
         except Exception as e:
             return f"Error reading file {file_path}: {str(e)}"
-
-def _execute_example_tool(coder, file_path):
-    return ExampleTool(coder).run(file_path=file_path)
 ```
 
 Important guidelines:
-1. Always import from `.base_tool` (relative import)
+1. Always import from `aider.tools.base_tool` (absolute import)
 2. The tool class name should match the function name in the tool definition
-3. The `_execute_*` function must be named exactly `_execute_<tool_name_lowercase>`
-4. The `_execute_*` function must accept `coder` as the first parameter
-5. Handle errors gracefully and return meaningful error messages
-6. Use the coder's methods like `self.coder.abs_root_path()` for file operations
-7. Use `self.coder.io.tool_output()` for user-facing messages
-8. Use `self.coder.io.tool_error()` for error messages
-9. Save the tool file to .aider.tools/ directory by default
-10. For cross-project tools, consider saving to ~/.aider.tools/ (global tools directory)
+3. Handle errors gracefully and return meaningful error messages
+4. Use the coder's methods like `self.coder.abs_root_path()` for file operations
+5. Use `self.coder.io.tool_output()` for user-facing messages
+6. Use `self.coder.io.tool_error()` for error messages
+7. Save the tool file to .aider.tools/ directory by default
+8. For cross-project tools, consider saving to ~/.aider.tools/ (global tools directory)
