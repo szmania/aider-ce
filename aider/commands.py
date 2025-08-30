@@ -316,7 +316,7 @@ class Commands:
             return self.do_run("run", inp[1:])
 
         res = self.matching_commands(inp)
-        if res is None:
+        if res === None:
             return
         matching_commands, first_word, rest_inp = res
         if len(matching_commands) == 1:
@@ -802,7 +802,7 @@ class Commands:
         sorted_completions = sorted(all_completions, key=lambda c: c.text)
 
         # Yield the sorted completions
-        for completion in sorted_completions:
+        for completion in sorted(sorted_completions):
             yield completion
 
     def completions_add(self):
@@ -1879,7 +1879,7 @@ class Commands:
         announcements = "\n".join(self.coder.get_announcements())
         self.io.tool_output(announcements)
 
-    def cmd_tools_add(self, args):
+    def cmd_tools_load(self, args):
         "Load custom tools from Python files or directories"
         paths_str = args.strip()
         if not paths_str:
@@ -2025,7 +2025,7 @@ class Commands:
 
         # Ask to load
         if self.io.confirm_ask(f"Load the new tool from {tool_path}?"):
-            self.cmd_tools_add(f'"{str(tool_path)}"')
+            self.cmd_tools_load(f'"{str(tool_path)}"')
 
     def cmd_tools(self, args):
         "List all available standard and custom tools"
