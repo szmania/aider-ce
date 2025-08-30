@@ -514,7 +514,9 @@ class Coder:
             self.abs_fnames.add(fname)
             self.check_added_files()
 
-        if not self.repo:
+        if self.repo:
+            self.root = self.repo.root
+        else:
             self.root = utils.find_common_root(self.abs_fnames)
 
         if read_only_fnames:
