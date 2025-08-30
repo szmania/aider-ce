@@ -905,7 +905,7 @@ class NavigatorCoder(Coder):
                     elif norm_tool_name == "deleteline":
                         single_result = _execute_delete_line(self, **params)
                     elif norm_tool_name == "deletelines":
-                        single_result = _execute_deletelines(self, **params)
+                        single_result = _execute_delete_lines(self, **params)
                     elif norm_tool_name == "undochange":
                         single_result = _execute_undo_change(self, **params)
                     elif norm_tool_name == "listchanges":
@@ -2329,8 +2329,8 @@ class NavigatorCoder(Coder):
 
                     if file_path is not None and start_line is not None and end_line is not None:
                         # Import the function if not already imported (it should be)
-                        from aider.tools.delete_lines import _execute_deletelines
-                        result_message = _execute_deletelines(
+                        from aider.tools.delete_lines import _execute_delete_lines
+                        result_message = _execute_delete_lines(
                             self, file_path, start_line, end_line, change_id, dry_run
                         )
                     else:
