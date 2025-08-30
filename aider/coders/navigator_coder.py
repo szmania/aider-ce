@@ -783,8 +783,16 @@ class NavigatorCoder(Coder):
             self.io.tool_output(f"Successfully loaded tool: {tool_name} from {self.get_rel_fname(file_path)}")
 
         except Exception as e:
-            # Re-raise the exception for the calling command to handle
-            raise Exception(f"Error loading tool from {file_path}: {e}")
+            rel_file_path = self.get_rel_fname(file_path)
+            self.io.tool_error(f"Error loading tool from {rel_file_path}: {e}")
+            if self.io.confirm_ask(
+                f"Add '{rel_file_path}' to the chat to fix the error?",
+                subject=str(e),
+            ):
+                self.add_rel_fname(rel_file_path)
+                self.io.tool_output(
+                    f"'{rel_file_path}' added to the chat. You can now instruct the AI to fix the tool."
+                )
 
     async def _execute_local_tool_calls(self, tool_calls_list):
         tool_responses = []
@@ -855,7 +863,7 @@ class NavigatorCoder(Coder):
                     elif norm_tool_name == "deleteline":
                         single_result = _execute_delete_line(self, **params)
                     elif norm_tool_name == "deletelines":
-                        single_result = _execute_delete_lines(self, **params)
+                        single_result = _execute_deletelines(self, **params)
                     elif norm_tool_name == "undochange":
                         single_result = _execute_undo_change(self, **params)
                     elif norm_tool_name == "listchanges":
