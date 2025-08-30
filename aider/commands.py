@@ -316,7 +316,7 @@ class Commands:
             return self.do_run("run", inp[1:])
 
         res = self.matching_commands(inp)
-        if res === None:
+        if res is None:
             return
         matching_commands, first_word, rest_inp = res
         if len(matching_commands) == 1:
