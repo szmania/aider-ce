@@ -619,6 +619,8 @@ class Coder:
 
             if tools_to_fix:
                 self.io.tool_output("\nSome custom tools have invalid schemas:")
+                # Create a list to hold files confirmed for fixing
+                files_to_actually_fix = []
                 for source_path, tool_name, error_message in tools_to_fix:
                     self.io.tool_output(f"- Tool: {tool_name}, File: {source_path}")
                     if self.io.confirm_ask(
@@ -627,8 +629,19 @@ class Coder:
                     ):
                         self.add_rel_fname(source_path)
                         self.io.tool_output(
-                            f"'{source_path}' added to the chat. You can now instruct the AI to fix the schema for '{tool_name}'."
+                            f"'{source_path}' added to the chat. Attempting to fix the error automatically..."
                         )
+                        files_to_actually_fix.append((source_path, error_message))
+
+                # After the loop, if we have files to fix, trigger the AI
+                if files_to_actually_fix:
+                    prompt = (
+                        "I tried to load the following tool files, but they failed with errors."
+                        " Please fix them.\n\n"
+                    )
+                    for fname, error in files_to_actually_fix:
+                        prompt += f"File: {fname}\nError: {error}\n\n"
+                    self.run_one(prompt, preproc=False)
 
             if self.verbose and self.functions:
                 self.io.tool_output("Valid JSON Schema for tools:")
