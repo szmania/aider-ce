@@ -125,25 +125,41 @@ class NavigatorCoder(Coder):
         self.local_tool_instances = {}
 
     def initialize_local_tools(self):
-        # Ensure self.mcp_tools is always a list, even if empty
-        if not self.mcp_tools:
+        # Ensure self.mcp_tools is always a list
+        if not hasattr(self, "mcp_tools") or self.mcp_tools is None:
             self.mcp_tools = []
 
-        local_tools = self.get_local_tool_schemas()
-        if not local_tools:
-            return
+        # Get the correct set of tool schemas based on the current granular editing mode
+        current_local_tool_schemas = self.get_local_tool_schemas()
 
+        # Ensure a LocalServer instance is configured for local tools
         local_server_config = {"name": "local_tools"}
         local_server = LocalServer(local_server_config)
 
-        if not self.mcp_servers:
+        # Add LocalServer to mcp_servers if not already present
+        if not hasattr(self, "mcp_servers") or self.mcp_servers is None:
             self.mcp_servers = []
         if not any(isinstance(s, LocalServer) for s in self.mcp_servers):
             self.mcp_servers.append(local_server)
 
-        if "local_tools" not in [name for name, _ in self.mcp_tools]:
-            self.mcp_tools.append((local_server.name, local_tools))
-            self.functions = self.get_tool_list()
+        # Find the index of the "local_tools" entry within self.mcp_tools
+        local_tools_entry_index = -1
+        for i, (server_name, _) in enumerate(self.mcp_tools):
+            if server_name == "local_tools":
+                local_tools_entry_index = i
+                break
+
+        # Update or add the "local_tools" entry
+        if local_tools_entry_index != -1:
+            # Update the existing entry with the new set of tool schemas
+            self.mcp_tools[local_tools_entry_index] = ("local_tools", current_local_tool_schemas)
+        else:
+            # Add a new entry for "local_tools" with the schemas
+            self.mcp_tools.append(("local_tools", current_local_tool_schemas))
+
+        # Finally, always call self.functions = self.get_tool_list() to ensure the master list
+        # of tools available to the LLM is refreshed.
+        self.functions = self.get_tool_list()
 
     def get_local_tool_schemas(self):
         """Returns the JSON schemas for all local tools."""
