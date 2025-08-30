@@ -33,7 +33,7 @@ from aider.tools.command import _execute_command
 from aider.tools.command_interactive import _execute_command_interactive
 from aider.tools.delete_block import _execute_delete_block
 from aider.tools.delete_line import _execute_delete_line
-from aider.tools.delete_lines import _execute_delete_lines
+from aider.tools.delete_lines import _execute_deletelines
 from aider.tools.extract_lines import _execute_extract_lines
 from aider.tools.grep import _execute_grep
 from aider.tools.indent_lines import _execute_indent_lines
@@ -867,7 +867,7 @@ class NavigatorCoder(Coder):
                     elif norm_tool_name == "deleteline":
                         single_result = _execute_delete_line(self, **params)
                     elif norm_tool_name == "deletelines":
-                        single_result = _execute_delete_lines(self, **params)
+                        single_result = _execute_deletelines(self, **params)
                     elif norm_tool_name == "undochange":
                         single_result = _execute_undo_change(self, **params)
                     elif norm_tool_name == "listchanges":
