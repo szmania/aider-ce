@@ -129,9 +129,6 @@ class NavigatorCoder(Coder):
         if not self.mcp_tools:
             self.mcp_tools = []
 
-        if not self.use_granular_editing:
-            return
-
         local_tools = self.get_local_tool_schemas()
         if not local_tools:
             return
@@ -150,7 +147,7 @@ class NavigatorCoder(Coder):
 
     def get_local_tool_schemas(self):
         """Returns the JSON schemas for all local tools."""
-        return [
+        navigation_tools = [
             {
                 "type": "function",
                 "function": {
@@ -381,6 +378,9 @@ class NavigatorCoder(Coder):
                     },
                 },
             },
+        ]
+
+        editing_tools = [
             {
                 "type": "function",
                 "function": {
@@ -628,6 +628,10 @@ class NavigatorCoder(Coder):
                 },
             },
         ]
+
+        if self.use_granular_editing:
+            return navigation_tools + editing_tools
+        return navigation_tools
 
     def tool_add_from_path(self, file_path: str):
         from aider.tools.base_tool import BaseAiderTool
@@ -927,6 +931,8 @@ class NavigatorCoder(Coder):
         """
         self.use_granular_editing = enabled
         self.gpt_prompts = NavigatorPrompts() if enabled else NavigatorLegacyPrompts()
+        # Re-initialize local tools to load the correct set based on the new flag
+        self.initialize_local_tools()
 
     def get_context_symbol_outline(self):
         """
