@@ -161,7 +161,7 @@ class NavigatorCoder(Coder):
             self.mcp_tools[local_tools_entry_index] = ("local_tools", current_local_tool_schemas)
         else:
             # Add a new entry for "local_tools" with the schemas
-            self.mcp_tools.append(("local_tools", current_local_tool_schemas))
+            self.mcp_tools.append(("local_tools", [current_local_tool_schemas]))
 
         # Finally, always call self.functions = self.get_tool_list() to ensure the master list
         # of tools available to the LLM is refreshed.
@@ -366,7 +366,7 @@ class NavigatorCoder(Coder):
                             },
                             "file_pattern": {
                                 "type": "string",
-                                "description": "Glob pattern for files to search. Defaults to '*'.",
+                                "description": "An optional glob pattern to filter which files are searched.",
                             },
                             "directory": {
                                 "type": "string",
@@ -905,7 +905,7 @@ class NavigatorCoder(Coder):
                     elif norm_tool_name == "deleteline":
                         single_result = _execute_delete_line(self, **params)
                     elif norm_tool_name == "deletelines":
-                        single_result = _execute_delete_lines(self, **params)
+                        single_result = _execute_deletelines(self, **params)
                     elif norm_tool_name == "undochange":
                         single_result = _execute_undo_change(self, **params)
                     elif norm_tool_name == "listchanges":
@@ -2328,6 +2328,8 @@ class NavigatorCoder(Coder):
                     dry_run = params.get("dry_run", False)
 
                     if file_path is not None and start_line is not None and end_line is not None:
+                        # Import the function if not already imported (it should be)
+                        from aider.tools.delete_lines import _execute_deletelines
                         result_message = _execute_deletelines(
                             self, file_path, start_line, end_line, change_id, dry_run
                         )
