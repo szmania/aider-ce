@@ -768,7 +768,6 @@ class NavigatorCoder(Coder):
             tool_name = tool_definition["function"]["name"]
             tool_description = tool_definition["function"]["description"]
 
-            # <<< START of new code
             # Determine scope
             scope = "unknown"
             p_file_path = Path(file_path).resolve()
@@ -792,7 +791,6 @@ class NavigatorCoder(Coder):
                         scope = "local"
                 except ValueError:
                     pass
-            # >>> END of new code
 
             # Store the instantiated tool object
             self.local_tool_instances[tool_name] = tool_instance
@@ -824,7 +822,7 @@ class NavigatorCoder(Coder):
             self.custom_tools[tool_name] = {
                 'path': file_path,
                 'description': tool_description,
-                'scope': scope, # <<< MODIFIED line
+                'scope': scope,
             }
 
             self.io.tool_output(f"Successfully loaded tool: {tool_name} from {self.get_rel_fname(file_path)}")
@@ -856,6 +854,45 @@ class NavigatorCoder(Coder):
                     self.reflected_message = fix_prompt
             else:
                 self.io.tool_output(f"Skipping automatic fix for '{rel_file_path}'.")
+
+    def tool_unload_from_path(self, file_path: str):
+        """Unloads all custom tools found in the specified file path."""
+        abs_file_path = Path(file_path).resolve()
+        rel_file_path = self.get_rel_fname(abs_file_path)
+
+        tools_to_remove = []
+        for tool_name, tool_info in self.custom_tools.items():
+            if Path(tool_info['path']).resolve() == abs_file_path:
+                tools_to_remove.append(tool_name)
+
+        if not tools_to_remove:
+            self.io.tool_output(f"No custom tools found loaded from '{rel_file_path}'.")
+            return
+
+        for tool_name in tools_to_remove:
+            # Remove from custom_tools metadata
+            del self.custom_tools[tool_name]
+
+            # Remove from local_tool_instances
+            if tool_name in self.local_tool_instances:
+                del self.local_tool_instances[tool_name]
+
+            # Remove from self.mcp_tools (specifically the 'local_tools' entry)
+            local_tools_entry_index = -1
+            for i, (server_name, _) in enumerate(self.mcp_tools):
+                if server_name == "local_tools":
+                    local_tools_entry_index = i
+                    break
+
+            if local_tools_entry_index != -1:
+                _, current_local_tools = self.mcp_tools[local_tools_entry_index]
+                updated_tools = [t for t in current_local_tools if t["function"]["name"] != tool_name]
+                self.mcp_tools[local_tools_entry_index] = ("local_tools", updated_tools)
+
+            self.io.tool_output(f"Unloaded tool: {tool_name} from {rel_file_path}")
+
+        # Refresh the master list of functions for the LLM
+        self.functions = self.get_tool_list()
 
     async def _execute_local_tool_calls(self, tool_calls_list):
         tool_responses = []
