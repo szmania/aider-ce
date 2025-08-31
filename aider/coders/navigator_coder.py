@@ -1993,7 +1993,7 @@ class NavigatorCoder(Coder):
                     " bracket. Skipping."
 
                 )
-                # Append the start marker itself to processed content so it's not lost
+                # Append the start marker itself to processed_content so it's not lost
                 processed_content += start_marker
                 last_index = scan_start_pos # Continue searching after the marker
                 continue
@@ -3019,7 +3019,7 @@ Just reply with fixed versions of the {blocks} above that failed to match.
                     staged_added = []
                     staged_modified = []
                     staged_deleted = []
-unstaged_modified = []
+                    unstaged_modified = []
                     unstaged_deleted = []
                     untracked = []
 
