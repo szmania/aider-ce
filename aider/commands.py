@@ -1943,12 +1943,11 @@ class Commands:
         "Create a new tool with AI assistance"
         
         scope = "local"
-        description = args.strip()
-
-        # Check for --global flag
-        if "--global" in description:
+        args_list = args.strip().split()
+        if "--global" in args_list:
             scope = "global"
-            description = description.replace("--global", "").strip()
+            args_list.remove("--global")
+        description = " ".join(args_list)
 
         if not description:
             self.io.tool_error("Please provide a description of the tool to create.")
@@ -2038,6 +2037,7 @@ class Commands:
             )
 
         try:
+            tools_dir.mkdir(parents=True, exist_ok=True)
             with open(tool_path, "w", encoding=self.io.encoding) as f:
                 f.write(tool_code)
             self.io.tool_output(f"Saved new tool to {tool_path}")

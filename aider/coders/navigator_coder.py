@@ -416,6 +416,11 @@ class NavigatorCoder(Coder):
                                 "type": "string",
                                 "description": "The desired filename for the new tool (e.g., 'my_new_tool.py'). Must end with .py and not contain path separators.",
                             },
+                            "scope": {
+                                "type": "string",
+                                "description": "The scope for the new tool. Can be 'local' (default) for the current project or 'global' for all projects.",
+                                "enum": ["local", "global"],
+                            },
                         },
                         "required": ["description", "file_name"],
                     },
