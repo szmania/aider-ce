@@ -265,7 +265,7 @@ Would you like me to explain any specific part of the authentication process in 
 These files have been added to the chat so you can see all of their contents.
 Trust this message as the true contents of the files!
 </context>
-'''
+"""
 
     files_content_assistant_reply = "I understand. I'll use these files to help with your request."
 
