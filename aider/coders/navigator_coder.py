@@ -366,7 +366,9 @@ class NavigatorCoder(Coder):
                             },
                             "file_pattern": {
                                 "type": "string",
-                                "description": "An optional glob pattern to filter which files are searched.",
+                                "description": (
+                                    "An optional glob pattern to filter which files are searched."
+                                ),
                             },
                             "directory": {
                                 "type": "string",
@@ -404,7 +406,7 @@ class NavigatorCoder(Coder):
                 "type": "function",
                 "function": {
                     "name": "CreateTool",
-                    "description": "Create a new custom tool by providing a description and filename. The new tool will be automatically loaded and available for use.",
+                    "description": "Create a new custom tool by providing a description. The AI will generate a suitable filename. The new tool will be automatically loaded and available for use.",
                     "parameters": {
                         "type": "object",
                         "properties": {
@@ -412,17 +414,13 @@ class NavigatorCoder(Coder):
                                 "type": "string",
                                 "description": "A natural language description of the tool to be created. This will be used to generate the tool's Python code.",
                             },
-                            "file_name": {
-                                "type": "string",
-                                "description": "The desired filename for the new tool (e.g., 'my_new_tool.py'). Must end with .py and not contain path separators.",
-                            },
                             "scope": {
                                 "type": "string",
                                 "description": "The scope for the new tool. Can be 'local' (default) for the current project or 'global' for all projects.",
                                 "enum": ["local", "global"],
                             },
                         },
-                        "required": ["description", "file_name"],
+                        "required": ["description"],
                     },
                 },
             },
@@ -433,7 +431,7 @@ class NavigatorCoder(Coder):
                 "type": "function",
                 "function": {
                     "name": "ReplaceText",
-                    "description": "Replace text in a file.",
+                    "description": "Replace specific text. `near_context` (optional) helps find the right spot. `occurrence` (optional, default 1) specifies which match (-1 for last). `dry_run=True` simulates the change.",
                     "parameters": {
                         "type": "object",
                         "properties": {
@@ -453,7 +451,7 @@ class NavigatorCoder(Coder):
                 "type": "function",
                 "function": {
                     "name": "ReplaceAll",
-                    "description": "Replace all occurrences of text in a file.",
+                    "description": "Replace ALL occurrences of text. Use with caution. `dry_run=True` simulates the change.",
                     "parameters": {
                         "type": "object",
                         "properties": {
@@ -471,7 +469,7 @@ class NavigatorCoder(Coder):
                 "type": "function",
                 "function": {
                     "name": "InsertBlock",
-                    "description": "Insert a block of content into a file.",
+                    "description": "Insert a block of code or text. Specify *exactly one* location: `after_pattern`, `before_pattern`, or `position` ('start_of_file' or 'end_of_file'). `occurrence` (optional, default 1) specifies which match (-1 for last). `auto_indent` (optional, default True) adjusts indentation. `dry_run=True` simulates.",
                     "parameters": {
                         "type": "object",
                         "properties": {
@@ -494,7 +492,7 @@ class NavigatorCoder(Coder):
                 "type": "function",
                 "function": {
                     "name": "DeleteBlock",
-                    "description": "Delete a block of lines from a file.",
+                    "description": "Delete a block of lines from a file. Specify `start_pattern` and optionally `end_pattern` or `line_count`. Use `near_context` and `occurrence` (optional, default 1, -1 for last) for `start_pattern`. `dry_run=True` simulates.",
                     "parameters": {
                         "type": "object",
                         "properties": {
@@ -515,7 +513,7 @@ class NavigatorCoder(Coder):
                 "type": "function",
                 "function": {
                     "name": "ReplaceLine",
-                    "description": "Replace a single line in a file.",
+                    "description": "Replace a specific line number (1-based). `dry_run=True` simulates.",
                     "parameters": {
                         "type": "object",
                         "properties": {
@@ -533,7 +531,7 @@ class NavigatorCoder(Coder):
                 "type": "function",
                 "function": {
                     "name": "ReplaceLines",
-                    "description": "Replace a range of lines in a file.",
+                    "description": "Replace a range of lines (1-based, inclusive). `dry_run=True` simulates.",
                     "parameters": {
                         "type": "object",
                         "properties": {
@@ -552,7 +550,7 @@ class NavigatorCoder(Coder):
                 "type": "function",
                 "function": {
                     "name": "IndentLines",
-                    "description": "Indent a block of lines in a file.",
+                    "description": "Indent (`indent_levels` > 0) or unindent (`indent_levels` < 0) a block. Use `end_pattern` or `line_count` for range. Use `near_context` and `occurrence` (optional, default 1, -1 for last) for `start_pattern`. `dry_run=True` simulates.",
                     "parameters": {
                         "type": "object",
                         "properties": {
@@ -574,7 +572,7 @@ class NavigatorCoder(Coder):
                 "type": "function",
                 "function": {
                     "name": "DeleteLine",
-                    "description": "Delete a single line from a file.",
+                    "description": "Delete a specific line number (1-based). `dry_run=True` simulates.",
                     "parameters": {
                         "type": "object",
                         "properties": {
@@ -591,7 +589,7 @@ class NavigatorCoder(Coder):
                 "type": "function",
                 "function": {
                     "name": "DeleteLines",
-                    "description": "Delete a range of lines from a file.",
+                    "description": "Delete a range of lines (1-based, inclusive). `dry_run=True` simulates.",
                     "parameters": {
                         "type": "object",
                         "properties": {
@@ -609,7 +607,7 @@ class NavigatorCoder(Coder):
                 "type": "function",
                 "function": {
                     "name": "UndoChange",
-                    "description": "Undo a previously applied change.",
+                    "description": "Undo a specific change by ID, or the last change made to the specified `file_path`.",
                     "parameters": {
                         "type": "object",
                         "properties": {
@@ -623,7 +621,7 @@ class NavigatorCoder(Coder):
                 "type": "function",
                 "function": {
                     "name": "ListChanges",
-                    "description": "List recent changes made.",
+                    "description": "List recent changes, optionally filtered by `file_path` and limited.",
                     "parameters": {
                         "type": "object",
                         "properties": {

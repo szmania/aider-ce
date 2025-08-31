@@ -574,7 +574,6 @@ class Commands:
             total += tk
             cost = tk * (self.coder.main_model.info.get("input_cost_per_token") or 0)
             total_cost += cost
-            msg = msg.ljust(col_width)
             self.io.tool_output(f"${cost:7.4f} {fmt(tk)} {msg} {tip}")  # noqa: E231
 
         self.io.tool_output("=" * (width + cost_width + 1))
@@ -1985,11 +1984,11 @@ class Commands:
 
         # Define target_dir_description
         if scope == "global":
-            target_dir_description = "global tools directory `~/.aider.tools/`"
             tools_dir = Path.home() / ".aider.tools"
+            target_dir_description = f"global tools directory `{tools_dir}`"
         else:
-            target_dir_description = "local project tools directory `.aider.tools/`"
             tools_dir = Path(self.coder.repo.root) / ".aider.tools" if self.coder.repo else Path.cwd() / ".aider.tools"
+            target_dir_description = f"local project tools directory `{tools_dir}`"
 
         user_message = (
             "On the first line, provide a suitable Python filename for this tool (e.g.,"
