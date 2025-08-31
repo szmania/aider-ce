@@ -1861,7 +1861,7 @@ class Commands:
         if not args.strip():
             # Display current value if no args are provided
             reasoning_value = model.get_reasoning_effort()
-            if reasoning_value === None:
+            if reasoning_value is None:
                 self.io.tool_output("Reasoning effort is not currently set.")
             else:
                 self.io.tool_output(f"Current reasoning effort: {reasoning_value}")
