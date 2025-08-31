@@ -768,6 +768,32 @@ class NavigatorCoder(Coder):
             tool_name = tool_definition["function"]["name"]
             tool_description = tool_definition["function"]["description"]
 
+            # <<< START of new code
+            # Determine scope
+            scope = "unknown"
+            p_file_path = Path(file_path).resolve()
+            home_tools_dir = (Path.home() / ".aider.tools").resolve()
+
+            try:
+                if p_file_path.is_relative_to(home_tools_dir):
+                    scope = "global"
+            except ValueError:
+                pass
+
+            if scope == "unknown":
+                project_tools_dir = None
+                if self.repo and self.repo.root:
+                    project_tools_dir = (Path(self.repo.root) / ".aider.tools").resolve()
+                else:
+                    project_tools_dir = (Path.cwd() / ".aider.tools").resolve()
+
+                try:
+                    if p_file_path.is_relative_to(project_tools_dir):
+                        scope = "local"
+                except ValueError:
+                    pass
+            # >>> END of new code
+
             # Store the instantiated tool object
             self.local_tool_instances[tool_name] = tool_instance
 
@@ -798,6 +824,7 @@ class NavigatorCoder(Coder):
             self.custom_tools[tool_name] = {
                 'path': file_path,
                 'description': tool_description,
+                'scope': scope, # <<< MODIFIED line
             }
 
             self.io.tool_output(f"Successfully loaded tool: {tool_name} from {self.get_rel_fname(file_path)}")

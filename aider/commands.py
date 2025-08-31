@@ -1365,8 +1365,6 @@ class Commands:
             edit_format=self.coder.edit_format,
             summarize_from_coder=False,
             from_coder=coder,
-            map_tokens=map_tokens,
-            map_mul_no_files=map_mul_no_files,
             show_announcements=False,
         )
 
@@ -2091,10 +2089,44 @@ class Commands:
             self.io.tool_output("  No standard tools available.")
 
         if custom_tool_names:
-            self.io.tool_output("\nCustom Tools:", bold=True)
+            # <<< START of replacement
+            local_tools = []
+            global_tools = []
+            other_tools = []
+
             for tool_name, tool_info in sorted(self.coder.custom_tools.items()):
-                rel_path = self.coder.get_rel_fname(tool_info['path'])
-                self.io.tool_output(f"- {tool_name}: {tool_info['description']} (Source: {rel_path})")
+                scope = tool_info.get("scope", "unknown")
+                if scope == "local":
+                    local_tools.append((tool_name, tool_info))
+                elif scope == "global":
+                    global_tools.append((tool_name, tool_info))
+                else:
+                    other_tools.append((tool_name, tool_info))
+
+            if local_tools:
+                self.io.tool_output("\nLocal Tools:", bold=True)
+                for tool_name, tool_info in local_tools:
+                    rel_path = self.coder.get_rel_fname(tool_info["path"])
+                    self.io.tool_output(
+                        f"- {tool_name}: {tool_info['description']} (Source: {rel_path})"
+                    )
+
+            if global_tools:
+                self.io.tool_output("\nGlobal Tools:", bold=True)
+                for tool_name, tool_info in global_tools:
+                    path_display = self.coder.get_rel_fname(tool_info["path"])
+                    self.io.tool_output(
+                        f"- {tool_name}: {tool_info['description']} (Source: {path_display})"
+                    )
+
+            if other_tools:
+                self.io.tool_output("\nOther Custom Tools:", bold=True)
+                for tool_name, tool_info in other_tools:
+                    rel_path = self.coder.get_rel_fname(tool_info["path"])
+                    self.io.tool_output(
+                        f"- {tool_name}: {tool_info['description']} (Source: {rel_path})"
+                    )
+            # >>> END of replacement
 
     def cmd_copy_context(self, args=None):
         """Copy the current chat context as markdown, suitable to paste into a web UI"""
