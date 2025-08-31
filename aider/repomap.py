@@ -416,7 +416,8 @@ class RepoMap:
         # Run the tags queries
         if sys.version_info >= (3, 10):
             query = tree_sitter.Query(language, query_scm)
-            captures = query.captures(tree.root_node)
+            cursor = tree_sitter.QueryCursor(query)
+            captures = cursor.captures(tree.root_node)
         else:
             query = language.query(query_scm)
             captures = query.captures(tree.root_node)
