@@ -802,7 +802,7 @@ class Commands:
         sorted_completions = sorted(all_completions, key=lambda c: c.text)
 
         # Yield the sorted completions
-        for completion in sorted_completions:
+        for completion in sorted(sorted_completions):
             yield completion
 
     def completions_add(self):
@@ -1987,6 +1987,68 @@ class Commands:
                 self.io.tool_error(f"Failed to unload tool from {tool_file}: {e}")
 
     def completions_tools_unload(self):
+        """Return loaded custom tool paths for auto-completion."""
+        if not hasattr(self.coder, "custom_tools"):
+            return []
+
+        loaded_tool_paths = set()
+        for tool_info in self.coder.custom_tools.values():
+            loaded_tool_paths.add(tool_info["path"])
+
+        relative_paths = [self.coder.get_rel_fname(p) for p in loaded_tool_paths]
+        quoted_paths = [self.quote_fname(p) for p in relative_paths]
+        return sorted(quoted_paths)
+
+    def cmd_tools_move(self, args):
+        "Move a custom tool between the local and global tool directories"
+        paths_str = args.strip()
+        if not paths_str:
+            self.io.tool_error("Please provide the path(s) to Python files or directories containing tools to move.")
+            return
+
+        if not hasattr(self.coder, "tool_move"):
+            self.io.tool_error("The current coder does not support moving custom tools.")
+            return
+
+        all_tool_files = set()
+        filenames = parse_quoted_filenames(paths_str)
+
+        for pattern in filenames:
+            matched_paths = glob.glob(pattern, recursive=True)
+            if not matched_paths:
+                self.io.tool_error(f"Path not found or no match for: {pattern}")
+                continue
+
+            for path_str_matched in matched_paths:
+                path = Path(path_str_matched).resolve()
+
+                if not path.exists():
+                    self.io.tool_error(f"Path not found: {path}")
+                    continue
+
+                if path.is_file():
+                    if path.suffix == ".py":
+                        all_tool_files.add(str(path))
+                    else:
+                        self.io.tool_error(f"Skipping non-Python file: {path}")
+                elif path.is_dir():
+                    for tool_file in path.rglob("*.py"):
+                        all_tool_files.add(str(tool_file.resolve()))
+                else:
+                    self.io.tool_error(f"Skipping invalid path: {path}")
+
+        if not all_tool_files:
+            self.io.tool_output("No Python tool files found to move.")
+            return
+
+        tool_files_list = sorted(list(all_tool_files))
+        for tool_file in tool_files_list:
+            try:
+                self.coder.tool_move(tool_file)
+            except Exception as e:
+                self.io.tool_error(f"Failed to move tool from {tool_file}: {e}")
+
+    def completions_tools_move(self):
         """Return loaded custom tool paths for auto-completion."""
         if not hasattr(self.coder, "custom_tools"):
             return []

@@ -16,6 +16,7 @@ from pathlib import Path
 import importlib.util
 import inspect
 import sys
+import shutil
 
 import jsonschema # Added import for jsonschema
 from litellm import experimental_mcp_client
@@ -893,6 +894,78 @@ class NavigatorCoder(Coder):
 
         # Refresh the master list of functions for the LLM
         self.functions = self.get_tool_list()
+
+    def tool_move(self, file_path: str):
+        """Moves a tool between local and global scopes and reloads it."""
+        original_abs_path = Path(file_path).resolve()
+        original_rel_path = self.get_rel_fname(original_abs_path)
+
+        if not original_abs_path.exists():
+            raise FileNotFoundError(f"Tool file not found: {original_rel_path}")
+        if not original_abs_path.is_file():
+            raise ValueError(f"Path is not a file: {original_rel_path}")
+        if original_abs_path.suffix != ".py":
+            raise ValueError(f"Not a Python tool file: {original_rel_path}")
+
+        global_tools_dir = (Path.home() / ".aider.tools").resolve()
+        local_tools_dir = (
+            Path(self.repo.root) / ".aider.tools" if self.repo else Path.cwd() / ".aider.tools"
+        ).resolve()
+
+        is_global = False
+        is_local = False
+
+        try:
+            if original_abs_path.is_relative_to(global_tools_dir):
+                is_global = True
+        except ValueError:
+            pass
+
+        try:
+            if original_abs_path.is_relative_to(local_tools_dir):
+                is_local = True
+        except ValueError:
+            pass
+
+        if not is_global and not is_local:
+            raise ValueError(
+                f"Tool '{original_rel_path}' is not in a recognized local or global tool directory."
+            )
+
+        destination_dir = None
+        if is_global:
+            destination_dir = local_tools_dir
+            self.io.tool_output(f"Moving tool '{original_rel_path}' from global to local scope...")
+        elif is_local:
+            destination_dir = global_tools_dir
+            self.io.tool_output(f"Moving tool '{original_rel_path}' from local to global scope...")
+
+        if destination_dir is None:
+            raise ValueError("Could not determine destination directory.")
+
+        destination_path = destination_dir / original_abs_path.name
+        destination_rel_path = self.get_rel_fname(destination_path)
+
+        if destination_path.exists():
+            raise FileExistsError(
+                f"A file named '{destination_rel_path}' already exists at the destination. "
+                "Please rename or remove it before moving."
+            )
+
+        # 1. Unload the tool from the current session
+        self.tool_unload_from_path(str(original_abs_path))
+
+        # 2. Move the file on the filesystem
+        try:
+            destination_dir.mkdir(parents=True, exist_ok=True)
+            shutil.move(original_abs_path, destination_path)
+            self.io.tool_output(f"File moved to: {destination_rel_path}")
+        except Exception as e:
+            raise IOError(f"Failed to move file from {original_rel_path} to {destination_rel_path}: {e}")
+
+        # 3. Load the tool from the new path
+        self.tool_add_from_path(str(destination_path))
+        self.io.tool_output(f"Reloaded tool '{original_abs_path.name}' with new scope.")
 
     async def _execute_local_tool_calls(self, tool_calls_list):
         tool_responses = []
@@ -2946,7 +3019,7 @@ Just reply with fixed versions of the {blocks} above that failed to match.
                     staged_added = []
                     staged_modified = []
                     staged_deleted = []
-                    unstaged_modified = []
+unstaged_modified = []
                     unstaged_deleted = []
                     untracked = []
 
