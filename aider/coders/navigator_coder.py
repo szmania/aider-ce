@@ -2670,7 +2670,7 @@ Just reply with fixed versions of the {blocks} above that failed to match.
                 file_tokens = self.main_model.token_count(content)
                 if file_tokens > self.large_file_token_threshold:
                     self.io.tool_output(
-                        f"⚠️ '{file_path}' is very large ({file_tokens} tokens). "
+                        f"'{file_path}' is very large ({file_tokens} tokens). "
                         "Use /context-management to toggle truncation off if needed."
                     )
 
