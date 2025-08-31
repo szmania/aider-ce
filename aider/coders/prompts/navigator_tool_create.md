@@ -26,7 +26,7 @@ class BaseAiderTool(ABC):
         """
         Returns the JSON schema definition for the tool.
 
-        This definition is used by the LLM to understand how to use the tool.
+        This Open AI style definition is used by the LLM to understand how to use the tool.
         It should be a dictionary with 'name', 'description', and 'parameters'.
         Optionally, it can include a 'returns' object to describe the tool's output.
 
@@ -81,11 +81,7 @@ class ExampleTool(BaseAiderTool):
                         }},
                     }},
                     "required": ["file_path"],
-                }},
-                "returns": {{
-                    "type": "string",
-                    "description": "The complete content of the file as a string.",
-                }},
+                }}
             }},
         }}
 
@@ -113,6 +109,5 @@ Important guidelines:
 5. Use `self.coder.io.tool_output()` for user-facing messages
 6. Use `self.coder.io.tool_error()` for error messages
 7. Save the tool file to .aider.tools/ directory by default
-8. Include a `returns` object in the tool definition to describe the tool's output.
-9. For cross-project tools, consider saving to ~/.aider.tools/ (global tools directory)
-10. To write the new tool's code into a file, you **must** use a file editing tool. For a new or empty file, use the `InsertBlock` tool with the `position` parameter. For example: `InsertBlock(file_path='.aider.tools/my_tool.py', content='<the full python code>', position='top')`
+8. For cross-project tools, consider saving to ~/.aider.tools/ (global tools directory)
+9. To write the new tool's code into a file, you **must** use a file editing tool. For a new or empty file, use the `InsertBlock` tool with the `position` parameter. For example: `InsertBlock(file_path='.aider.tools/my_tool.py', content='<the full python code>', position='top')`

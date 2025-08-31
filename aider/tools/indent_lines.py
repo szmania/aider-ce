@@ -86,10 +86,6 @@ class IndentLines(BaseAiderTool):
                     },
                     "required": ["file_path", "start_pattern"],
                 },
-                "returns": {
-                    "type": "string",
-                    "description": "A message indicating the result of the indent operation, including a diff snippet if successful.",
-                },
             },
         }
 

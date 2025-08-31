@@ -38,10 +38,6 @@ class CreateTool(BaseAiderTool):
                     },
                     "required": ["description", "file_name"],
                 },
-                "returns": {
-                    "type": "string",
-                    "description": "A message indicating whether the tool was successfully created and loaded, or an error message.",
-                },
             },
         }
 

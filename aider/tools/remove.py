@@ -24,10 +24,6 @@ class Remove(BaseAiderTool):
                     },
                     "required": ["file_path"],
                 },
-                "returns": {
-                    "type": "string",
-                    "description": "A message indicating whether the file was removed from the context.",
-                },
             },
         }
 

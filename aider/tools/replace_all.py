@@ -47,10 +47,6 @@ class ReplaceAll(BaseAiderTool):
                     },
                     "required": ["file_path", "find_text", "replace_text"],
                 },
-                "returns": {
-                    "type": "string",
-                    "description": "A message indicating the result of the replace operation, including a diff snippet if successful.",
-                },
             },
         }
 

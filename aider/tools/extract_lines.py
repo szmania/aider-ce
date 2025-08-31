@@ -69,10 +69,6 @@ class ExtractLines(BaseAiderTool):
                     },
                     "required": ["source_file_path", "target_file_path", "start_pattern"],
                 },
-                "returns": {
-                    "type": "string",
-                    "description": "A message indicating the result of the extraction, including diff snippets for both source and target files.",
-                },
             },
         }
 

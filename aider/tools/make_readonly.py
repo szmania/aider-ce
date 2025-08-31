@@ -22,10 +22,6 @@ class MakeReadonly(BaseAiderTool):
                     },
                     "required": ["file_path"],
                 },
-                "returns": {
-                    "type": "string",
-                    "description": "A message indicating whether the file is now read-only.",
-                },
             },
         }
 
