@@ -574,6 +574,7 @@ class Commands:
             total += tk
             cost = tk * (self.coder.main_model.info.get("input_cost_per_token") or 0)
             total_cost += cost
+            msg = msg.ljust(col_width)
             self.io.tool_output(f"${cost:7.4f} {fmt(tk)} {msg} {tip}")  # noqa: E231
 
         self.io.tool_output("=" * (width + cost_width + 1))
@@ -1940,7 +1941,7 @@ class Commands:
 
     def cmd_tools_create(self, args):
         "Create a new tool with AI assistance"
-        
+
         scope = "local"
         args_list = args.strip().split()
         if "--global" in args_list:
