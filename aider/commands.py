@@ -802,7 +802,7 @@ class Commands:
         sorted_completions = sorted(all_completions, key=lambda c: c.text)
 
         # Yield the sorted completions
-        for completion in sorted(sorted_completions):
+        for completion in sorted_completions:
             yield completion
 
     def completions_add(self):
@@ -1861,7 +1861,7 @@ class Commands:
         if not args.strip():
             # Display current value if no args are provided
             reasoning_value = model.get_reasoning_effort()
-            if reasoning_value is None:
+            if reasoning_value === None:
                 self.io.tool_output("Reasoning effort is not currently set.")
             else:
                 self.io.tool_output(f"Current reasoning effort: {reasoning_value}")
@@ -2089,7 +2089,6 @@ class Commands:
             self.io.tool_output("  No standard tools available.")
 
         if custom_tool_names:
-            # <<< START of replacement
             local_tools = []
             global_tools = []
             other_tools = []
@@ -2103,30 +2102,32 @@ class Commands:
                 else:
                     other_tools.append((tool_name, tool_info))
 
+            if local_tools or global_tools or other_tools:
+                self.io.tool_output("\nCustom Tools:", bold=True)
+
             if local_tools:
-                self.io.tool_output("\nLocal Tools:", bold=True)
+                self.io.tool_output("  Local Tools:", bold=True)
                 for tool_name, tool_info in local_tools:
                     rel_path = self.coder.get_rel_fname(tool_info["path"])
                     self.io.tool_output(
-                        f"- {tool_name}: {tool_info['description']} (Source: {rel_path})"
+                        f"  - {tool_name}: {tool_info['description']} (Source: {rel_path})"
                     )
 
             if global_tools:
-                self.io.tool_output("\nGlobal Tools:", bold=True)
+                self.io.tool_output("  Global Tools:", bold=True)
                 for tool_name, tool_info in global_tools:
                     path_display = self.coder.get_rel_fname(tool_info["path"])
                     self.io.tool_output(
-                        f"- {tool_name}: {tool_info['description']} (Source: {path_display})"
+                        f"  - {tool_name}: {tool_info['description']} (Source: {path_display})"
                     )
 
             if other_tools:
-                self.io.tool_output("\nOther Custom Tools:", bold=True)
+                self.io.tool_output("  Other Custom Tools:", bold=True)
                 for tool_name, tool_info in other_tools:
                     rel_path = self.coder.get_rel_fname(tool_info["path"])
                     self.io.tool_output(
-                        f"- {tool_name}: {tool_info['description']} (Source: {rel_path})"
+                        f"  - {tool_name}: {tool_info['description']} (Source: {rel_path})"
                     )
-            # >>> END of replacement
 
     def cmd_copy_context(self, args=None):
         """Copy the current chat context as markdown, suitable to paste into a web UI"""
