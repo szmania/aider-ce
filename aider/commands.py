@@ -1986,16 +1986,22 @@ class Commands:
         # Define target_dir_description
         if scope == "global":
             tools_dir = Path.home() / ".aider.tools"
-            target_dir_description = f"global tools directory `{tools_dir}`"
+            target_dir_description = "the global tools directory (`~/.aider.tools`)"
         else:
-            tools_dir = Path(self.coder.repo.root) / ".aider.tools" if self.coder.repo else Path.cwd() / ".aider.tools"
-            target_dir_description = f"local project tools directory `{tools_dir}`"
+            tools_dir = (
+                Path(self.coder.repo.root) / ".aider.tools"
+                if self.coder.repo
+                else Path.cwd() / ".aider.tools"
+            )
+            target_dir_description = "the local project tools directory (`.aider.tools`)"
 
         user_message = (
-            "On the first line, provide a suitable Python filename for this tool (e.g.,"
-            " `my_tool.py`).\n"
-            "On the following lines, provide the complete Python code for the tool.\n\n"
-            f"The tool should be saved in the {target_dir_description}.\n\n"
+            "Your response MUST follow this format:\n"
+            "1. On the first line, provide a single, valid Python filename for this tool (e.g.,"
+            " `my_tool.py`). The filename must end with .py and not contain any path separators"
+            " (`/` or `\\`).\n"
+            "2. On all subsequent lines, provide the complete Python code for the tool.\n\n"
+            f"The tool will be saved in {target_dir_description}.\n\n"
             f"Tool Description:\n{description}"
         )
 
