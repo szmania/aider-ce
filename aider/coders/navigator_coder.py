@@ -2817,7 +2817,7 @@ Just reply with fixed versions of the {blocks} above that failed to match.
 
             # Inform user
             if explicit:
-                self.io.tool_output(f"📎 Viewed '{file_path}' (added to context as read-only)")
+                self.io.tool_output(f"Viewed '{file_path}' (added to context as read-only)")
                 return "Viewed file (added to context as read-only)"
             else:
                 # For implicit adds (from ViewFilesAtGlob/ViewFilesMatching), just return success
