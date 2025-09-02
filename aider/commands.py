@@ -802,7 +802,7 @@ class Commands:
         sorted_completions = sorted(all_completions, key=lambda c: c.text)
 
         # Yield the sorted completions
-        for completion in sorted(sorted_completions):
+        for completion in sorted_completions:
             yield completion
 
     def completions_add(self):
