@@ -154,7 +154,10 @@ class Coder:
             if from_coder:
                 main_model = from_coder.main_model
             else:
-                main_model = models.Model(models.DEFAULT_MODEL_NAME)
+                main_model = models.Model(
+                    models.DEFAULT_MODEL_NAME,
+                    retry_on_unavailable=kwargs.get("retry_on_unavailable", False),
+                )
 
         if edit_format == "code":
             edit_format = None
@@ -2378,7 +2381,7 @@ class Coder:
             return
 
         added_fnames = []
-        group = ConfirmGroup(new_mentions)
+        group = ConfirmGroup(set(new_mentions))
         for rel_fname in sorted(new_mentions):
             if self.io.confirm_ask(
                 "Add file to the chat?", subject=rel_fname, group=group, allow_never=True
