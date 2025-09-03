@@ -1735,6 +1735,7 @@ class Coder:
                     if self.retry_on_unavailable and ex_info.name in (
                         "ServiceUnavailableError",
                         "MidStreamFallbackError",
+                        "InternalServerError", # ARCHITECT: Added InternalServerError to retryable exceptions
                     ):
                         should_retry = True
 
