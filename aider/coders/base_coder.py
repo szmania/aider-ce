@@ -1732,11 +1732,12 @@ class Coder:
                         break
 
                     should_retry = ex_info.retry
-                    if self.retry_on_unavailable and ex_info.name in (
+                    if (self.retry_on_unavailable and ex_info.name in (
                         "ServiceUnavailableError",
                         "MidStreamFallbackError",
-                        "InternalServerError", # ARCHITECT: Added InternalServerError to retryable exceptions
-                    ):
+                        "InternalServerError",
+                    ) or "ServiceUnavailableError" in str(err) or "MidStreamFallbackError" in str(err)
+                            or "InternalServerError" in str(err)):
                         should_retry = True
 
                     if should_retry:
