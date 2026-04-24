@@ -1743,16 +1743,14 @@ class InputOutput:
             try:
                 result = subprocess.run(self.notifications_command, shell=True, capture_output=True)
                 if result.returncode != 0:
-                    error_msg = ""
-                    if result.stderr:
-                        error_msg = result.stderr.decode("utf-8", errors="replace").strip()
-                    if not error_msg and result.stdout:
-                        error_msg = result.stdout.decode("utf-8", errors="replace").strip()
-
-                    if error_msg:
-                        self.tool_warning(f"Failed to run notifications command: {error_msg}")
-                    else:
-                        self.tool_warning(f"Notifications command failed with exit code {result.returncode}")
+                    err = result.stderr.decode("utf-8", errors="replace").strip()
+                    out = result.stdout.decode("utf-8", errors="replace").strip()
+                    msg = f"Notification command failed with exit code {result.returncode}."
+                    if err:
+                        msg += f"\nstderr: {err}"
+                    if out:
+                        msg += f"\nstdout: {out}"
+                    self.tool_warning(msg)
             except Exception as e:
                 self.tool_warning(f"Failed to run notifications command: {str(e)}")
         else:
