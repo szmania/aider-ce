@@ -1681,6 +1681,14 @@ class InputOutput:
 
     async def _send_notification_async(self):
         """Async version of _send_notification for TUI mode."""
+        if self.notifications_command and "System.Windows.MessageBox" in self.notifications_command:
+            self.tool_warning(
+                "The configured 'notifications-command' uses a blocking MessageBox."
+                " This is not supported for background notifications. Falling back to terminal bell."
+            )
+            print("\a", end="", flush=True)
+            return
+
         if self.notifications_command:
             try:
                 proc = await asyncio.create_subprocess_shell(
@@ -1737,6 +1745,14 @@ class InputOutput:
         return None  # Unknown system
 
     def _send_notification(self):
+        if self.notifications_command and "System.Windows.MessageBox" in self.notifications_command:
+            self.tool_warning(
+                "The configured 'notifications-command' uses a blocking MessageBox."
+                " This is not supported for background notifications. Falling back to terminal bell."
+            )
+            print("\a", end="", flush=True)
+            return
+
         if self.notifications_command:
             try:
                 result = subprocess.run(self.notifications_command, shell=True, capture_output=True)
