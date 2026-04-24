@@ -1691,18 +1691,16 @@ class InputOutput:
                 stdout, stderr = await proc.communicate()
 
                 if proc.returncode != 0:
-                    error_msg = ""
-                    if stderr:
-                        error_msg = stderr.decode("utf-8", errors="replace").strip()
-                    if not error_msg and stdout:
-                        error_msg = stdout.decode("utf-8", errors="replace").strip()
-
-                    if error_msg:
-                        self.tool_warning(f"ASYNC: Failed to run notifications command: {error_msg}")
-                    else:
-                        self.tool_warning(f"ASYNC: Notifications command failed with exit code {proc.returncode}")
+                    err = stderr.decode("utf-8", errors="replace").strip()
+                    out = stdout.decode("utf-8", errors="replace").strip()
+                    msg = f"Notification command failed with exit code {proc.returncode}."
+                    if err:
+                        msg += f"\nstderr: {err}"
+                    if out:
+                        msg += f"\nstdout: {out}"
+                    self.tool_warning(msg)
             except Exception as e:
-                self.tool_warning(f"ASYNC: Failed to run notifications command: {str(e)}")
+                self.tool_warning(f"Failed to run notifications command: {str(e)}")
         else:
             # Ringing the bell is synchronous, but should be quick.
             # It's better to do it this way than trying to make it async.
