@@ -1696,13 +1696,13 @@ class InputOutput:
                         error_msg = stderr.decode("utf-8", errors="replace").strip()
                     if not error_msg and stdout:
                         error_msg = stdout.decode("utf-8", errors="replace").strip()
-                    
+
                     if error_msg:
-                        self.tool_warning(f"Failed to run notifications command: {error_msg}")
+                        self.tool_warning(f"ASYNC: Failed to run notifications command: {error_msg}")
                     else:
-                        self.tool_warning(f"Notifications command failed with exit code {proc.returncode}")
+                        self.tool_warning(f"ASYNC: Notifications command failed with exit code {proc.returncode}")
             except Exception as e:
-                self.tool_warning(f"Failed to run notifications command: {str(e)}")
+                self.tool_warning(f"ASYNC: Failed to run notifications command: {str(e)}")
         else:
             # Ringing the bell is synchronous, but should be quick.
             # It's better to do it this way than trying to make it async.
@@ -1748,7 +1748,7 @@ class InputOutput:
                         error_msg = result.stderr.decode("utf-8", errors="replace").strip()
                     if not error_msg and result.stdout:
                         error_msg = result.stdout.decode("utf-8", errors="replace").strip()
-                    
+
                     if error_msg:
                         self.tool_warning(f"Failed to run notifications command: {error_msg}")
                     else:
