@@ -1681,14 +1681,6 @@ class InputOutput:
 
     async def _send_notification_async(self):
         """Async version of _send_notification for TUI mode."""
-        if self.notifications_command and "System.Windows.MessageBox" in self.notifications_command:
-            self.tool_warning(
-                "The configured 'notifications-command' uses a blocking MessageBox."
-                " This is not supported for background notifications. Falling back to terminal bell."
-            )
-            print("\a", end="", flush=True)
-            return
-
         if self.notifications_command:
             try:
                 proc = await asyncio.create_subprocess_shell(
@@ -1708,7 +1700,7 @@ class InputOutput:
                         msg += f"\nstdout: {out}"
                     self.tool_warning(msg)
             except Exception as e:
-                self.tool_warning(f"Failed to run notifications command: {str(e)}")
+                self.tool_warning(f"ASYNC: Failed to run notifications command: {str(e)}")
         else:
             # Ringing the bell is synchronous, but should be quick.
             # It's better to do it this way than trying to make it async.
@@ -1738,21 +1730,17 @@ class InputOutput:
                         return f"zenity --notification --text='{NOTIFICATION_MESSAGE}'"
             return None  # No known notification tool found
         elif system == "Windows":
-            # The previous PowerShell MessageBox command was blocking and not suitable for
-            # a background notification. Returning None falls back to the terminal bell.
-            return None
+            # PowerShell notification
+            return (
+                "powershell -command"
+                " \"[System.Reflection.Assembly]::LoadWithPartialName('System.Windows.Forms');"
+                f" [System.Windows.Forms.MessageBox]::Show('{NOTIFICATION_MESSAGE}',"
+                " 'cecli')\""
+            )
 
         return None  # Unknown system
 
     def _send_notification(self):
-        if self.notifications_command and "System.Windows.MessageBox" in self.notifications_command:
-            self.tool_warning(
-                "The configured 'notifications-command' uses a blocking MessageBox."
-                " This is not supported for background notifications. Falling back to terminal bell."
-            )
-            print("\a", end="", flush=True)
-            return
-
         if self.notifications_command:
             try:
                 result = subprocess.run(self.notifications_command, shell=True, capture_output=True)
