@@ -1764,7 +1764,8 @@ class InputOutput:
 
     def notify_user_input_required(self):
         """Send a notification that user input is required."""
-        if not self.notifications:
+        # If notifications are disabled or we've had too many failures, skip
+        if not self.notifications or self.num_error_outputs > 3:
             return
 
         coder = self.get_coder()
@@ -1781,7 +1782,8 @@ class InputOutput:
 
     def ring_bell(self):
         """Ring the terminal bell if needed and clear the flag"""
-        if not self.bell_on_next_input or not self.notifications:
+        # If notifications are disabled or we've had too many failures, skip
+        if not self.bell_on_next_input or not self.notifications or self.num_error_outputs > 3:
             return
 
         coder = self.get_coder()
