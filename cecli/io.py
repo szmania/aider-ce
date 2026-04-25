@@ -1681,6 +1681,10 @@ class InputOutput:
 
     async def _send_notification_async(self):
         """Async version of _send_notification for TUI mode."""
+        # Check if notifications are disabled
+        if not self.notifications:
+            return
+            
         if self.notifications_command:
             try:
                 proc = await asyncio.create_subprocess_shell(
@@ -1741,6 +1745,10 @@ class InputOutput:
         return None  # Unknown system
 
     def _send_notification(self):
+        # Check if notifications are disabled
+        if not self.notifications:
+            return
+            
         if self.notifications_command:
             try:
                 result = subprocess.run(self.notifications_command, shell=True, capture_output=True)
