@@ -1306,7 +1306,9 @@ class InputOutput:
                 res = group.preference
                 self.user_input(f"{question} - {res}", log_only=False)
             else:
+                # Ring the bell if needed
                 self.notify_user_input_required()
+                self.ring_bell()
                 self.start_spinner("Awaiting Confirmation...", False)
 
                 while True:
@@ -1385,7 +1387,8 @@ class InputOutput:
     def prompt_ask(self, question, default="", subject=None):
         self.num_user_asks += 1
 
-        self.notify_user_input_required()
+        # Ring the bell if needed
+        self.ring_bell()
 
         if subject:
             self.tool_output()
@@ -1684,7 +1687,7 @@ class InputOutput:
         # Check if notifications are disabled
         if not self.notifications:
             return
-            
+
         if self.notifications_command:
             try:
                 proc = await asyncio.create_subprocess_shell(
@@ -1692,7 +1695,8 @@ class InputOutput:
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.PIPE,
                 )
-                stdout, stderr = await proc.communicate()
+                # Add timeout to prevent hanging
+                stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=10)
 
                 if proc.returncode != 0:
                     error_msg = ""
@@ -1700,13 +1704,14 @@ class InputOutput:
                         error_msg = stderr.decode("utf-8", errors="replace").strip()
                     if not error_msg and stdout:
                         error_msg = stdout.decode("utf-8", errors="replace").strip()
-
-                    if error_msg:
-                        self.tool_warning(f"Failed to run notifications command: {error_msg}")
-                    else:
-                        self.tool_warning(
-                            f"Notifications command failed with exit code {proc.returncode}"
-                        )
+                    
+                    # If both stderr and stdout are empty, it's likely a timeout or blocking issue
+                    if not error_msg:
+                        error_msg = "Command may have timed out or been blocked (no output captured)"
+                    
+                    self.tool_warning(f"Failed to run notifications command: {error_msg}")
+            except asyncio.TimeoutError:
+                self.tool_warning("Notifications command timed out")
             except Exception as e:
                 self.tool_warning(f"Failed to run notifications command: {str(e)}")
         else:
@@ -1738,36 +1743,52 @@ class InputOutput:
                         return f"zenity --notification --text='{NOTIFICATION_MESSAGE}'"
             return None  # No known notification tool found
         elif system == "Windows":
-            # The previous PowerShell MessageBox command was blocking and not suitable for
-            # a background notification. Returning None falls back to the terminal bell.
+            # PowerShell MessageBox blocks user interaction, which is unsuitable for notifications
+            # Instead, use a simpler PowerShell command or fall back to terminal bell
+            
+            # Try a simple non-blocking notification approach
+            powershell_cmd = (
+                "powershell -c \"Write-Host 'Cecli notification' -ForegroundColor Green\""
+            )
+            
+            # For now, fall back to terminal bell (more reliable)
             return None
-
         return None  # Unknown system
 
     def _send_notification(self):
         # Check if notifications are disabled
         if not self.notifications:
             return
-            
+
         if self.notifications_command:
             try:
-                result = subprocess.run(self.notifications_command, shell=True, capture_output=True)
+                # Check again if notifications are disabled (in case it changed)
+                if not self.notifications:
+                    return
+                    
+                # Add timeout to prevent hanging
+                result = subprocess.run(
+                    self.notifications_command, 
+                    shell=True, 
+                    capture_output=True,
+                    timeout=10  # 10 second timeout
+                )
                 if result.returncode != 0:
                     error_msg = ""
                     if result.stderr:
                         error_msg = result.stderr.decode("utf-8", errors="replace").strip()
                     if not error_msg and result.stdout:
                         error_msg = result.stdout.decode("utf-8", errors="replace").strip()
-
-                    if error_msg:
-                        self.tool_warning(f"Failed to run notifications command: {error_msg}")
-                    else:
-                        self.tool_warning(
-                            f"Notifications command failed with exit code {result.returncode}"
-                        )
+                    
+                    # If both stderr and stdout are empty, it's likely a timeout or blocking issue
+                    if not error_msg:
+                        error_msg = "Command may have timed out or been blocked (no output captured)"
+                    
+                    self.tool_warning(f"Failed to run notifications command: {error_msg}")
+            except subprocess.TimeoutExpired:
+                self.tool_warning("Notifications command timed out after 10 seconds")
             except Exception as e:
                 self.tool_warning(f"Failed to run notifications command: {str(e)}")
-        else:
             print("\a", end="", flush=True)  # Ring the bell
 
     def notify_user_input_required(self):
