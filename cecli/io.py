@@ -1681,7 +1681,6 @@ class InputOutput:
         """Mark that the LLM has started processing, so we should ring the bell on next input"""
         self.bell_on_next_input = True
 
-
     async def _send_notification_async(self):
         """Async version of _send_notification for TUI mode."""
         # Check if notifications are disabled
@@ -1704,11 +1703,13 @@ class InputOutput:
                         error_msg = stderr.decode("utf-8", errors="replace").strip()
                     if not error_msg and stdout:
                         error_msg = stdout.decode("utf-8", errors="replace").strip()
-                    
+
                     # If both stderr and stdout are empty, it's likely a timeout or blocking issue
                     if not error_msg:
-                        error_msg = "Command may have timed out or been blocked (no output captured)"
-                    
+                        error_msg = (
+                            "Command may have timed out or been blocked (no output captured)"
+                        )
+
                     self.tool_warning(f"Failed to run notifications command: {error_msg}")
             except asyncio.TimeoutError:
                 self.tool_warning("Notifications command timed out")
@@ -1745,12 +1746,9 @@ class InputOutput:
         elif system == "Windows":
             # PowerShell MessageBox blocks user interaction, which is unsuitable for notifications
             # Instead, use a simpler PowerShell command or fall back to terminal bell
-            
+
             # Try a simple non-blocking notification approach
-            powershell_cmd = (
-                "powershell -c \"Write-Host 'Cecli notification' -ForegroundColor Green\""
-            )
-            
+
             # For now, fall back to terminal bell (more reliable)
             return None
         return None  # Unknown system
@@ -1761,17 +1759,24 @@ class InputOutput:
             return
 
         if self.notifications_command:
+            if "messagebox" in self.notifications_command.lower():
+                self.tool_warning(
+                    "The configured notification command uses a blocking MessageBox, which is not"
+                    " supported. Falling back to terminal bell."
+                )
+                print("\a", end="", flush=True)
+                return
             try:
                 # Check again if notifications are disabled (in case it changed)
                 if not self.notifications:
                     return
-                    
+
                 # Add timeout to prevent hanging
                 result = subprocess.run(
-                    self.notifications_command, 
-                    shell=True, 
+                    self.notifications_command,
+                    shell=True,
                     capture_output=True,
-                    timeout=10  # 10 second timeout
+                    timeout=10,  # 10 second timeout
                 )
                 if result.returncode != 0:
                     error_msg = ""
@@ -1779,16 +1784,19 @@ class InputOutput:
                         error_msg = result.stderr.decode("utf-8", errors="replace").strip()
                     if not error_msg and result.stdout:
                         error_msg = result.stdout.decode("utf-8", errors="replace").strip()
-                    
+
                     # If both stderr and stdout are empty, it's likely a timeout or blocking issue
                     if not error_msg:
-                        error_msg = "Command may have timed out or been blocked (no output captured)"
-                    
+                        error_msg = (
+                            "Command may have timed out or been blocked (no output captured)"
+                        )
+
                     self.tool_warning(f"Failed to run notifications command: {error_msg}")
             except subprocess.TimeoutExpired:
                 self.tool_warning("Notifications command timed out after 10 seconds")
             except Exception as e:
                 self.tool_warning(f"Failed to run notifications command: {str(e)}")
+        else:
             print("\a", end="", flush=True)  # Ring the bell
 
     def notify_user_input_required(self):
