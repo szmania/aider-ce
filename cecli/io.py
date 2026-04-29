@@ -1683,10 +1683,6 @@ class InputOutput:
 
     async def _send_notification_async(self):
         """Async version of _send_notification for TUI mode."""
-        # Check if notifications are disabled
-        if not self.notifications:
-            return
-
         if self.notifications_command:
             try:
                 proc = await asyncio.create_subprocess_shell(
@@ -1806,7 +1802,7 @@ class InputOutput:
             return
 
         coder = self.get_coder()
-        tui_app = coder.tui if coder and hasattr(coder, "tui") else None
+        tui_app = coder.tui() if coder and hasattr(coder, "tui") and coder.tui else None
 
         if tui_app:
             # In TUI mode, run the async version in a worker
