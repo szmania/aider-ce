@@ -23,6 +23,7 @@ class RemoveMcpCommand(BaseCommand):
         import asyncio
 
         results = []
+        servers_to_disconnect = []
 
         servers_to_disconnect = []
 
@@ -42,40 +43,49 @@ class RemoveMcpCommand(BaseCommand):
                 else:
                     servers_to_disconnect.append(server)
 
-        # Early exit
-        if not servers_to_disconnect and results:
-            return format_command_result(io, cls.NORM_NAME, "", "\n".join(results))
+                # Early exit if nothing to process
+                if not servers_to_disconnect and results:
+                    return format_command_result(io, cls.NORM_NAME, "", "\n".join(results))
 
-        # Unified interrupt-safe disconnect logic
-        for server in servers_to_disconnect:
-            server_name = server.name
-            coder.interrupt_event.clear()
+                # Unified interrupt-safe disconnect logic
+                for item in servers_to_disconnect:
+                    server_name = item.name if hasattr(item, "name") else item
 
-            disconnect_task = asyncio.create_task(coder.mcp_manager.disconnect_server(server_name))
-            interrupt_task = asyncio.create_task(coder.interrupt_event.wait())
+                    coder.interrupt_event.clear()
 
-            done, pending = await asyncio.wait(
-                {disconnect_task, interrupt_task},
-                return_when=asyncio.FIRST_COMPLETED,
-            )
+                    disconnect_task = asyncio.create_task(
+                        coder.mcp_manager.disconnect_server(server_name)
+                    )
+                    interrupt_task = asyncio.create_task(coder.interrupt_event.wait())
 
-            if interrupt_task in done:
-                disconnect_task.cancel()
-                try:
-                    await disconnect_task
-                except asyncio.CancelledError:
-                    pass
+                    done, pending = await asyncio.wait(
+                        {disconnect_task, interrupt_task},
+                        return_when=asyncio.FIRST_COMPLETED,
+                    )
 
-                io.tool_warning(f"MCP disconnection interrupted: {server_name}")
-                results.append(f"Interrupted: {server_name}")
-                continue
+                    # 🔥 Prevent task leaks (important for your TUI lag issue)
+                    for task in pending:
+                        task.cancel()
 
-            was_disconnected = await disconnect_task
+                    if interrupt_task in done:
+                        try:
+                            await disconnect_task
+                        except asyncio.CancelledError:
+                            pass
 
-            if was_disconnected:
-                results.append(f"Removed server: {server_name}")
-            else:
-                results.append(f"Unable to remove server: {server_name}")
+                        io.tool_warning(f"MCP disconnection interrupted: {server_name}")
+                        results.append(f"Interrupted: {server_name}")
+                        continue
+
+                    # ✅ safer than .result()
+                    was_disconnected = await disconnect_task
+
+                    if was_disconnected:
+                        results.append(f"Removed server: {server_name}")
+                    else:
+                        results.append(f"Unable to remove server: {server_name}")
+
+                # Output once (cleaner UX)
                 io.tool_output("\n".join(results))
 
         from . import SwitchCoderSignal

@@ -48,16 +48,18 @@ class LoadMcpCommand(BaseCommand):
                 else:
                     servers_to_load.append(server)
 
-        # Early exit if nothing to load
+        # Early exit if nothing valid to process
         if not servers_to_load and results:
             return format_command_result(io, cls.NORM_NAME, "", "\n".join(results))
 
-        # Unified connection logic (with interrupt handling)
+        # Unified connection logic with interrupt support
         for server in servers_to_load:
             server_name = server.name
             coder.interrupt_event.clear()
 
-            connect_task = asyncio.create_task(coder.mcp_manager.connect_server(server_name))
+            connect_task = asyncio.create_task(
+                coder.mcp_manager.connect_server(server_name)
+            )
             interrupt_task = asyncio.create_task(coder.interrupt_event.wait())
 
             done, pending = await asyncio.wait(
@@ -76,7 +78,9 @@ class LoadMcpCommand(BaseCommand):
                 results.append(f"Interrupted: {server_name}")
                 continue
 
+            # Use await (safer than .result())
             did_connect = await connect_task
+
             if did_connect:
                 results.append(f"Loaded server: {server_name}")
             else:
