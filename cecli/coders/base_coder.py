@@ -1457,10 +1457,6 @@ class Coder:
 
                 await asyncio.sleep(0.1)  # Small yield to prevent tight loop
 
-            except KeyboardInterrupt:
-                self.io.set_placeholder("")
-                self.keyboard_interrupt()
-                await self.io.stop_task_streams()
             except (SwitchCoderSignal, SystemExit):
                 raise
             except Exception as e:
@@ -2734,6 +2730,9 @@ class Coder:
                 tool_responses.append(
                     {"role": "tool", "tool_call_id": tool_call.id, "content": connection_error}
                 )
+        except asyncio.CancelledError:
+            # Re-raise CancelledError to ensure the task cancellation propagates
+            raise
         except Exception as e:
             connection_error = f"Could not connect to server {server.name}\n{e}"
             self.io.tool_warning(connection_error)
