@@ -474,8 +474,7 @@ def main(argv=None, input=None, output=None, force_git_root=None, return_coder=F
     if sys.platform == "win32":
         if sys.version_info >= (3, 12) and hasattr(asyncio, "SelectorEventLoop"):
             return asyncio.run(
-                main_async(argv, input, output, force_git_root, return_coder),
-                loop_factory=asyncio.SelectorEventLoop,
+                main_async(argv, input, output, force_git_root, return_coder)
             )
     return asyncio.run(main_async(argv, input, output, force_git_root, return_coder))
 
