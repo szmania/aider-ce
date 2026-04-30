@@ -1744,13 +1744,13 @@ class InputOutput:
                         return f"zenity --notification --text='{NOTIFICATION_MESSAGE}'"
             return None  # No known notification tool found
         elif system == "Windows":
-            # PowerShell MessageBox blocks user interaction, which is unsuitable for notifications
-            # Instead, use a simpler PowerShell command or fall back to terminal bell
-
-            # Try a simple non-blocking notification approach
-
-            # For now, fall back to terminal bell (more reliable)
-            return None
+            # PowerShell notification
+            return (
+                "powershell -command"
+                " \"[System.Reflection.Assembly]::LoadWithPartialName('System.Windows.Forms');"
+                f" [System.Windows.Forms.MessageBox]::Show('{NOTIFICATION_MESSAGE}',"
+                " 'cecli')\""
+            )
         return None  # Unknown system
 
     def _send_notification(self):
@@ -1759,13 +1759,13 @@ class InputOutput:
             return
 
         if self.notifications_command:
-            if "messagebox" in self.notifications_command.lower():
-                self.tool_warning(
-                    "The configured notification command uses a blocking MessageBox, which is not"
-                    " supported. Falling back to terminal bell."
-                )
-                print("\a", end="", flush=True)
-                return
+            # if "messagebox" in self.notifications_command.lower():
+            #     self.tool_warning(
+            #         "The configured notification command uses a blocking MessageBox, which is not"
+            #         " supported. Falling back to terminal bell."
+            #     )
+            #     print("\a", end="", flush=True)
+            #     return
             try:
                 # Check again if notifications are disabled (in case it changed)
                 if not self.notifications:
