@@ -1681,44 +1681,6 @@ class InputOutput:
         """Mark that the LLM has started processing, so we should ring the bell on next input"""
         self.bell_on_next_input = True
 
-    async def _send_notification_async(self):
-        """Async version of _send_notification for TUI mode."""
-        # Check if notifications are disabled
-        if not self.notifications:
-            return
-
-        if self.notifications_command:
-            try:
-                proc = await asyncio.create_subprocess_shell(
-                    self.notifications_command,
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE,
-                )
-                # Add timeout to prevent hanging
-                stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=10)
-
-                if proc.returncode != 0:
-                    error_msg = ""
-                    if stderr:
-                        error_msg = stderr.decode("utf-8", errors="replace").strip()
-                    if not error_msg and stdout:
-                        error_msg = stdout.decode("utf-8", errors="replace").strip()
-
-                    # If both stderr and stdout are empty, it's likely a timeout or blocking issue
-                    if not error_msg:
-                        error_msg = (
-                            "Command may have timed out or been blocked (no output captured)"
-                        )
-
-                    self.tool_warning(f"Failed to run notifications command: {error_msg}")
-            except asyncio.TimeoutError:
-                self.tool_warning("Notifications command timed out")
-            except Exception as e:
-                self.tool_warning(f"Failed to run notifications command: {str(e)}")
-        else:
-            # Ringing the bell is synchronous, but should be quick.
-            # It's better to do it this way than trying to make it async.
-            print("\a", end="", flush=True)
 
     def get_default_notification_command(self):
         """Return a default notification command based on the operating system."""
@@ -1759,24 +1721,15 @@ class InputOutput:
             return
 
         if self.notifications_command:
-            # if "messagebox" in self.notifications_command.lower():
-            #     self.tool_warning(
-            #         "The configured notification command uses a blocking MessageBox, which is not"
-            #         " supported. Falling back to terminal bell."
-            #     )
-            #     print("\a", end="", flush=True)
-            #     return
             try:
                 # Check again if notifications are disabled (in case it changed)
                 if not self.notifications:
                     return
 
-                # Add timeout to prevent hanging
                 result = subprocess.run(
                     self.notifications_command,
                     shell=True,
                     capture_output=True,
-                    timeout=10,  # 10 second timeout
                 )
                 if result.returncode != 0:
                     error_msg = ""
@@ -1787,13 +1740,9 @@ class InputOutput:
 
                     # If both stderr and stdout are empty, it's likely a timeout or blocking issue
                     if not error_msg:
-                        error_msg = (
-                            "Command may have timed out or been blocked (no output captured)"
-                        )
+                        error_msg = "Command may have been blocked (no output captured)"
 
                     self.tool_warning(f"Failed to run notifications command: {error_msg}")
-            except subprocess.TimeoutExpired:
-                self.tool_warning("Notifications command timed out after 10 seconds")
             except Exception as e:
                 self.tool_warning(f"Failed to run notifications command: {str(e)}")
         else:
@@ -1805,17 +1754,10 @@ class InputOutput:
         if not self.notifications or self.num_error_outputs > 3:
             return
 
-        coder = self.get_coder()
-        tui_app = coder.tui() if coder and hasattr(coder, "tui") and coder.tui else None
-
-        if tui_app:
-            # In TUI mode, run the async version in a worker
-            tui_app.run_worker(self._send_notification_async(), exclusive=True)
-        else:
-            # In non-TUI mode, run the synchronous version in a thread
-            thread = threading.Thread(target=self._send_notification)
-            thread.daemon = True
-            thread.start()
+        # Run the synchronous version in a thread
+        thread = threading.Thread(target=self._send_notification)
+        thread.daemon = True
+        thread.start()
 
     def ring_bell(self):
         """Ring the terminal bell if needed and clear the flag"""
@@ -1823,17 +1765,10 @@ class InputOutput:
         if not self.bell_on_next_input or not self.notifications or self.num_error_outputs > 3:
             return
 
-        coder = self.get_coder()
-        tui_app = coder.tui() if coder and hasattr(coder, "tui") and coder.tui else None
-
-        if tui_app:
-            # In TUI mode, run the async version in a worker
-            tui_app.run_worker(self._send_notification_async(), exclusive=True)
-        else:
-            # In non-TUI mode, run the synchronous version in a thread
-            thread = threading.Thread(target=self._send_notification)
-            thread.daemon = True
-            thread.start()
+        # Run the synchronous version in a thread
+        thread = threading.Thread(target=self._send_notification)
+        thread.daemon = True
+        thread.start()
 
         self.bell_on_next_input = False
 
