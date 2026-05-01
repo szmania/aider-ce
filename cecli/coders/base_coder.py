@@ -2771,8 +2771,8 @@ class Coder:
                 self.io.tool_warning("Tool execution cancelled.")
                 return False
 
-            finally:
-                self.globally_approved_tool_calls = False
+        finally:
+            self.globally_approved_tool_calls = False
 
         # 6. Add responses to conversation (re-prefixing if necessary)
         tool_responses = []
