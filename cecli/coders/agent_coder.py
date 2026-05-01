@@ -16,7 +16,6 @@ from cecli.change_tracker import ChangeTracker
 from cecli.helpers import nested, responses
 from cecli.helpers.background_commands import BackgroundCommandManager
 from cecli.helpers.conversation import ConversationService, MessageTag
-from cecli.helpers.coroutines import interruptible
 from cecli.helpers.similarity import (
     cosine_similarity,
     create_bigram_vector,
@@ -28,10 +27,11 @@ from cecli.llm import litellm
 from cecli.mcp import LocalServer, McpServerManager
 from cecli.tools.utils.base_tool import BaseTool
 from cecli.tools.utils.registry import ToolRegistry
-from cecli.helpers.coroutines import interruptible
 from cecli.utils import copy_tool_call, tool_call_to_dict
 
 from .base_coder import Coder
+
+from cecli.helpers.coroutines import interruptible  # isort:skip
 
 
 class AgentCoder(Coder):
