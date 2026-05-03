@@ -1133,8 +1133,9 @@ class Coder:
                     "other_files": other_files,
                     "mentioned_fnames": mentioned_fnames,
                     "all_abs_files": all_abs_files,
-                    "read_only_count": len(set(self.abs_read_only_fnames)) + len(
-                        set(self.abs_read_only_stubs_fnames)
+                    "read_only_count": (
+                        len(set(self.abs_read_only_fnames))
+                        + len(set(self.abs_read_only_stubs_fnames))
                     ),
                 }
             )
@@ -2180,6 +2181,8 @@ class Coder:
     async def send_message(self, inp):
         # Notify IO that LLM processing is starting
         self.io.llm_started()
+
+        ConversationService.get_manager(self).flush_queue()
 
         if inp:
             # Make sure current coder actually has control of conversation system
@@ -4041,7 +4044,10 @@ class Coder:
         return edits
 
     def local_agent_folder(self, path):
-        os.makedirs(f".cecli/agents/{GLOBAL_DATE}/{self.uuid}", exist_ok=True)
+        os.makedirs(
+            self.abs_root_path(f".cecli/agents/{GLOBAL_DATE}/{self.uuid}"),
+            exist_ok=True,
+        )
 
         stripped = path.lstrip("/")
         return f".cecli/agents/{GLOBAL_DATE}/{self.uuid}/{stripped}"

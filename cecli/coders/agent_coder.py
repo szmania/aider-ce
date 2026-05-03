@@ -639,9 +639,7 @@ class AgentCoder(Coder):
                         total_file_tokens += tokens
                         editable_tokens += tokens
                         size_indicator = (
-                            "🔴 Large"
-                            if tokens > 5000
-                            else "🟡 Medium" if tokens > 1000 else "🟢 Small"
+                            "Large" if tokens > 5000 else "Medium" if tokens > 1000 else "Small"
                         )
                         editable_files.append(
                             f"- {rel_fname}: {tokens:,} tokens ({size_indicator})"
@@ -663,9 +661,7 @@ class AgentCoder(Coder):
                         total_file_tokens += tokens
                         readonly_tokens += tokens
                         size_indicator = (
-                            "🔴 Large"
-                            if tokens > 5000
-                            else "🟡 Medium" if tokens > 1000 else "🟢 Small"
+                            "Large" if tokens > 5000 else "Medium" if tokens > 1000 else "Small"
                         )
                         readonly_files.append(
                             f"- {rel_fname}: {tokens:,} tokens ({size_indicator})"
