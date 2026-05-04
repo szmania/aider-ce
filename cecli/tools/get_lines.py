@@ -19,18 +19,16 @@ class Tool(BaseTool):
         "function": {
             "name": "GetLines",
             "description": (
-                "Get hashline prefixes of content between start and end patterns in files."
-                " Accepts an array of `show` objects, each with file_path, start_text,"
-                " end_text, and optional padding."
-                " These values must be lines from the content of the file."
-                " They can contain up to 3 lines but newlines should generally be avoided."
-                " Avoid using generic keywords and symbols. Special markers '@000' and '000@' can be"
-                " used for start_text and end_text to represent the first and last lines of"
-                " the file respectively. Avoid using the special markers on non-empty files."
-                " Never use hashlines as the start_text and end_text values."
-                " Do not use the same pattern for the start_text and end_text."
-                " It is best to use function names, variable declarations and other block identifiers as "
-                " start_texts and end_texts."
+                "Get hashline prefixes of content between start and end patterns in files. Accepts"
+                " an array of `show` objects, each with file_path, start_text, end_text, and"
+                " optional padding. These values must be lines from the content of the file. They"
+                " can contain up to 3 lines but newlines should generally be avoided. Avoid using"
+                " generic keywords and symbols. Special markers '@000' and '000@' can be used for"
+                " start_text and end_text to represent the first and last lines of the file"
+                " respectively. Avoid using the special markers on non-empty files. Never use"
+                " hashlines as the start_text and end_text values. Do not use the same pattern for"
+                " the start_text and end_text. It is best to use function names, variable"
+                " declarations and other block identifiers as  start_texts and end_texts."
             ),
             "parameters": {
                 "type": "object",
@@ -206,14 +204,14 @@ class Tool(BaseTool):
 
                         if not start_indices:
                             raise ToolError(
-                                f"Start pattern '{start_text}' not found in {file_path}. Do not search"
-                                " for it again."
+                                f"Start pattern '{start_text}' not found in {file_path}. Do not"
+                                " search for it again."
                             )
 
                         if not end_indices:
                             raise ToolError(
-                                f"End pattern '{end_text}' not found in {file_path}. Do not search for"
-                                " it again."
+                                f"End pattern '{end_text}' not found in {file_path}. Do not search"
+                                " for it again."
                             )
 
                         if best_pair is None:
