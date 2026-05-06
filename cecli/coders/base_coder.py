@@ -2762,10 +2762,9 @@ class Coder:
             self._print_tool_call_info(server_tool_calls=tool_groups)
 
         # 4. Ask for user confirmation
-        try:
-            self.globally_approved_tool_calls = False
-            if not await self.io.confirm_ask("Run tools?", group_response="Run MCP Tools"):
-                return False
+        self.globally_approved_tool_calls = False
+        if not await self.io.confirm_ask("Run tools?", group_response="Run MCP Tools"):
+            return False
 
         # 5. Execute tools
         self.interrupt_event.clear()
