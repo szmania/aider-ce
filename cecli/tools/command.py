@@ -1,14 +1,17 @@
 # Import necessary functions
+import json
 import os
 import platform
 
 from cecli.helpers.background_commands import BackgroundCommandManager
 from cecli.run_cmd import run_cmd_subprocess
 from cecli.tools.utils.base_tool import BaseTool
+from cecli.tools.utils.output import color_markers, tool_footer, tool_header
 
 
 class Tool(BaseTool):
     NORM_NAME = "command"
+    TRACK_INVOCATIONS = False
     SCHEMA = {
         "type": "function",
         "function": {
@@ -104,6 +107,12 @@ class Tool(BaseTool):
             return "Error: 'command' must be provided."
 
         # Check for implicit background (trailing & on Linux)
+        if ".cecli/agents" in command:
+            return (
+                "Error: Do not attempt to access internal files with "
+                "standard cli tools. Please use the tools you have been provided."
+            )
+
         if not background and command.strip().endswith("&"):
             background = True
             command = command.strip()[:-1].strip()
@@ -183,7 +192,7 @@ class Tool(BaseTool):
 
         from cecli.helpers.background_commands import CircularBuffer
 
-        coder.io.tool_output(f"⚙️ Executing shell command with {timeout}s timeout: {command_string}")
+        coder.io.tool_output(f"⚙️ Executing shell command with {timeout}s timeout.")
 
         shell = os.environ.get("SHELL", "/bin/sh")
 
@@ -219,6 +228,15 @@ class Tool(BaseTool):
         start_time = time.time()
 
         while True:
+            if coder.interrupt_event.is_set():
+                process.terminate()
+                try:
+                    process.wait(timeout=1)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                BackgroundCommandManager.stop_background_command(command_key)
+                return "Command execution interrupted by user."
+
             # Check if process has completed
             exit_code = process.poll()
             if exit_code is not None:
@@ -228,11 +246,28 @@ class Tool(BaseTool):
                 # Format output
                 output_content = output or ""
                 output_limit = coder.large_file_token_threshold
-                if coder.context_management_enabled and len(output_content) > output_limit:
+                if coder.context_management_enabled and len(output_content) > output_limit * 1.25:
+                    # Save full output to paginated files instead of truncating
+                    folder_path, file_list, alias_paths = (
+                        BackgroundCommandManager.save_paginated_output(
+                            output=output_content,
+                            command_key=command_key,
+                            page_size=output_limit,
+                            abs_root_path_func=coder.abs_root_path,
+                            local_agent_folder_func=coder.local_agent_folder,
+                        )
+                    )
+                    # Build a summary with full file list
+                    total_size = len(output_content)
+                    alias_list_str = "\n".join(f"  - {a}" for a in alias_paths)
                     output_content = (
-                        output_content[:output_limit]
-                        + f"\n... (output truncated at {output_limit} characters, based on"
-                        " large_file_token_threshold)"
+                        f"[Large Response ({total_size} characters). "
+                        "Output saved to paginated files.]\n"
+                        f"File Aliases (for use with ContextManager):\n{alias_list_str}\n"
+                        "Use the `ContextManager` tool to view these files."
+                        "Do not use standard cli tools to view these files."
+                        "Remove them from context after taking note of the relevant information "
+                        "in the output to prevent overfilling stale context."
                     )
 
                 # Remove from background tracking since it's done
@@ -284,7 +319,7 @@ class Tool(BaseTool):
             tui = coder.tui()
             should_print = False
 
-        coder.io.tool_output(f"⚙️ Executing shell command: {command_string}")
+        coder.io.tool_output("⚙️ Executing shell command.")
 
         # Use run_cmd_subprocess for non-interactive execution
         exit_status, combined_output = run_cmd_subprocess(
@@ -297,11 +332,28 @@ class Tool(BaseTool):
         # Format the output for the result message
         output_content = combined_output or ""
         output_limit = coder.large_file_token_threshold
-        if coder.context_management_enabled and len(output_content) > output_limit:
+        if coder.context_management_enabled and len(output_content) > output_limit * 1.25:
+            # Generate a unique key for file naming
+            fg_key = BackgroundCommandManager._generate_command_key(command_string)
+            # Save full output to paginated files instead of truncating
+            folder_path, file_list, alias_paths = BackgroundCommandManager.save_paginated_output(
+                output=output_content,
+                command_key=fg_key,
+                page_size=output_limit,
+                abs_root_path_func=coder.abs_root_path,
+                local_agent_folder_func=coder.local_agent_folder,
+            )
+            # Build a summary with full file list
+            total_size = len(output_content)
+            alias_list_str = "\n".join(f"  - {a}" for a in alias_paths)
             output_content = (
-                output_content[:output_limit]
-                + f"\n... (output truncated at {output_limit} characters, based on"
-                " large_file_token_threshold)"
+                f"[Large Response ({total_size} characters). "
+                "Output saved to paginated files.]\n"
+                f"File Aliases (for use with ContextManager):\n{alias_list_str}\n"
+                "Use the `ContextManager` tool to view these files."
+                "Do not use standard cli tools to view these files."
+                "Remove them from context after taking note of the relevant information "
+                "in the output to prevent overfilling stale context."
             )
 
         if tui:
@@ -328,8 +380,52 @@ class Tool(BaseTool):
         else:
             return output  # Error message from manager
 
-    @classmethod
     async def _handle_errors(cls, coder, command_string, e):
         """Handle errors during command execution."""
-        coder.io.tool_error(f"Error executing shell command '{command_string}': {str(e)}")
+        coder.io.tool_error(f"Error executing shell command: {str(e)}")
         return f"Error executing command: {str(e)}"
+
+    @classmethod
+    def format_output(cls, coder, mcp_server, tool_response):
+        """Format output for Command tool."""
+        color_start, color_end = color_markers(coder)
+
+        try:
+            params = json.loads(tool_response.function.arguments)
+        except json.JSONDecodeError:
+            coder.io.tool_error("Invalid Tool JSON")
+            return
+
+        # Output header
+        tool_header(coder=coder, mcp_server=mcp_server, tool_response=tool_response)
+
+        command = params.get("command", "")
+        background = params.get("background", False)
+        stop = params.get("stop", False)
+        stdin = params.get("stdin")
+        pty = params.get("pty", False)
+
+        coder.io.tool_output("")
+
+        # Show additional parameters if they are not default
+        extras = []
+        if background:
+            extras.append("background=True")
+        if stop:
+            extras.append("stop=True")
+        if pty:
+            extras.append("pty=True")
+
+        if extras:
+            coder.io.tool_output(f"{color_start}Options:{color_end} {', '.join(extras)}")
+
+        if stdin:
+            coder.io.tool_output(f"{color_start}Stdin:{color_end}")
+            coder.io.tool_output(stdin)
+
+        coder.io.tool_output(f"{color_start}Command:{color_end}")
+        coder.io.tool_output(command)
+        coder.io.tool_output("")
+
+        # Output footer
+        tool_footer(coder=coder, tool_response=tool_response)

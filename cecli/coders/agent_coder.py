@@ -25,10 +25,13 @@ from cecli.helpers.skills import SkillsManager
 from cecli.hooks import HookIntegration
 from cecli.llm import litellm
 from cecli.mcp import LocalServer, McpServerManager
+from cecli.tools.utils.base_tool import BaseTool
 from cecli.tools.utils.registry import ToolRegistry
 from cecli.utils import copy_tool_call, tool_call_to_dict
 
 from .base_coder import Coder
+
+from cecli.helpers.coroutines import interruptible  # isort:skip
 
 
 class AgentCoder(Coder):
@@ -41,6 +44,9 @@ class AgentCoder(Coder):
     stop_on_empty = False
 
     def __init__(self, *args, **kwargs):
+        if kwargs.get("uuid", None):
+            self.uuid = kwargs.get("uuid")
+
         self.recently_removed = {}
         self.tool_usage_history = []
         self.loaded_custom_tools = []
@@ -52,20 +58,17 @@ class AgentCoder(Coder):
         self.read_tools = {
             "command",
             "commandinteractive",
-            "viewfilesatglob",
-            "viewfilesmatching",
+            "explorecode",
             "ls",
-            "viewfileswithsymbol",
+            "readrange",
             "grep",
-            "listchanges",
-            "showcontext",
             "thinking",
             "updatetodolist",
         }
         self.write_tools = {
-            "deletetext",
-            "inserttext",
-            "replacetext",
+            "command",
+            "commandinteractive",
+            "edittext",
             "undochange",
         }
         self.edit_allowed = False
@@ -303,8 +306,23 @@ class AgentCoder(Coder):
                 else:
                     all_results_content.append(f"Error: Unknown tool name '{tool_name}'")
                 if tasks:
-                    task_results = await asyncio.gather(*tasks)
-                    all_results_content.extend(str(res) for res in task_results)
+
+                    async def gather_and_await():
+                        return await asyncio.gather(*tasks, return_exceptions=True)
+
+                    task_results, interrupted = await interruptible(
+                        gather_and_await(), self.interrupt_event
+                    )
+
+                    if interrupted:
+                        self.io.tool_warning("Tool execution interrupted.")
+                        all_results_content.append("Tool execution interrupted by user.")
+                    elif task_results:
+                        for res in task_results:
+                            if isinstance(res, Exception):
+                                all_results_content.append(f"Error in tool execution: {res}")
+                            else:
+                                all_results_content.append(str(res))
 
                 if not await HookIntegration.call_post_tool_hooks(
                     self, tool_name, args_string, "\n\n".join(all_results_content)
@@ -328,7 +346,7 @@ class AgentCoder(Coder):
                 {"role": "tool", "tool_call_id": tool_call.id, "content": result_message}
             )
 
-        if self.auto_lint and used_write_tool and not self.edit_allowed:
+        if self.auto_lint and used_write_tool:
             edited = list(self.files_edited_by_tools)
             lint_errors = self.lint_edited(edited, show_output=False)
             self.lint_outcome = not lint_errors
@@ -395,7 +413,11 @@ class AgentCoder(Coder):
 """)
                 return f"Error executing tool call {tool_name}: {e}"
 
-        return await _exec_async()
+        result, interrupted = await interruptible(_exec_async(), self.interrupt_event)
+
+        if interrupted:
+            return "Tool execution interrupted by user."
+        return result
 
     def _calculate_context_block_tokens(self, force=False):
         """
@@ -584,6 +606,7 @@ class AgentCoder(Coder):
 
         # Add post-message context blocks (priority 250 - between CUR and REMINDER)
         ConversationService.get_chunks(self).add_post_message_context_blocks()
+        ConversationService.get_chunks(self).add_randomized_cta()
 
         return ConversationService.get_manager(self).get_messages_dict()
 
@@ -619,9 +642,7 @@ class AgentCoder(Coder):
                         total_file_tokens += tokens
                         editable_tokens += tokens
                         size_indicator = (
-                            "🔴 Large"
-                            if tokens > 5000
-                            else "🟡 Medium" if tokens > 1000 else "🟢 Small"
+                            "Large" if tokens > 5000 else "Medium" if tokens > 1000 else "Small"
                         )
                         editable_files.append(
                             f"- {rel_fname}: {tokens:,} tokens ({size_indicator})"
@@ -643,9 +664,7 @@ class AgentCoder(Coder):
                         total_file_tokens += tokens
                         readonly_tokens += tokens
                         size_indicator = (
-                            "🔴 Large"
-                            if tokens > 5000
-                            else "🟡 Medium" if tokens > 1000 else "🟢 Small"
+                            "Large" if tokens > 5000 else "Medium" if tokens > 1000 else "Small"
                         )
                         readonly_files.append(
                             f"- {rel_fname}: {tokens:,} tokens ({size_indicator})"
@@ -1000,7 +1019,7 @@ I will proceed based on the tool results and updated context.""")
             context_parts.append("\n\n")
             context_parts.append("## File Editing Tools Disabled")
             context_parts.append(
-                "File editing tools are currently disabled.Use `ShowContext` to determine the"
+                "File editing tools are currently disabled.Use `ReadRange` to determine the"
                 " current hashline prefixes needed to perform an edit and activate them when you"
                 " are ready to edit a file."
             )
@@ -1018,25 +1037,25 @@ I will proceed based on the tool results and updated context.""")
 
             if not self.model_kwargs:
                 self.model_kwargs = {
-                    "temperature": default_temp + 0.1,
-                    "frequency_penalty": default_fp + 0.2,
+                    "temperature": default_temp + 2**-5,
+                    "frequency_penalty": default_fp + 2**-5,
                     # "presence_penalty": 0.1,
                 }
             else:
                 temperature = nested.getter(self.model_kwargs, "temperature", default_temp)
                 freq_penalty = nested.getter(self.model_kwargs, "frequency_penalty", default_fp)
 
-                self.model_kwargs["temperature"] = temperature + 0.1
-                self.model_kwargs["frequency_penalty"] = freq_penalty + 0.1
+                self.model_kwargs["temperature"] = temperature + 2**-5
+                self.model_kwargs["frequency_penalty"] = freq_penalty + 2**-5
 
                 if random.random() < 0.2:
                     self.model_kwargs["temperature"] = max(
                         default_temp,
-                        temperature - 0.15,
+                        temperature - 2**-4,
                     )
                     self.model_kwargs["frequency_penalty"] = max(
                         default_fp,
-                        freq_penalty - 0.15,
+                        freq_penalty - 2**-4,
                     )
 
             self.model_kwargs["temperature"] = max(
@@ -1160,7 +1179,7 @@ I will proceed based on the tool results and updated context.""")
 
         Parameters:
         - file_path: Path to the file to add
-        - explicit: Whether this was an explicit view command (vs. implicit through ViewFilesMatching)
+        - explicit: Whether this was an explicit view command (vs. implicit through other tools)
         """
         abs_path = self.abs_root_path(file_path)
         rel_path = self.get_rel_fname(abs_path)
@@ -1205,7 +1224,7 @@ I will proceed based on the tool results and updated context.""")
 
         Override parent's method to disable implicit file mention handling in agent mode.
         Files should only be added via explicit tool commands
-        (`View`, `ViewFilesAtGlob`, `ViewFilesMatching`, `ViewFilesWithSymbol`).
+        (`ContextManager`).
         """
         pass
 
@@ -1217,6 +1236,7 @@ I will proceed based on the tool results and updated context.""")
         inp = await super().preproc_user_input(inp)
         inp = self.wrap_user_input(inp)
 
+        BaseTool.clear_invocation_cache()
         self.agent_finished = False
         self.turn_count = 0
         return inp
