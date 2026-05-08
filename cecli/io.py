@@ -1732,9 +1732,7 @@ class InputOutput:
                     "stderr": subprocess.DEVNULL,
                 }
                 if platform.system() == "Windows":
-                    kwargs["creationflags"] = (
-                        subprocess.CREATE_NO_WINDOW | subprocess.DETACHED_PROCESS
-                    )
+                    kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
                 else:
                     # For non-Windows systems, start a new session to detach
                     kwargs["start_new_session"] = True
