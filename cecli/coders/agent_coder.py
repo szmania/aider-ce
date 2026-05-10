@@ -282,9 +282,7 @@ class AgentCoder(Coder):
                             content_parts.append(item.text)
                 return "".join(content_parts)
             except Exception as e:
-                self.io.tool_warning(
-                    (f"Executing {tool_name} on {server.name} failed:\nError: {e}")
-                )
+                self.io.tool_warning(f"Executing {tool_name} on {server.name} failed:\nError: {e}")
                 return f"Error executing tool call {tool_name}: {e}"
 
         result, interrupted = await interruptible(_exec_async(), self.interrupt_event)
@@ -381,7 +379,10 @@ class AgentCoder(Coder):
         try:
             result = '<context name="symbol_outline" from="agent">\n'
             result += "## Symbol Outline (Current Context)\n\n"
-            result += "Code definitions (classes, functions, methods, etc.) found in files currently in chat context."
+            result += (
+                "Code definitions (classes, functions, methods, etc.) found in files currently in"
+                " chat context."
+            )
             result += "\n\n"
             files_to_outline = list(self.abs_fnames) + list(self.abs_read_only_fnames)
             if not files_to_outline:
@@ -522,7 +523,10 @@ class AgentCoder(Coder):
                         )
                 if editable_files:
                     result += "\n".join(editable_files) + "\n\n"
-                    result += f"**Total editable: {len(editable_files)} files, {editable_tokens:,} tokens**\n\n"
+                    result += (
+                        f"**Total editable: {len(editable_files)} files,"
+                        f" {editable_tokens:,} tokens**\n\n"
+                    )
                 else:
                     result += "No editable files in context\n\n"
             if self.abs_read_only_fnames:
@@ -542,7 +546,10 @@ class AgentCoder(Coder):
                         )
                 if readonly_files:
                     result += "\n".join(readonly_files) + "\n\n"
-                    result += f"**Total read-only: {len(readonly_files)} files, {readonly_tokens:,} tokens**\n\n"
+                    result += (
+                        f"**Total read-only: {len(readonly_files)} files,"
+                        f" {readonly_tokens:,} tokens**\n\n"
+                    )
                 else:
                     result += "No read-only files in context\n\n"
             extra_tokens = sum(self.context_block_tokens.values())
@@ -730,7 +737,7 @@ class AgentCoder(Coder):
                 self.model_kwargs = {}
                 result_message = f"Error executing {tool_name}: {e}"
                 self.io.tool_error(
-                    (f"Error during {tool_name} execution: {e}\n{traceback.format_exc()}")
+                    f"Error during {tool_name} execution: {e}\n{traceback.format_exc()}"
                 )
             tool_responses.append(
                 {"role": "tool", "tool_call_id": tool_call.id, "content": result_message}
@@ -1020,8 +1027,8 @@ class AgentCoder(Coder):
             context_parts.append("## File Editing Tools Disabled")
             context_parts.append(
                 "File editing tools are currently disabled. Use `ReadRange` to determine the"
-                " current content hash prefixes needed to perform an edit and activate them when you"
-                " are ready to edit a file."
+                " current content hash prefixes needed to perform an edit and activate them when"
+                " you are ready to edit a file."
             )
 
         context_parts.append("\n\n")
