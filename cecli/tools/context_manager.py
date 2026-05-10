@@ -32,8 +32,7 @@ class Tool(BaseTool):
                         "type": "array",
                         "items": {"type": "string"},
                         "description": (
-                            "List of file paths to add as read-only. "
-                            "Limit to at most 2 at a time."
+                            "List of file paths to add as read-only. Limit to at most 2 at a time."
                         ),
                     },
                     "create": {

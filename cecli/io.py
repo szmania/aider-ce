@@ -1718,7 +1718,7 @@ class InputOutput:
                 "$toastXml = $template.GetXml(); "
                 "$toastXml.GetElementsByTagName('text')[0].AppendChild"
                 "($template.CreateTextNode('cecli')) > $null; "
-                f"$toastXml.GetElementsByTagName('text')[1].AppendChild"
+                "$toastXml.GetElementsByTagName('text')[1].AppendChild"
                 f"($template.CreateTextNode('{NOTIFICATION_MESSAGE}')) > $null; "
                 "$toast = [Windows.UI.Notifications.ToastNotification]::new($toastXml); "
                 "[Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('cecli')"

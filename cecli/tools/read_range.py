@@ -22,17 +22,16 @@ class Tool(BaseTool):
             "name": "ReadRange",
             "description": (
                 "Get content hash prefixes of content between start and end patterns in files."
-                " Accepts an array of `show` objects, each with file_path, start_text,"
-                " end_text. These values must be lines from the content of the file."
-                " They can contain up to 3 lines but newlines should generally be avoided."
-                " Avoid using generic keywords and symbols."
-                "Special markers @000 and 000@ represent the file boundaries and can be"
-                " used for start_text and end_text for the first and last lines of"
-                " the file respectively. Avoid using both of the special markers together on non-empty files."
-                " Never use content hashes as the start_text and end_text values."
-                " Do not use the same pattern for the start_text and end_text."
-                " It is best to use function names, variable declarations and other block identifiers as "
-                " start_texts and end_texts."
+                " Accepts an array of `show` objects, each with file_path, start_text, end_text."
+                " These values must be lines from the content of the file. They can contain up to 3"
+                " lines but newlines should generally be avoided. Avoid using generic keywords and"
+                " symbols.Special markers @000 and 000@ represent the file boundaries and can be"
+                " used for start_text and end_text for the first and last lines of the file"
+                " respectively. Avoid using both of the special markers together on non-empty"
+                " files. Never use content hashes as the start_text and end_text values. Do not use"
+                " the same pattern for the start_text and end_text. It is best to use function"
+                " names, variable declarations and other block identifiers as  start_texts and"
+                " end_texts."
             ),
             "parameters": {
                 "type": "object",
@@ -127,7 +126,10 @@ class Tool(BaseTool):
                     error_outputs.append(
                         cls.format_error(
                             coder,
-                            f"Show operation {show_index + 1}: Provide both 'start_text' and 'end_text'.",
+                            (
+                                f"Show operation {show_index + 1}: Provide both 'start_text' and"
+                                " 'end_text'."
+                            ),
                             file_path,
                             start_text,
                             end_text,
@@ -284,7 +286,10 @@ class Tool(BaseTool):
                             error_outputs.append(
                                 cls.format_error(
                                     coder,
-                                    f"End pattern '{end_text}' not found in {file_path}. Do not search for it again.",
+                                    (
+                                        f"End pattern '{end_text}' not found in {file_path}. Do not"
+                                        " search for it again."
+                                    ),
                                     file_path,
                                     start_text,
                                     end_text,
@@ -297,7 +302,10 @@ class Tool(BaseTool):
                             error_outputs.append(
                                 cls.format_error(
                                     coder,
-                                    f"End pattern '{end_text}' not found after start pattern in {file_path}.",
+                                    (
+                                        f"End pattern '{end_text}' not found after start pattern in"
+                                        f" {file_path}."
+                                    ),
                                     file_path,
                                     start_text,
                                     end_text,
@@ -314,7 +322,7 @@ class Tool(BaseTool):
                         cls.format_error(
                             coder,
                             (
-                                f"Special markers cannot be used for ranges greater than 200 lines."
+                                "Special markers cannot be used for ranges greater than 200 lines."
                                 f" The resolved range is {e_idx - s_idx + 1} lines."
                                 " Pick more refined boundaries."
                             ),
@@ -466,7 +474,8 @@ class Tool(BaseTool):
                     )
                 if already_up_to_details:
                     coder.io.tool_output(
-                        f"Lines already up to date in context for {len(already_up_to_details)} operation(s)"
+                        "Lines already up to date in context for"
+                        f" {len(already_up_to_details)} operation(s)"
                     )
 
                     detail_str = "\n".join(already_up_to_details)
