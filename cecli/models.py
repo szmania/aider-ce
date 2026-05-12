@@ -1172,6 +1172,26 @@ class Model(ModelSettings):
             sorted_tools = sorted(
                 effective_tools, key=lambda x: x.get("function", {}).get("name", "Invalid Name")
             )
+
+            try:
+                # Deep copy to avoid modifying original tool schemas
+                sorted_tools = json.loads(json.dumps(sorted_tools))
+
+                for tool in sorted_tools:
+                    function_schema = tool.get("function")
+                    if function_schema and "description" in function_schema:
+                        desc = function_schema.get("description")
+                        if isinstance(desc, str):
+                            # Escape the description string for JSON, but without the outer quotes.
+                            # This is a workaround for issues with special characters in descriptions.
+                            function_schema["description"] = json.dumps(desc, ensure_ascii=False)[
+                                1:-1
+                            ]
+            except (TypeError, json.JSONDecodeError):
+                # If deep copy fails, proceed with original tools.
+                # This is a safeguard.
+                pass
+
             kwargs["tools"] = sorted_tools
 
         if functions and len(functions) == 1:
