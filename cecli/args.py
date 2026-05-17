@@ -1084,6 +1084,12 @@ def get_parser(default_config_files, git_root):
         ),
     )
     group.add_argument(
+        "--notification-only-on-inactive",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Only send notifications if the terminal window is not active (default: True)",
+    )
+    group.add_argument(
         "--command-prefix",
         default=None,
         help="Specify a command prefix for all commands (useful for sandboxing)",

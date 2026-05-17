@@ -557,3 +557,92 @@ def tool_call_to_dict(tool_call):
     if isinstance(tool_call, dict):
         return tool_call
     return {}
+
+
+def is_terminal_active():
+    """
+    Check if the terminal running this script is the active foreground window.
+    This is platform-specific and may have limitations.
+    """
+    system = platform.system()
+
+    try:
+        if system == "Windows":
+            try:
+                import psutil
+                import win32gui
+                import win32process
+            except ImportError:
+                return True  # Assume active to avoid breaking notifications
+
+            try:
+                hwnd = win32gui.GetForegroundWindow()
+                _, foreground_pid = win32process.GetWindowThreadProcessId(hwnd)
+
+                current_process = psutil.Process(os.getpid())
+                while current_process.parent():
+                    parent = current_process.parent()
+                    if parent.name().lower() in [
+                        "windowsterminal.exe",
+                        "cmd.exe",
+                        "powershell.exe",
+                        "conhost.exe",
+                    ]:
+                        return parent.pid == foreground_pid
+                    current_process = parent
+
+                return os.getpid() == foreground_pid
+            except Exception:
+                return True
+
+        elif system == "Darwin":
+            script = (
+                'tell application "System Events" to get unix id of first process whose frontmost'
+                " is true"
+            )
+            proc = subprocess.run(["osascript", "-e", script], capture_output=True, text=True)
+            if proc.returncode != 0:
+                return True
+
+            front_pid = int(proc.stdout.strip())
+
+            import psutil
+
+            current_process = psutil.Process(os.getpid())
+            while current_process:
+                if current_process.pid == front_pid:
+                    return True
+                current_process = current_process.parent()
+            return False
+
+        elif system == "Linux":
+            if "WAYLAND_DISPLAY" in os.environ:
+                return True
+
+            try:
+                proc = subprocess.run(["which", "xdotool"], capture_output=True)
+                if proc.returncode != 0:
+                    return True
+
+                active_window_pid_proc = subprocess.run(
+                    ["xdotool", "getactivewindow", "getwindowpid"], capture_output=True, text=True
+                )
+                if active_window_pid_proc.returncode != 0:
+                    return True
+
+                active_pid = int(active_window_pid_proc.stdout.strip())
+
+                import psutil
+
+                current_process = psutil.Process(os.getpid())
+                while current_process:
+                    if current_process.pid == active_pid:
+                        return True
+                    current_process = current_process.parent()
+                return False
+            except Exception:
+                return True
+    except Exception:
+        return True
+
+    return True

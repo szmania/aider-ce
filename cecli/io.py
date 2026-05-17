@@ -48,7 +48,7 @@ from cecli.report import update_error_prefix
 from .dump import dump  # noqa: F401
 from .editor import pipe_editor
 from .interruptible_input import InterruptibleInput
-from .utils import is_image_file, run_fzf
+from .utils import is_image_file, is_terminal_active, run_fzf
 from .waiting import Spinner
 
 # Constants
@@ -367,6 +367,7 @@ class InputOutput:
         notifications=False,
         notifications_command=None,
         verbose=False,
+        args=None,
     ):
         self.console = Console()
         self.pretty = pretty
@@ -384,6 +385,7 @@ class InputOutput:
         self.bell_on_next_input = False
         self.notifications = notifications
         self.verbose = verbose
+        self.args = args
         self.profile_start_time = None
         self.profile_last_time = None
 
@@ -1730,6 +1732,9 @@ class InputOutput:
         return None  # Unknown system
 
     def _send_notification(self):
+        if self.args and self.args.notification_only_on_inactive and is_terminal_active():
+            return
+
         if self.notifications_command:
             try:
                 # Use Popen to run the command in the background without waiting for it
