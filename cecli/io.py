@@ -386,6 +386,7 @@ class InputOutput:
         self.verbose = verbose
         self.profile_start_time = None
         self.profile_last_time = None
+        self.last_notification_time = 0
 
         # Variables used to interface with base_coder
         self.coder = None
@@ -817,6 +818,7 @@ class InputOutput:
         **kwargs,
     ):
         self.rule()
+        self.notify_user_input_required()
 
         rel_fnames = list(rel_fnames)
         show = ""
@@ -1732,6 +1734,12 @@ class InputOutput:
         return None  # Unknown system
 
     def _send_notification(self):
+        # Cooldown to prevent notification spam
+        current_time = time.time()
+        if current_time - self.last_notification_time < 2:  # 2-second cooldown
+            return
+        self.last_notification_time = current_time
+
         if self.notifications_command:
             try:
                 # Use Popen to run the command in the background without waiting for it
