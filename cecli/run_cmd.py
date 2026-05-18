@@ -1,3 +1,4 @@
+import asyncio
 import os
 import platform
 import subprocess
@@ -95,6 +96,81 @@ def run_cmd_subprocess(
         return process.returncode, "".join(output)
     except Exception as e:
         return 1, str(e)
+
+
+async def run_cmd_async(
+    command, interrupt_event, verbose=False, cwd=None, encoding=sys.stdout.encoding, should_print=True
+):
+    if verbose:
+        print("Using run_cmd_async:", command)
+
+    shell = os.environ.get("SHELL", "/bin/sh")
+    parent_process = None
+
+    # Determine the appropriate shell
+    if platform.system() == "Windows":
+        parent_process = get_windows_parent_process_name()
+        if parent_process == "powershell.exe":
+            command = f"powershell -Command {command}"
+
+    if verbose:
+        print("Running command:", command)
+        print("SHELL:", shell)
+        if platform.system() == "Windows":
+            print("Parent process:", parent_process)
+
+    try:
+        process = await asyncio.create_subprocess_shell(
+            command,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
+            cwd=cwd,
+        )
+    except FileNotFoundError:
+        return 1, f"Command not found: {command}"
+
+    output = []
+
+    async def read_stream(stream):
+        while True:
+            try:
+                line_bytes = await stream.readline()
+            except (IOError, OSError):
+                # Stream closed
+                break
+            if not line_bytes:
+                break
+            line = line_bytes.decode(encoding, errors="replace")
+            output.append(line)
+            if should_print:
+                print(line, end="", flush=True)
+
+    reader_task = asyncio.create_task(read_stream(process.stdout))
+    interrupt_task = asyncio.create_task(interrupt_event.wait())
+
+    done, pending = await asyncio.wait(
+        {reader_task, interrupt_task},
+        return_when=asyncio.FIRST_COMPLETED,
+    )
+
+    if interrupt_task in done:
+        # Interrupted
+        for task in pending:
+            task.cancel()
+        try:
+            process.terminate()
+        except ProcessLookupError:
+            pass  # process already finished
+        await process.wait()
+        return 1, "Interrupted"
+
+    # Not interrupted, wait for process to finish
+    await process.wait()
+    # wait for reader to finish
+    if not reader_task.done():
+        await reader_task
+
+    return process.returncode, "".join(output)
 
 
 def run_cmd_pexpect(command, verbose=False, cwd=None, should_print=True):

@@ -1,6 +1,40 @@
 import asyncio
 
 
+async def interruptible_async_generator(async_generator, interrupt_event):
+    """
+    Wraps an async generator to make it interruptible.
+    """
+    gen = async_generator.__aiter__()
+    interrupt_task = asyncio.create_task(interrupt_event.wait())
+
+    while True:
+        next_task = asyncio.create_task(gen.__anext__())
+        done, pending = await asyncio.wait(
+            {next_task, interrupt_task}, return_when=asyncio.FIRST_COMPLETED
+        )
+
+        if interrupt_task in done:
+            next_task.cancel()
+            try:
+                await next_task
+            except asyncio.CancelledError:
+                pass
+            break
+
+        if next_task in done:
+            try:
+                yield next_task.result()
+            except StopAsyncIteration:
+                break
+
+    interrupt_task.cancel()
+    try:
+        await interrupt_task
+    except asyncio.CancelledError:
+        pass
+
+
 def is_active(task):
     if not task or task.done() or task.cancelled():
         return False

@@ -1,3 +1,4 @@
+import asyncio
 import os
 import re
 import subprocess
@@ -10,18 +11,20 @@ from pathlib import Path
 import oslex
 
 from cecli.dump import dump  # noqa: F401
+from cecli.helpers.coroutines import interruptible
 from cecli.helpers.grep_ast import TreeContext, filename_to_lang
 from cecli.helpers.grep_ast.tsl import get_parser  # noqa: E402
-from cecli.run_cmd import run_cmd_subprocess  # noqa: F401
+from cecli.run_cmd import run_cmd_async, run_cmd_subprocess  # noqa: F401
 
 # tree_sitter is throwing a FutureWarning
 warnings.simplefilter("ignore", category=FutureWarning)
 
 
 class Linter:
-    def __init__(self, encoding="utf-8", root=None):
+    def __init__(self, encoding="utf-8", root=None, interrupt_event=None):
         self.encoding = encoding
         self.root = root
+        self.interrupt_event = interrupt_event or asyncio.Event()
 
         self.languages = dict(
             python=self.py_lint,
@@ -44,20 +47,18 @@ class Linter:
         else:
             return fname
 
-    def run_cmd(self, cmd, rel_fname, code):
+    async def run_cmd(self, cmd, rel_fname, code):
         cmd += " " + oslex.quote(rel_fname)
 
-        returncode = 0
-        stdout = ""
-        try:
-            returncode, stdout = run_cmd_subprocess(
-                cmd,
-                cwd=self.root,
-                encoding=self.encoding,
-            )
-        except OSError as err:
-            print(f"Unable to execute lint command: {err}")
+        returncode, stdout = await run_cmd_async(
+            cmd,
+            self.interrupt_event,
+            cwd=self.root,
+            encoding=self.encoding,
+        )
+        if stdout == "Interrupted":
             return
+
         errors = stdout
         if returncode == 0:
             return  # zero exit status
@@ -79,7 +80,7 @@ class Linter:
 
         return LintResult(text=errors, lines=linenums)
 
-    def lint(self, fname, cmd=None):
+    async def lint(self, fname, cmd=None):
         rel_fname = self.get_rel_fname(fname)
         try:
             code = Path(fname).read_text(encoding=self.encoding, errors="replace")
@@ -99,9 +100,13 @@ class Linter:
                 cmd = self.languages.get(lang)
 
         if callable(cmd):
-            lintres = cmd(fname, rel_fname, code)
+            # Check if the callable is a coroutine function
+            if asyncio.iscoroutinefunction(cmd):
+                lintres = await cmd(fname, rel_fname, code)
+            else:
+                lintres = cmd(fname, rel_fname, code)
         elif cmd:
-            lintres = self.run_cmd(cmd, rel_fname, code)
+            lintres = await self.run_cmd(cmd, rel_fname, code)
         else:
             lintres = basic_lint(rel_fname, code)
 
@@ -115,10 +120,10 @@ class Linter:
 
         return res
 
-    def py_lint(self, fname, rel_fname, code):
+    async def py_lint(self, fname, rel_fname, code):
         basic_res = basic_lint(rel_fname, code)
         compile_res = lint_python_compile(fname, code)
-        flake_res = self.flake8_lint(rel_fname)
+        flake_res = await self.flake8_lint(rel_fname)
 
         text = ""
         lines = set()
@@ -133,9 +138,9 @@ class Linter:
         if text or lines:
             return LintResult(text, lines)
 
-    def flake8_lint(self, rel_fname):
+    async def flake8_lint(self, rel_fname):
         fatal = "E9,F821,F823,F831,F406,F407,F701,F702,F704,F706"
-        flake8_cmd = [
+        flake8_cmd_list = [
             sys.executable,
             "-m",
             "flake8",
@@ -144,24 +149,21 @@ class Linter:
             "--isolated",
             rel_fname,
         ]
+        flake8_cmd = " ".join(flake8_cmd_list)
 
-        text = f"## Running: {' '.join(flake8_cmd)}\n\n"
+        text = f"## Running: {flake8_cmd}\n\n"
 
-        try:
-            result = subprocess.run(
-                flake8_cmd,
-                capture_output=True,
-                text=True,
-                check=False,
-                encoding=self.encoding,
-                errors="replace",
-                cwd=self.root,
-            )
-            errors = result.stdout + result.stderr
-        except Exception as e:
-            errors = f"Error running flake8: {str(e)}"
+        returncode, stdout = await run_cmd_async(
+            flake8_cmd,
+            self.interrupt_event,
+            cwd=self.root,
+            encoding=self.encoding,
+        )
+        if stdout == "Interrupted":
+            return
 
-        if not errors:
+        errors = stdout
+        if returncode == 0 or not errors:
             return
 
         text += errors
