@@ -1642,9 +1642,14 @@ class Coder(metaclass=UsageMeta):
 
         try:
             if self.enable_context_compaction:
-                self.compact_context_completed = False
-                await self.compact_context_if_needed()
-                self.compact_context_completed = True
+                # Skip compaction if the user wants to clear or exit
+                # Compacting is wasteful since /clear will clear everything
+                # and /exit will exit the application
+                stripped = user_message.strip()
+                if stripped not in ("/clear", "/exit", "/quit"):
+                    self.compact_context_completed = False
+                    await self.compact_context_if_needed()
+                    self.compact_context_completed = True
 
             self.run_one_completed = False
             await self.run_one(user_message, preproc)
