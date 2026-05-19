@@ -1,5 +1,5 @@
 import platform
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -29,61 +29,43 @@ class TestLinter:
         actual_path = os.path.normpath(self.linter.get_rel_fname("/other/path/file.py"))
         assert actual_path == expected_path
 
-    @patch("subprocess.Popen")
-    def test_run_cmd(self, mock_popen):
-        mock_process = MagicMock()
-        mock_process.returncode = 0
-        # First readline returns empty string, second returns None
-        mock_process.stdout.readline.side_effect = ["", None]
-        # First poll returns None (process still running), second returns 0 (exit code)
-        mock_process.poll.side_effect = [None, 0]
-        mock_popen.return_value = mock_process
+    @patch("cecli.linter.run_cmd_async")
+    async def test_run_cmd(self, mock_run_cmd_async):
+        mock_run_cmd_async.return_value = (0, "")
 
-        result = self.linter.run_cmd("test_cmd", "test_file.py", "code")
+        result = await self.linter.run_cmd("test_cmd", "test_file.py", "code")
         assert result is None
 
     @pytest.mark.skipif(
         platform.system() != "Windows", reason="Windows-specific test for dir command"
     )
-    def test_run_cmd_win(self):
+    async def test_run_cmd_win(self):
         from pathlib import Path
 
         root = Path(__file__).parent.parent.parent.absolute().as_posix()
         linter = Linter(encoding="utf-8", root=root)
-        result = linter.run_cmd("dir", "tests\\basic", "code")
+        result = await linter.run_cmd("dir", "tests\\basic", "code")
         assert result is None
 
-    @patch("subprocess.Popen")
-    def test_run_cmd_with_errors(self, mock_popen):
-        mock_process = MagicMock()
-        mock_process.returncode = 1
-        # First readline returns error, second returns empty string, third returns None
-        mock_process.stdout.readline.side_effect = ["Error message", "", None]
-        # First poll returns None (process still running), second returns 1 (exit code)
-        mock_process.poll.side_effect = [None, 1]
-        mock_popen.return_value = mock_process
+    @patch("cecli.linter.run_cmd_async")
+    async def test_run_cmd_with_errors(self, mock_run_cmd_async):
+        mock_run_cmd_async.return_value = (1, "Error message")
 
-        result = self.linter.run_cmd("test_cmd", "test_file.py", "code")
+        result = await self.linter.run_cmd("test_cmd", "test_file.py", "code")
         assert result is not None
         assert "Error message" in result.text
 
-    def test_run_cmd_with_special_chars(self):
-        with patch("subprocess.Popen") as mock_popen:
-            mock_process = MagicMock()
-            mock_process.returncode = 1
-            # First readline returns error, second returns empty string, third returns None
-            mock_process.stdout.readline.side_effect = ["Error message", "", None]
-            # First poll returns None (process still running), second returns 1 (exit code)
-            mock_process.poll.side_effect = [None, 1]
-            mock_popen.return_value = mock_process
+    async def test_run_cmd_with_special_chars(self):
+        with patch("cecli.linter.run_cmd_async") as mock_run_cmd_async:
+            mock_run_cmd_async.return_value = (1, "Error message")
 
             # Test with a file path containing special characters
             special_path = "src/(main)/product/[id]/page.tsx"
-            result = self.linter.run_cmd("eslint", special_path, "code")
+            result = await self.linter.run_cmd("eslint", special_path, "code")
 
             # Verify that the command was constructed correctly
-            mock_popen.assert_called_once()
-            call_args = mock_popen.call_args[0][0]
+            mock_run_cmd_async.assert_called_once()
+            call_args = mock_run_cmd_async.call_args[0][0]
 
             assert special_path in call_args
 

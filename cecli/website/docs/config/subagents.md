@@ -152,7 +152,7 @@ When the limit is reached:
 
 ## Restrictions
 
-- **No nested sub-agents**: Sub-agents cannot spawn further sub-agents. The `Delegate` tool is excluded from sub-agent tool schemas.
+- **No nested sub-agents by default**: Sub-agents cannot spawn further sub-agents. The `Delegate` tool is excluded from sub-agent tool schemas by default. To enable nested delegation, set `allow_nested_delegation: true` in the agent configuration.
 - **TUI-dependent**: Sub-agent container switching and the reap command depend on the TUI. Running in headless or non-TUI modes may not support these features.
 
 ## Examples

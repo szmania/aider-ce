@@ -8,31 +8,32 @@ async def interruptible_async_generator(async_generator, interrupt_event):
     gen = async_generator.__aiter__()
     interrupt_task = asyncio.create_task(interrupt_event.wait())
 
-    while True:
-        next_task = asyncio.create_task(gen.__anext__())
-        done, pending = await asyncio.wait(
-            {next_task, interrupt_task}, return_when=asyncio.FIRST_COMPLETED
-        )
+    try:
+        while True:
+            next_task = asyncio.create_task(gen.__anext__())
+            done, pending = await asyncio.wait(
+                {next_task, interrupt_task}, return_when=asyncio.FIRST_COMPLETED
+            )
 
-        if interrupt_task in done:
-            next_task.cancel()
-            try:
-                await next_task
-            except asyncio.CancelledError:
-                pass
-            break
-
-        if next_task in done:
-            try:
-                yield next_task.result()
-            except StopAsyncIteration:
+            if interrupt_task in done:
+                next_task.cancel()
+                try:
+                    await next_task
+                except asyncio.CancelledError:
+                    pass
                 break
 
-    interrupt_task.cancel()
-    try:
-        await interrupt_task
-    except asyncio.CancelledError:
-        pass
+            if next_task in done:
+                try:
+                    yield next_task.result()
+                except StopAsyncIteration:
+                    break
+    finally:
+        interrupt_task.cancel()
+        try:
+            await interrupt_task
+        except asyncio.CancelledError:
+            pass
 
 
 def is_active(task):
@@ -55,6 +56,9 @@ async def interruptible(coroutine, interrupt_event):
         - If not interrupted: (coroutine_result, False)
         - If interrupted: (None, True)
     """
+    if interrupt_event is None:
+        interrupt_event = asyncio.Event()
+
     main_task = asyncio.create_task(coroutine)
     interrupt_task = asyncio.create_task(interrupt_event.wait())
 

@@ -61,7 +61,7 @@ from cecli.reasoning_tags import (
 from cecli.repo import ANY_GIT_ERROR, GitRepo
 from cecli.repomap import RepoMap
 from cecli.report import update_error_prefix
-from cecli.run_cmd import run_cmd, run_cmd_async
+from cecli.run_cmd import run_cmd_async
 from cecli.sessions import SessionManager
 from cecli.tools.utils.output import print_tool_response
 from cecli.tools.utils.registry import ToolRegistry
@@ -105,7 +105,83 @@ all_fences = [
 ]
 
 
-class Coder:
+class UsageMeta(type):
+    """Metaclass that provides shared accumulator properties across all Coder subclasses.
+    Every instance shares the same unified total token and cost amounts."""
+
+    _total_cost = 0
+    _total_tokens_sent = 0
+    _total_tokens_received = 0
+    _total_cached_tokens = 0
+
+    @property
+    def total_cost(cls):
+        return UsageMeta._total_cost
+
+    @total_cost.setter
+    def total_cost(cls, value):
+        UsageMeta._total_cost = value
+
+    @property
+    def total_tokens_sent(cls):
+        return UsageMeta._total_tokens_sent
+
+    @total_tokens_sent.setter
+    def total_tokens_sent(cls, value):
+        UsageMeta._total_tokens_sent = value
+
+    @property
+    def total_tokens_received(cls):
+        return UsageMeta._total_tokens_received
+
+    @total_tokens_received.setter
+    def total_tokens_received(cls, value):
+        UsageMeta._total_tokens_received = value
+
+    @property
+    def total_cached_tokens(cls):
+        return UsageMeta._total_cached_tokens
+
+    @total_cached_tokens.setter
+    def total_cached_tokens(cls, value):
+        UsageMeta._total_cached_tokens = value
+
+
+class Coder(metaclass=UsageMeta):
+
+    # Instance-level properties that delegate to the shared metaclass storage
+    @property
+    def total_cost(self):
+        return type(self).total_cost
+
+    @total_cost.setter
+    def total_cost(self, value):
+        type(self).total_cost = value
+
+    @property
+    def total_tokens_sent(self):
+        return type(self).total_tokens_sent
+
+    @total_tokens_sent.setter
+    def total_tokens_sent(self, value):
+        type(self).total_tokens_sent = value
+
+    @property
+    def total_tokens_received(self):
+        return type(self).total_tokens_received
+
+    @total_tokens_received.setter
+    def total_tokens_received(self, value):
+        type(self).total_tokens_received = value
+
+    @property
+    def total_cached_tokens(self):
+        return type(self).total_cached_tokens
+
+    @total_cached_tokens.setter
+    def total_cached_tokens(self, value):
+        type(self).total_cached_tokens = value
+
     abs_fnames = None
     abs_read_only_fnames = None
     abs_read_only_stubs_fnames = None
@@ -141,9 +217,6 @@ class Coder:
     partial_response_consolidated = None
     commit_before_message = []
     message_cost = 0.0
-    total_tokens_sent = 0
-    total_tokens_received = 0
-    total_cached_tokens = 0
     message_tokens_sent = 0
     message_tokens_received = 0
     message_cached_tokens = 0
@@ -232,11 +305,7 @@ class Coder:
                 cur_messages=[],
                 coder_commit_hashes=from_coder.coder_commit_hashes,
                 commands=from_coder.commands.clone(),
-                total_cost=from_coder.total_cost,
                 ignore_mentions=from_coder.ignore_mentions,
-                total_tokens_sent=from_coder.total_tokens_sent,
-                total_tokens_received=from_coder.total_tokens_received,
-                total_cached_tokens=from_coder.total_cached_tokens,
                 file_watcher=from_coder.file_watcher,
                 mcp_manager=from_coder.mcp_manager,
                 uuid=from_coder.uuid,
@@ -263,6 +332,10 @@ class Coder:
 
         if res is not None:
             if from_coder:
+                # Preserve TUI ref in all child coders
+                if from_coder.tui:
+                    res.tui = from_coder.tui
+
                 if res.mcp_manager:
                     # When switching to a non-agent coder, disconnect the "Local" MCP server
                     # (which provides agent-only tools like tool calling and file editing)
@@ -318,7 +391,6 @@ class Coder:
         map_max_line_length=100,
         commands=None,
         summarizer=None,
-        total_cost=0.0,
         map_refresh="auto",
         cache_prompts=False,
         num_cache_warming_pings=0,
@@ -327,9 +399,6 @@ class Coder:
         commit_language=None,
         detect_urls=True,
         ignore_mentions=None,
-        total_tokens_sent=0,
-        total_tokens_received=0,
-        total_cached_tokens=0,
         file_watcher=None,
         auto_copy_context=False,
         auto_accept_architect=True,
@@ -409,10 +478,6 @@ class Coder:
         self.chat_completion_response_hashes = []
         self.need_commit_before_edits = set()
 
-        self.total_cost = total_cost
-        self.total_tokens_sent = total_tokens_sent
-        self.total_tokens_received = total_tokens_received
-        self.total_cached_tokens = total_cached_tokens
         self.message_tokens_sent = 0
         self.message_tokens_received = 0
         self.message_cached_tokens = 0
@@ -602,7 +667,9 @@ class Coder:
         self.files_edited_by_tools = set()
 
         # Linting and testing
-        self.linter = Linter(root=self.root, encoding=io.encoding, interrupt_event=self.interrupt_event)
+        self.linter = Linter(
+            root=self.root, encoding=io.encoding, interrupt_event=self.interrupt_event
+        )
         self.auto_lint = auto_lint
         self.setup_lint_cmds(lint_cmds)
         self.lint_cmds = lint_cmds
@@ -2226,6 +2293,10 @@ class Coder:
 
         ConversationService.get_manager(self).flush_queue()
 
+        # Clear any stale interrupt state before starting formatting
+        # to avoid immediately re-catching a previous interrupt
+        self.interrupt_event.clear()
+
         if inp:
             # Make sure current coder actually has control of conversation system
             ConversationService.get_chunks(self).initialize_conversation_system()
@@ -2251,8 +2322,15 @@ class Coder:
         result, interrupted = await self.coroutines.interruptible(
             format_in_executor(), self.interrupt_event
         )
+
         if interrupted:
-            raise KeyboardInterrupt("Interrupted during message formatting")
+            # Use CancelledError instead of KeyboardInterrupt to avoid
+            # propagating through the asyncio event loop during cleanup.
+            # KeyboardInterrupt is re-raised by Task.__step and bypasses
+            # asyncio.gather(return_exceptions=True), causing crashes
+            # when tasks are gathered during _cleanup_loop.
+            raise asyncio.CancelledError("Interrupted during message formatting")
+
         messages = result
 
         if not await self.check_tokens(messages):
@@ -3407,9 +3485,9 @@ class Coder:
                         self.stream_wrapper(text, final=False)
                     except UnicodeEncodeError:
                         # Safely encode and decode the text
-                        safe_text = text.encode(sys.stdout.encoding, errors="backslashreplace").decode(
-                            sys.stdout.encoding
-                        )
+                        safe_text = text.encode(
+                            sys.stdout.encoding, errors="backslashreplace"
+                        ).decode(sys.stdout.encoding)
                         self.stream_wrapper(safe_text, final=False)
                     yield text
         except (asyncio.CancelledError, KeyboardInterrupt):
@@ -3672,7 +3750,7 @@ class Coder:
         total_stats += " ↑↓"
 
         if not self.get_active_model().info.get("input_cost_per_token"):
-            self.usage_report = tokens_report + "\n" + total_stats
+            self.usage_report = tokens_report + " " + total_stats
             return
 
         try:
@@ -3695,7 +3773,7 @@ class Coder:
         )
 
         if cache_hit_tokens and cache_write_tokens:
-            sep = "\n"
+            sep = " "
         else:
             sep = " "
 

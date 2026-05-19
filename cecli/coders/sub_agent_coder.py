@@ -19,4 +19,5 @@ class SubAgentCoder(AgentCoder):
 
     def post_init(self):
         super().post_init()
-        self.registered_tools["excluded"].add("delegate")
+        if not self.agent_config.get("allow_nested_delegation", False):
+            self.registered_tools["excluded"].add("delegate")

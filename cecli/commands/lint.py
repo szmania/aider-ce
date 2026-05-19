@@ -43,7 +43,7 @@ class LintCommand(BaseCommand):
         lint_coder = None
         for fname in fnames:
             try:
-                errors = coder.linter.lint(fname)
+                errors = await coder.linter.lint(fname)
             except FileNotFoundError as err:
                 io.tool_error(f"Unable to lint {fname}")
                 io.tool_output(str(err))

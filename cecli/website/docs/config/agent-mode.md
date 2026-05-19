@@ -158,6 +158,7 @@ Agent Mode can also be configured directly in your configuration file. See the [
 - **`servers_excludelist`**: Array of MCP server names to exclude (these servers will be disabled)
 - **`subagent_paths`**: Array of directories to search for sub-agent definition `.md` files
 - **`max_sub_agents`**: Maximum number of concurrent sub-agents (default: 3)
+- **`allow_nested_delegation`**: Allow sub-agents to delegate tasks to further sub-agents (default: `false`). When enabled, the `Delegate` tool is made available in sub-agent tool schemas.
 - **`include_context_blocks`**: Array of context block names to include (overrides default set)
 - **`exclude_context_blocks`**: Array of context block names to exclude from default set
 - **`command_timeout`**: Time in seconds to wait for shell commands to finish before automatic backgrounding occurs (default: None)
@@ -272,7 +273,8 @@ agent-config:
   # Sub-agent configuration
   subagent_paths: [".cecli/subagents"]  # Optional: Directories to search for sub-agent definitions
   max_sub_agents: 3  # Optional: Maximum concurrent sub-agents (default: 3)
-  
+  allow_nested_delegation: false  # Optional: Allow sub-agents to delegate further (default: false)
+
   # Context blocks configuration
   include_context_blocks: ["todo_list", "git_status"]  # Optional: Context blocks to include
   exclude_context_blocks: ["symbol_outline", "directory_structure"]  # Optional: Context blocks to exclude

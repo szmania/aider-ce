@@ -154,6 +154,7 @@ class AgentCoder(Coder):
         )
         config["command_timeout"] = nested.getter(config, "command_timeout", 30)
         config["hot_reload"] = nested.getter(config, "hot_reload", False)
+        config["allow_nested_delegation"] = nested.getter(config, "allow_nested_delegation", False)
 
         config["tools_paths"] = nested.getter(config, ["tools_paths", "tool_paths"], [])
         config["tools_includelist"] = nested.getter(
@@ -350,6 +351,7 @@ class AgentCoder(Coder):
                 "git_status",
                 "symbol_outline",
                 "skills",
+                "sub_agents",
                 "loaded_skills",
             ]
             for block_type in block_types:
@@ -385,7 +387,9 @@ class AgentCoder(Coder):
             content = self.get_skills_context()
         elif block_name == "loaded_skills":
             content = self.get_skills_content()
-        elif block_name == "sub_agents":
+        elif block_name == "sub_agents" and (
+            not self.parent_uuid or self.agent_config.get("allow_nested_delegation", False)
+        ):
             content = self.get_sub_agents_context()
         if content is not None:
             self.context_blocks_cache[block_name] = content
