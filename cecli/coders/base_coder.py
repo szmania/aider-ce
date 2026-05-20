@@ -205,8 +205,8 @@ class Coder:
                 main_model = models.Model(models.DEFAULT_MODEL_NAME, io=io)
 
         if edit_format == "code":
-            edit_format = None
-        if edit_format is None:
+            edit_format = main_model.edit_format
+        elif edit_format is None:
             if from_coder:
                 edit_format = from_coder.edit_format
             else:
@@ -263,12 +263,14 @@ class Coder:
 
         if res is not None:
             if from_coder:
-                if from_coder.mcp_manager:
-                    res.mcp_manager = from_coder.mcp_manager
-
-                # Transfer TUI app weak reference
-                res.tui = from_coder.tui
-                res.context_management_enabled = from_coder.context_management_enabled
+                if res.mcp_manager:
+                    # When switching to a non-agent coder, disconnect the "Local" MCP server
+                    # (which provides agent-only tools like tool calling and file editing)
+                    # so it's not available in non-agent modes.
+                    if not isinstance(res, coders.AgentCoder):
+                        local_server = res.mcp_manager.get_server("Local")
+                        if local_server and local_server.is_connected:
+                            await res.mcp_manager.disconnect_server("Local")
 
             await res.initialize_mcp_tools()
 

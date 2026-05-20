@@ -1239,16 +1239,15 @@ async def main_async(argv=None, input=None, output=None, force_git_root=None, re
             kwargs["num_cache_warming_pings"] = 0
             kwargs["args"] = coder.args
 
-            if kwargs["edit_format"] != AgentCoder.edit_format and (
-                coder := kwargs.get("from_coder")
-            ):
-                if coder.mcp_manager.get_server("Local"):
-                    await coder.mcp_manager.disconnect_server("Local")
-
             for tag in [MessageTag.SYSTEM, MessageTag.EXAMPLES, MessageTag.STATIC]:
                 ConversationService.get_manager(coder).clear_tag(tag)
 
+            old_coder = coder
             coder = await Coder.create(**kwargs)
+
+            if isinstance(old_coder, AgentCoder) and not isinstance(coder, AgentCoder):
+                if coder.mcp_manager and coder.mcp_manager.get_server("Local"):
+                    await coder.mcp_manager.disconnect_server("Local")
 
             if switch.kwargs.get("show_announcements") is False:
                 coder.suppress_announcements_for_next_prompt = True
