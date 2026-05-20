@@ -65,6 +65,7 @@ from .save import SaveCommand
 from .save_session import SaveSessionCommand
 from .settings import SettingsCommand
 from .spawn_agent import SpawnAgentCommand
+from .switch_agent import SwitchAgentCommand
 from .terminal_setup import TerminalSetupCommand
 from .test import TestCommand
 from .think_tokens import ThinkTokensCommand
@@ -118,6 +119,7 @@ CommandRegistry.register(HooksCommand)
 CommandRegistry.register(InvokeAgentCommand)
 CommandRegistry.register(ReapAgentCommand)
 CommandRegistry.register(SpawnAgentCommand)
+CommandRegistry.register(SwitchAgentCommand)
 CommandRegistry.register(IncludeSkillCommand)
 CommandRegistry.register(LintCommand)
 CommandRegistry.register(ListSessionsCommand)
@@ -199,6 +201,7 @@ __all__ = [
     "InvokeAgentCommand",
     "ReapAgentCommand",
     "SpawnAgentCommand",
+    "SwitchAgentCommand",
     "LintCommand",
     "ListSessionsCommand",
     "ListSkillsCommand",
