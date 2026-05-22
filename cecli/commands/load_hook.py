@@ -7,6 +7,7 @@ from cecli.hooks.manager import HookManager
 class LoadHookCommand(BaseCommand):
     NORM_NAME = "load-hook"
     DESCRIPTION = "Enable a specific hook by name"
+    show_completion_notification = False
 
     @classmethod
     async def execute(cls, io, coder, args, **kwargs):

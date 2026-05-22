@@ -1278,7 +1278,11 @@ class Model(ModelSettings):
 
                 if override_kwargs:
                     kwargs = deep_merge(kwargs, override_kwargs)
-                res = await litellm.acompletion(**kwargs)
+                completion_coro = litellm.acompletion(**kwargs)
+                res, interrupted = await coroutines.interruptible(completion_coro, interrupt_event)
+                if interrupted:
+                    raise KeyboardInterrupt("Interrupted during acompletion")
+
                 return hash_object, res
             except litellm.ContextWindowExceededError as err:
                 raise err

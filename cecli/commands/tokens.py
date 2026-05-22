@@ -8,6 +8,7 @@ from cecli.helpers.conversation import ConversationService, MessageTag
 class TokensCommand(BaseCommand):
     NORM_NAME = "tokens"
     DESCRIPTION = "Report on the number of tokens used by the current chat context"
+    show_completion_notification = False
 
     @classmethod
     async def execute(cls, io, coder, args, **kwargs):

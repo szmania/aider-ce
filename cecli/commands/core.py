@@ -37,7 +37,7 @@ class Commands:
     scraper = None
 
     def clone(self):
-        return Commands(
+        cloned = Commands(
             self.io,
             None,
             voice_language=self.voice_language,
@@ -50,6 +50,8 @@ class Commands:
             editor=self.editor,
             original_read_only_fnames=self.original_read_only_fnames,
         )
+        cloned.last_command_show_notification = self.last_command_show_notification
+        return cloned
 
     def __init__(
         self,
@@ -94,6 +96,7 @@ class Commands:
 
         self.cmd_running_event = asyncio.Event()
         self.cmd_running_event.set()
+        self.last_command_show_notification = True
 
     def _load_custom_commands(self, custom_commands):
         """
@@ -185,6 +188,8 @@ class Commands:
         if not command_class:
             active_coder.io.tool_output(f"Error: Command {cmd_name} not found.")
             return
+
+        self.last_command_show_notification = command_class.show_completion_notification
         self.cmd_running_event.clear()
 
         try:

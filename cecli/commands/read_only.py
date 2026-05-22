@@ -19,6 +19,7 @@ class ReadOnlyCommand(BaseCommand):
     DESCRIPTION = (
         "Add files to the chat that are for reference only, or turn added files to read-only"
     )
+    show_completion_notification = False
 
     @classmethod
     async def execute(cls, io, coder, args, **kwargs):

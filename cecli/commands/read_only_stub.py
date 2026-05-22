@@ -19,6 +19,7 @@ class ReadOnlyStubCommand(BaseCommand):
     DESCRIPTION = (
         "Add files to the chat as read-only stubs, or turn added files to read-only (stubs)"
     )
+    show_completion_notification = False
 
     @classmethod
     async def execute(cls, io, coder, args, **kwargs):

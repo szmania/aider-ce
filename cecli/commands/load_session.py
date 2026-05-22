@@ -7,6 +7,7 @@ from cecli.commands.utils.helpers import format_command_result
 class LoadSessionCommand(BaseCommand):
     NORM_NAME = "load-session"
     DESCRIPTION = "Load a saved session by name or file path"
+    show_completion_notification = False
 
     @classmethod
     async def execute(cls, io, coder, args, **kwargs):

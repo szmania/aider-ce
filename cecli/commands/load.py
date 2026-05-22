@@ -8,6 +8,7 @@ from cecli.commands.utils.save_load_manager import SaveLoadManager
 class LoadCommand(BaseCommand):
     NORM_NAME = "load"
     DESCRIPTION = "Load and execute commands from a file"
+    show_completion_notification = False
 
     @classmethod
     async def execute(cls, io, coder, args, **kwargs):

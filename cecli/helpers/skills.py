@@ -137,6 +137,7 @@ class SkillsManager:
         skills = []
 
         for directory_path in self.directory_paths:
+            directory_path = Path(directory_path)
             if not directory_path.exists():
                 continue
 

@@ -61,7 +61,7 @@ from cecli.reasoning_tags import (
 from cecli.repo import ANY_GIT_ERROR, GitRepo
 from cecli.repomap import RepoMap
 from cecli.report import update_error_prefix
-from cecli.run_cmd import run_cmd
+from cecli.run_cmd import run_cmd_async
 from cecli.sessions import SessionManager
 from cecli.tools.utils.output import print_tool_response
 from cecli.tools.utils.registry import ToolRegistry
@@ -105,7 +105,83 @@ all_fences = [
 ]
 
 
-class Coder:
+class UsageMeta(type):
+    """Metaclass that provides shared accumulator properties across all Coder subclasses.
+    Every instance shares the same unified total token and cost amounts."""
+
+    _total_cost = 0
+    _total_tokens_sent = 0
+    _total_tokens_received = 0
+    _total_cached_tokens = 0
+
+    @property
+    def total_cost(cls):
+        return UsageMeta._total_cost
+
+    @total_cost.setter
+    def total_cost(cls, value):
+        UsageMeta._total_cost = value
+
+    @property
+    def total_tokens_sent(cls):
+        return UsageMeta._total_tokens_sent
+
+    @total_tokens_sent.setter
+    def total_tokens_sent(cls, value):
+        UsageMeta._total_tokens_sent = value
+
+    @property
+    def total_tokens_received(cls):
+        return UsageMeta._total_tokens_received
+
+    @total_tokens_received.setter
+    def total_tokens_received(cls, value):
+        UsageMeta._total_tokens_received = value
+
+    @property
+    def total_cached_tokens(cls):
+        return UsageMeta._total_cached_tokens
+
+    @total_cached_tokens.setter
+    def total_cached_tokens(cls, value):
+        UsageMeta._total_cached_tokens = value
+
+
+class Coder(metaclass=UsageMeta):
+
+    # Instance-level properties that delegate to the shared metaclass storage
+    @property
+    def total_cost(self):
+        return type(self).total_cost
+
+    @total_cost.setter
+    def total_cost(self, value):
+        type(self).total_cost = value
+
+    @property
+    def total_tokens_sent(self):
+        return type(self).total_tokens_sent
+
+    @total_tokens_sent.setter
+    def total_tokens_sent(self, value):
+        type(self).total_tokens_sent = value
+
+    @property
+    def total_tokens_received(self):
+        return type(self).total_tokens_received
+
+    @total_tokens_received.setter
+    def total_tokens_received(self, value):
+        type(self).total_tokens_received = value
+
+    @property
+    def total_cached_tokens(self):
+        return type(self).total_cached_tokens
+
+    @total_cached_tokens.setter
+    def total_cached_tokens(self, value):
+        type(self).total_cached_tokens = value
+
     abs_fnames = None
     abs_read_only_fnames = None
     abs_read_only_stubs_fnames = None
@@ -141,9 +217,6 @@ class Coder:
     partial_response_consolidated = None
     commit_before_message = []
     message_cost = 0.0
-    total_tokens_sent = 0
-    total_tokens_received = 0
-    total_cached_tokens = 0
     message_tokens_sent = 0
     message_tokens_received = 0
     message_cached_tokens = 0
@@ -232,11 +305,7 @@ class Coder:
                 cur_messages=[],
                 coder_commit_hashes=from_coder.coder_commit_hashes,
                 commands=from_coder.commands.clone(),
-                total_cost=from_coder.total_cost,
                 ignore_mentions=from_coder.ignore_mentions,
-                total_tokens_sent=from_coder.total_tokens_sent,
-                total_tokens_received=from_coder.total_tokens_received,
-                total_cached_tokens=from_coder.total_cached_tokens,
                 file_watcher=from_coder.file_watcher,
                 mcp_manager=from_coder.mcp_manager,
                 uuid=from_coder.uuid,
@@ -263,6 +332,10 @@ class Coder:
 
         if res is not None:
             if from_coder:
+                # Preserve TUI ref in all child coders
+                if from_coder.tui:
+                    res.tui = from_coder.tui
+
                 if res.mcp_manager:
                     # When switching to a non-agent coder, disconnect the "Local" MCP server
                     # (which provides agent-only tools like tool calling and file editing)
@@ -318,7 +391,6 @@ class Coder:
         map_max_line_length=100,
         commands=None,
         summarizer=None,
-        total_cost=0.0,
         map_refresh="auto",
         cache_prompts=False,
         num_cache_warming_pings=0,
@@ -327,9 +399,6 @@ class Coder:
         commit_language=None,
         detect_urls=True,
         ignore_mentions=None,
-        total_tokens_sent=0,
-        total_tokens_received=0,
-        total_cached_tokens=0,
         file_watcher=None,
         auto_copy_context=False,
         auto_accept_architect=True,
@@ -409,10 +478,6 @@ class Coder:
         self.chat_completion_response_hashes = []
         self.need_commit_before_edits = set()
 
-        self.total_cost = total_cost
-        self.total_tokens_sent = total_tokens_sent
-        self.total_tokens_received = total_tokens_received
-        self.total_cached_tokens = total_cached_tokens
         self.message_tokens_sent = 0
         self.message_tokens_received = 0
         self.message_cached_tokens = 0
@@ -602,7 +667,9 @@ class Coder:
         self.files_edited_by_tools = set()
 
         # Linting and testing
-        self.linter = Linter(root=self.root, encoding=io.encoding)
+        self.linter = Linter(
+            root=self.root, encoding=io.encoding, interrupt_event=self.interrupt_event
+        )
         self.auto_lint = auto_lint
         self.setup_lint_cmds(lint_cmds)
         self.lint_cmds = lint_cmds
@@ -2231,6 +2298,10 @@ class Coder:
 
         ConversationService.get_manager(self).flush_queue()
 
+        # Clear any stale interrupt state before starting formatting
+        # to avoid immediately re-catching a previous interrupt
+        self.interrupt_event.clear()
+
         if inp:
             # Make sure current coder actually has control of conversation system
             ConversationService.get_chunks(self).initialize_conversation_system()
@@ -2249,7 +2320,22 @@ class Coder:
         import asyncio
 
         loop = asyncio.get_running_loop()
-        result = await loop.run_in_executor(None, self.format_messages)
+
+        async def format_in_executor():
+            return await loop.run_in_executor(None, self.format_messages)
+
+        result, interrupted = await self.coroutines.interruptible(
+            format_in_executor(), self.interrupt_event
+        )
+
+        if interrupted:
+            # Use CancelledError instead of KeyboardInterrupt to avoid
+            # propagating through the asyncio event loop during cleanup.
+            # KeyboardInterrupt is re-raised by Task.__step and bypasses
+            # asyncio.gather(return_exceptions=True), causing crashes
+            # when tasks are gathered during _cleanup_loop.
+            raise asyncio.CancelledError("Interrupted during message formatting")
+
         messages = result
 
         if not await self.check_tokens(messages):
@@ -2458,7 +2544,10 @@ class Coder:
             return
 
         if edited and self.auto_lint:
-            lint_errors = self.lint_edited(edited)
+            lint_errors = await self.lint_edited(edited)
+            if lint_errors is None:  # Interrupted
+                return
+
             await self.auto_commit(edited, context="Ran the linter")
             self.lint_outcome = not lint_errors
             if lint_errors:
@@ -2959,12 +3048,16 @@ class Coder:
         self.io.tool_error(res)
         await self.io.offer_url(urls.token_limits)
 
-    def lint_edited(self, fnames, show_output=True):
+    async def lint_edited(self, fnames, show_output=True):
         res = ""
         for fname in fnames:
             if not fname:
                 continue
-            errors = self.linter.lint(self.abs_root_path(fname))
+            try:
+                errors = await self.linter.lint(self.abs_root_path(fname))
+            except asyncio.CancelledError:
+                self.io.tool_warning("Linting interrupted.")
+                return None
 
             if errors:
                 res += "\n"
@@ -3283,122 +3376,127 @@ class Coder:
         received_content = False
         chunk_index = 0
 
-        async for chunk in completion:
-            if self.args.debug:
-                with open(".cecli/logs/chunks.log", "a") as f:
-                    print(chunk, file=f)
+        try:
+            async for chunk in coroutines.interruptible_async_generator(
+                completion, self.interrupt_event
+            ):
+                if self.args.debug:
+                    with open(".cecli/logs/chunks.log", "a") as f:
+                        print(chunk, file=f)
 
-            # Check if confirmation is in progress and wait if needed
-            if not self.io.confirmation_in_progress_event.is_set():
-                await self.io.confirmation_in_progress_event.wait()
+                # Check if confirmation is in progress and wait if needed
+                if not self.io.confirmation_in_progress_event.is_set():
+                    await self.io.confirmation_in_progress_event.wait()
 
-            if isinstance(chunk, str):
-                self.io.tool_error(chunk)
-                continue
-            else:
-                if len(chunk.choices) == 0:
+                if isinstance(chunk, str):
+                    self.io.tool_error(chunk)
                     continue
+                else:
+                    if len(chunk.choices) == 0:
+                        continue
 
-                if (
-                    hasattr(chunk.choices[0], "finish_reason")
-                    and chunk.choices[0].finish_reason == "length"
-                ):
-                    raise FinishReasonLength()
+                    if (
+                        hasattr(chunk.choices[0], "finish_reason")
+                        and chunk.choices[0].finish_reason == "length"
+                    ):
+                        raise FinishReasonLength()
 
-                try:
-                    if chunk.choices[0].delta.tool_calls:
-                        received_content = True
-                        self.token_profiler.on_token()
-                        for tool_call_chunk in chunk.choices[0].delta.tool_calls:
-                            self.tool_reflection = True
-
-                            if tool_call_chunk.type:
-                                self.io.update_spinner_suffix(tool_call_chunk.type)
-
-                            if tool_call_chunk.function:
-                                if tool_call_chunk.function.name:
-                                    self.io.update_spinner_suffix(tool_call_chunk.function.name)
-
-                                if tool_call_chunk.function.arguments:
-                                    self.io.update_spinner_suffix(
-                                        tool_call_chunk.function.arguments
-                                    )
-
-                except (AttributeError, IndexError):
-                    # Handle cases where the response structure doesn't match expectations
-                    pass
-
-                try:
-                    func = chunk.choices[0].delta.function_call
-                    # dump(func)
-                    if func:
-                        for k, v in func.items():
-                            self.tool_reflection = True
-                            self.io.update_spinner_suffix(v)
-
-                        received_content = True
-                        self.token_profiler.on_token()
-                except AttributeError:
-                    pass
-
-                text = ""
-
-                try:
-                    reasoning_content = chunk.choices[0].delta.reasoning_content
-                except AttributeError:
                     try:
-                        reasoning_content = chunk.choices[0].delta.reasoning
+                        if chunk.choices[0].delta.tool_calls:
+                            received_content = True
+                            self.token_profiler.on_token()
+                            for tool_call_chunk in chunk.choices[0].delta.tool_calls:
+                                self.tool_reflection = True
+
+                                if tool_call_chunk.type:
+                                    self.io.update_spinner_suffix(tool_call_chunk.type)
+
+                                if tool_call_chunk.function:
+                                    if tool_call_chunk.function.name:
+                                        self.io.update_spinner_suffix(tool_call_chunk.function.name)
+
+                                    if tool_call_chunk.function.arguments:
+                                        self.io.update_spinner_suffix(
+                                            tool_call_chunk.function.arguments
+                                        )
+
+                    except (AttributeError, IndexError):
+                        # Handle cases where the response structure doesn't match expectations
+                        pass
+
+                    try:
+                        func = chunk.choices[0].delta.function_call
+                        # dump(func)
+                        if func:
+                            for k, v in func.items():
+                                self.tool_reflection = True
+                                self.io.update_spinner_suffix(v)
+
+                            received_content = True
+                            self.token_profiler.on_token()
                     except AttributeError:
-                        reasoning_content = None
+                        pass
 
-                if reasoning_content:
-                    if nested.getter(self.args, "show_thinking"):
-                        if not self.got_reasoning_content:
-                            text += f"<{REASONING_TAG}>\n\n"
-                        text += reasoning_content
-                        self.got_reasoning_content = True
-                        received_content = True
-                    self.token_profiler.on_token()
-                    self.io.update_spinner_suffix(reasoning_content)
-                    self.partial_response_reasoning_content += reasoning_content
+                    text = ""
 
-                try:
-                    content = chunk.choices[0].delta.content
-                    if content:
-                        if self.got_reasoning_content and not self.ended_reasoning_content:
-                            text += f"\n\n</{self.reasoning_tag_name}>\n\n"
-                            self.ended_reasoning_content = True
+                    try:
+                        reasoning_content = chunk.choices[0].delta.reasoning_content
+                    except AttributeError:
+                        try:
+                            reasoning_content = chunk.choices[0].delta.reasoning
+                        except AttributeError:
+                            reasoning_content = None
 
-                        text += content
-                        received_content = True
+                    if reasoning_content:
+                        if nested.getter(self.args, "show_thinking"):
+                            if not self.got_reasoning_content:
+                                text += f"<{REASONING_TAG}>\n\n"
+                            text += reasoning_content
+                            self.got_reasoning_content = True
+                            received_content = True
                         self.token_profiler.on_token()
-                        self.io.update_spinner_suffix(content)
-                except AttributeError:
-                    pass
+                        self.io.update_spinner_suffix(reasoning_content)
+                        self.partial_response_reasoning_content += reasoning_content
 
-            self.partial_response_content += text
+                    try:
+                        content = chunk.choices[0].delta.content
+                        if content:
+                            if self.got_reasoning_content and not self.ended_reasoning_content:
+                                text += f"\n\n</{self.reasoning_tag_name}>\n\n"
+                                self.ended_reasoning_content = True
 
-            chunk_index += 1
-            chunk._hidden_params["created_at"] = chunk_index
-            self.partial_response_chunks.append(chunk)
+                            text += content
+                            received_content = True
+                            self.token_profiler.on_token()
+                            self.io.update_spinner_suffix(content)
+                    except AttributeError:
+                        pass
 
-            if self.show_pretty():
-                # Use simplified streaming - just call the method with full content
-                content_to_show = self.live_incremental_response(False)
-                self.stream_wrapper(content_to_show, final=False)
-            elif text:
-                # Apply reasoning tag formatting for non-pretty output
-                if nested.getter(self.args, "show_thinking"):
-                    text = replace_reasoning_tags(text, self.reasoning_tag_name)
-                try:
-                    self.stream_wrapper(text, final=False)
-                except UnicodeEncodeError:
-                    # Safely encode and decode the text
-                    safe_text = text.encode(sys.stdout.encoding, errors="backslashreplace").decode(
-                        sys.stdout.encoding
-                    )
-                    self.stream_wrapper(safe_text, final=False)
-                yield text
+                self.partial_response_content += text
+
+                chunk_index += 1
+                chunk._hidden_params["created_at"] = chunk_index
+                self.partial_response_chunks.append(chunk)
+
+                if self.show_pretty():
+                    # Use simplified streaming - just call the method with full content
+                    content_to_show = self.live_incremental_response(False)
+                    self.stream_wrapper(content_to_show, final=False)
+                elif text:
+                    # Apply reasoning tag formatting for non-pretty output
+                    if nested.getter(self.args, "show_thinking"):
+                        text = replace_reasoning_tags(text, self.reasoning_tag_name)
+                    try:
+                        self.stream_wrapper(text, final=False)
+                    except UnicodeEncodeError:
+                        # Safely encode and decode the text
+                        safe_text = text.encode(
+                            sys.stdout.encoding, errors="backslashreplace"
+                        ).decode(sys.stdout.encoding)
+                        self.stream_wrapper(safe_text, final=False)
+                    yield text
+        except (asyncio.CancelledError, KeyboardInterrupt):
+            raise KeyboardInterrupt
 
         # The Part Doing the Heavy Lifting Now
         self.consolidate_chunks()
@@ -3657,7 +3755,7 @@ class Coder:
         total_stats += " ↑↓"
 
         if not self.get_active_model().info.get("input_cost_per_token"):
-            self.usage_report = tokens_report + "\n" + total_stats
+            self.usage_report = tokens_report + " " + total_stats
             return
 
         try:
@@ -3680,7 +3778,7 @@ class Coder:
         )
 
         if cache_hit_tokens and cache_write_tokens:
-            sep = "\n"
+            sep = " "
         else:
             sep = " "
 
@@ -4233,8 +4331,10 @@ class Coder:
             self.io.tool_output(f"Running {command}")
             # Add the command to input history
             # self.io.add_to_input_history(f"/run {command.strip()}")
-            exit_status, output = await asyncio.to_thread(
-                run_cmd, command, error_print=self.io.tool_error, cwd=self.root
+            exit_status, output = await run_cmd_async(
+                command,
+                self.interrupt_event,
+                cwd=self.root,
             )
 
             if output:

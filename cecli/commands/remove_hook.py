@@ -7,6 +7,7 @@ from cecli.hooks.manager import HookManager
 class RemoveHookCommand(BaseCommand):
     NORM_NAME = "remove-hook"
     DESCRIPTION = "Disable a specific hook by name"
+    show_completion_notification = False
 
     @classmethod
     async def execute(cls, io, coder, args, **kwargs):

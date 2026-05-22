@@ -8,6 +8,7 @@ from cecli.format_settings import format_settings
 class SettingsCommand(BaseCommand):
     NORM_NAME = "settings"
     DESCRIPTION = "Print out the current settings"
+    show_completion_notification = False
 
     @classmethod
     async def execute(cls, io, coder, args, **kwargs):

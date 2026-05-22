@@ -1,11 +1,10 @@
-import asyncio
 from typing import List
 
 import cecli.prompts.utils.system as prompts
 from cecli.commands.utils.base_command import BaseCommand
 from cecli.commands.utils.helpers import format_command_result
 from cecli.helpers.conversation import ConversationService, MessageTag
-from cecli.run_cmd import run_cmd
+from cecli.run_cmd import run_cmd_async
 
 
 class RunCommand(BaseCommand):
@@ -22,11 +21,10 @@ class RunCommand(BaseCommand):
         if coder.args.tui:
             should_print = False
 
-        exit_status, combined_output = await asyncio.to_thread(
-            run_cmd,
+        exit_status, combined_output = await run_cmd_async(
             args,
+            coder.interrupt_event,
             verbose=coder.args.verbose if hasattr(coder.args, "verbose") else False,
-            error_print=io.tool_error,
             cwd=coder.root,
             should_print=should_print,
         )

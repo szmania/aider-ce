@@ -8,6 +8,7 @@ from cecli.commands.utils.save_load_manager import SaveLoadManager
 class SaveCommand(BaseCommand):
     NORM_NAME = "save"
     DESCRIPTION = "Save commands to a file that can reconstruct the current chat session's files"
+    show_completion_notification = False
 
     @classmethod
     async def execute(cls, io, coder, args, **kwargs):

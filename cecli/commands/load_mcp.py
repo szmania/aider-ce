@@ -7,6 +7,7 @@ from cecli.commands.utils.helpers import format_command_result
 class LoadMcpCommand(BaseCommand):
     NORM_NAME = "load-mcp"
     DESCRIPTION = "Load MCP server(s) by name, or use '*' to load all enabled servers"
+    show_completion_notification = False
 
     @classmethod
     async def execute(cls, io, coder, args, **kwargs):

@@ -16,6 +16,7 @@ from cecli.utils import is_image_file, run_fzf
 class AddCommand(BaseCommand):
     NORM_NAME = "add"
     DESCRIPTION = "Add files to the chat so cecli can edit them or review them in detail"
+    show_completion_notification = False
 
     @classmethod
     async def execute(cls, io, coder, args, **kwargs):

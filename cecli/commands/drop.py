@@ -13,6 +13,7 @@ from cecli.commands.utils.helpers import (
 class DropCommand(BaseCommand):
     NORM_NAME = "drop"
     DESCRIPTION = "Remove files from the chat session to free up context space"
+    show_completion_notification = False
 
     @classmethod
     async def execute(cls, io, coder, args, **kwargs):

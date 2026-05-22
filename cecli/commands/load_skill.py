@@ -7,6 +7,7 @@ from cecli.commands.utils.helpers import format_command_result
 class LoadSkillCommand(BaseCommand):
     NORM_NAME = "load-skill"
     DESCRIPTION = "Load a skill by name (agent mode only)"
+    show_completion_notification = False
 
     @classmethod
     async def execute(cls, io, coder, args, **kwargs):

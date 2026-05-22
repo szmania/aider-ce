@@ -9,6 +9,7 @@ from cecli.helpers.observations.service import ObservationService
 class ResetCommand(BaseCommand):
     NORM_NAME = "reset"
     DESCRIPTION = "Drop all files and clear the chat history"
+    show_completion_notification = False
 
     @classmethod
     async def execute(cls, io, coder, args, **kwargs):

@@ -7,6 +7,7 @@ from cecli.commands.utils.helpers import format_command_result
 class ListSessionsCommand(BaseCommand):
     NORM_NAME = "list-sessions"
     DESCRIPTION = "List all saved sessions in .cecli/sessions/"
+    show_completion_notification = False
 
     @classmethod
     async def execute(cls, io, coder, args, **kwargs):

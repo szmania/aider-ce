@@ -37,6 +37,7 @@ class BaseCommand(ABC, metaclass=CommandMeta):
     NORM_NAME = None  # Normalized command name (e.g., "add", "model")
     DESCRIPTION = None  # Command description for help
     SCHEMA = None  # Optional schema for parameter validation
+    show_completion_notification = True
 
     @classmethod
     @abstractmethod

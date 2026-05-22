@@ -9,6 +9,7 @@ from cecli.repo import ANY_GIT_ERROR
 class UndoCommand(BaseCommand):
     NORM_NAME = "undo"
     DESCRIPTION = "Undo the last git commit if it was done by cecli"
+    show_completion_notification = False
 
     @classmethod
     async def execute(cls, io, coder, args, **kwargs):

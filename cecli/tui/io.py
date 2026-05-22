@@ -434,7 +434,8 @@ class TextualInputOutput(InputOutput):
         """
         self.interrupted = False
 
-        self.notify_user_input_required()
+        if commands.last_command_show_notification:
+            self.notify_user_input_required()
 
         # Signal TUI that we're ready for input
         command_names = commands.get_commands() if commands else []

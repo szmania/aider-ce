@@ -7,6 +7,7 @@ from cecli.commands.utils.helpers import format_command_result
 class LsCommand(BaseCommand):
     NORM_NAME = "ls"
     DESCRIPTION = "List all known files and indicate which are included in the chat session"
+    show_completion_notification = False
 
     @classmethod
     async def execute(cls, io, coder, args, **kwargs):

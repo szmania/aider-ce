@@ -7,7 +7,8 @@ from cecli.coders import Coder
 
 class TestCoderSwitching(unittest.TestCase):
     @patch("cecli.coders.agent_coder.ToolRegistry")
-    def test_switch_from_agent_to_non_agent(self, mock_tool_registry):
+    @patch("cecli.mcp.manager.ToolRegistry")
+    def test_switch_from_agent_to_non_agent(self, mock_mcp_tool_registry, mock_tool_registry):
         async def run_test():
             # Mock dependencies
             io = MagicMock()
@@ -20,9 +21,9 @@ class TestCoderSwitching(unittest.TestCase):
             args.file_diffs = True
             args.max_reflections = 3
             main_model = MagicMock()
-            main_model.edit_format = "code"
+            main_model.edit_format = "diff"
             main_model.agent_model = None
-            main_model.weak_model = None
+            main_model.weak_model = MagicMock()
             main_model.editor_model = None
             main_model.get_repo_map_tokens.return_value = 1024
             main_model.info = {}

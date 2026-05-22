@@ -8,6 +8,7 @@ from cecli.helpers.observations.service import ObservationService
 class ClearCommand(BaseCommand):
     NORM_NAME = "clear"
     DESCRIPTION = "Clear the chat history"
+    show_completion_notification = False
 
     @classmethod
     async def execute(cls, io, coder, args, **kwargs):
