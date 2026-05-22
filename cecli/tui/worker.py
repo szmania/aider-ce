@@ -92,6 +92,8 @@ class CoderWorker:
                 break  # Normal exit
             except asyncio.CancelledError:
                 break
+            except KeyboardInterrupt:
+                continue
             except SwitchCoderSignal as switch:
                 # Handle chat mode switches (e.g., /chat-mode architect)
                 try:
