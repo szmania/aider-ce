@@ -600,7 +600,9 @@ class Coder:
         self.files_edited_by_tools = set()
 
         # Linting and testing
-        self.linter = Linter(root=self.root, encoding=io.encoding, interrupt_event=self.interrupt_event)
+        self.linter = Linter(
+            root=self.root, encoding=io.encoding, interrupt_event=self.interrupt_event
+        )
         self.auto_lint = auto_lint
         self.setup_lint_cmds(lint_cmds)
         self.lint_cmds = lint_cmds
@@ -3405,9 +3407,9 @@ class Coder:
                         self.stream_wrapper(text, final=False)
                     except UnicodeEncodeError:
                         # Safely encode and decode the text
-                        safe_text = text.encode(sys.stdout.encoding, errors="backslashreplace").decode(
-                            sys.stdout.encoding
-                        )
+                        safe_text = text.encode(
+                            sys.stdout.encoding, errors="backslashreplace"
+                        ).decode(sys.stdout.encoding)
                         self.stream_wrapper(safe_text, final=False)
                     yield text
         except (asyncio.CancelledError, KeyboardInterrupt):
