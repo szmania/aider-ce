@@ -1279,9 +1279,7 @@ class Model(ModelSettings):
                 if override_kwargs:
                     kwargs = deep_merge(kwargs, override_kwargs)
                 completion_coro = litellm.acompletion(**kwargs)
-                res, interrupted = await coroutines.interruptible(
-                    completion_coro, interrupt_event
-                )
+                res, interrupted = await coroutines.interruptible(completion_coro, interrupt_event)
                 if interrupted:
                     raise KeyboardInterrupt("Interrupted during acompletion")
 

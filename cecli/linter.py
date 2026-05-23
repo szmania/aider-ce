@@ -1,7 +1,6 @@
 import asyncio
 import os
 import re
-import subprocess
 import sys
 import traceback
 import warnings
@@ -11,7 +10,6 @@ from pathlib import Path
 import oslex
 
 from cecli.dump import dump  # noqa: F401
-from cecli.helpers.coroutines import interruptible
 from cecli.helpers.grep_ast import TreeContext, filename_to_lang
 from cecli.helpers.grep_ast.tsl import get_parser  # noqa: E402
 from cecli.run_cmd import run_cmd_async, run_cmd_subprocess  # noqa: F401

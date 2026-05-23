@@ -61,7 +61,7 @@ from cecli.reasoning_tags import (
 from cecli.repo import ANY_GIT_ERROR, GitRepo
 from cecli.repomap import RepoMap
 from cecli.report import update_error_prefix
-from cecli.run_cmd import run_cmd, run_cmd_async
+from cecli.run_cmd import run_cmd_async
 from cecli.sessions import SessionManager
 from cecli.tools.utils.output import print_tool_response
 from cecli.tools.utils.registry import ToolRegistry

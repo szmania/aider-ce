@@ -1,4 +1,3 @@
-import asyncio
 from typing import List
 
 import cecli.prompts.utils.system as prompts

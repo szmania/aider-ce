@@ -99,7 +99,12 @@ def run_cmd_subprocess(
 
 
 async def run_cmd_async(
-    command, interrupt_event, verbose=False, cwd=None, encoding=sys.stdout.encoding, should_print=True
+    command,
+    interrupt_event,
+    verbose=False,
+    cwd=None,
+    encoding=sys.stdout.encoding,
+    should_print=True,
 ):
     if verbose:
         print("Using run_cmd_async:", command)
