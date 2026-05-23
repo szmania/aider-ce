@@ -9,6 +9,7 @@ from cecli.helpers.conversation import ConversationService
 class EditorModelCommand(BaseCommand):
     NORM_NAME = "editor-model"
     DESCRIPTION = "Switch the Editor Model to a new LLM"
+    show_completion_notification = False
 
     @classmethod
     async def execute(cls, io, coder, args, **kwargs):

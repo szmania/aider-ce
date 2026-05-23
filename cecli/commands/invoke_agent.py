@@ -6,6 +6,7 @@ from .utils.base_command import BaseCommand
 class InvokeAgentCommand(BaseCommand):
     NORM_NAME = "invoke-agent"
     DESCRIPTION = "Invoke a sub-agent with a prompt (blocking)"
+    show_completion_notification = False
 
     @classmethod
     async def execute(cls, io, coder, args, **kwargs):

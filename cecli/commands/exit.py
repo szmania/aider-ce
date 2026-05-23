@@ -10,6 +10,7 @@ from cecli.commands.utils.helpers import format_command_result
 class ExitCommand(BaseCommand):
     NORM_NAME = "exit"
     DESCRIPTION = "Exit the application"
+    show_completion_notification = False
 
     @classmethod
     async def execute(cls, io, coder, args, **kwargs):

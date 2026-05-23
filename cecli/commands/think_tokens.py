@@ -7,6 +7,7 @@ from cecli.commands.utils.helpers import format_command_result
 class ThinkTokensCommand(BaseCommand):
     NORM_NAME = "think-tokens"
     DESCRIPTION = "Set the thinking token budget, eg: 8096, 8k, 10.5k, 0.5M, or 0 to disable"
+    show_completion_notification = False
 
     @classmethod
     async def execute(cls, io, coder, args, **kwargs):

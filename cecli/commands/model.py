@@ -9,6 +9,7 @@ from cecli.helpers.conversation import ConversationService
 class ModelCommand(BaseCommand):
     NORM_NAME = "model"
     DESCRIPTION = "Switch the Main Model to a new LLM"
+    show_completion_notification = False
 
     @classmethod
     async def execute(cls, io, coder, args, **kwargs):

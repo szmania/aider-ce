@@ -9,6 +9,7 @@ from cecli.helpers.conversation import ConversationService
 class WeakModelCommand(BaseCommand):
     NORM_NAME = "weak-model"
     DESCRIPTION = "Switch the Weak Model to a new LLM"
+    show_completion_notification = False
 
     @classmethod
     async def execute(cls, io, coder, args, **kwargs):

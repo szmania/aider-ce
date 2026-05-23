@@ -9,6 +9,7 @@ from cecli.hooks.types import HookType
 class HooksCommand(BaseCommand):
     NORM_NAME = "hooks"
     DESCRIPTION = "List all registered hooks by type with their current state"
+    show_completion_notification = False
 
     @classmethod
     async def execute(cls, io, coder, args, **kwargs):

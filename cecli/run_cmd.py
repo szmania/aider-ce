@@ -124,6 +124,20 @@ async def run_cmd_async(
         if platform.system() == "Windows":
             print("Parent process:", parent_process)
 
+    if platform.system() == "Windows":
+        loop = asyncio.get_running_loop()
+        if not isinstance(loop, asyncio.SelectorEventLoop):
+            # Fallback to synchronous version if not using SelectorEventLoop
+            return await loop.run_in_executor(
+                None,
+                run_cmd_subprocess,
+                command,
+                verbose,
+                cwd,
+                encoding,
+                should_print,
+            )
+
     try:
         process = await asyncio.create_subprocess_shell(
             command,

@@ -8,6 +8,7 @@ from cecli.run_cmd import run_cmd
 class DiffCommand(BaseCommand):
     NORM_NAME = "diff"
     DESCRIPTION = "Display the diff of changes since the last message"
+    show_completion_notification = False
 
     @classmethod
     async def execute(cls, io, coder, args, **kwargs):

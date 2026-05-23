@@ -10,6 +10,7 @@ from .utils.base_command import BaseCommand
 class ReapAgentCommand(BaseCommand):
     NORM_NAME = "reap-agent"
     DESCRIPTION = "Force destroy the active sub-agent"
+    show_completion_notification = False
 
     @classmethod
     async def execute(cls, io, coder, args, **kwargs):

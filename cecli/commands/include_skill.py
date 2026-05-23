@@ -7,6 +7,7 @@ from cecli.commands.utils.helpers import format_command_result
 class IncludeSkillCommand(BaseCommand):
     NORM_NAME = "include-skill"
     DESCRIPTION = "Include a skill by name (agent mode only)"
+    show_completion_notification = False
 
     @classmethod
     async def execute(cls, io, coder, args, **kwargs):
