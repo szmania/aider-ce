@@ -110,6 +110,9 @@ class InputContainer(Vertical):
             A string like ``"◍ primary ◆ reviewer (a6b)"``.
         """
         parts = []
+        name_counts = {}
+        for sa in sub_agents:
+            name_counts[sa["name"]] = name_counts.get(sa["name"], 0) + 1
 
         for sa in sub_agents:
             active = sa.get("active", False)
@@ -124,7 +127,7 @@ class InputContainer(Vertical):
 
             name = sa["name"]
             display_name = name
-            if name != "primary":
+            if name != "primary" and name_counts[name] > 1:
                 display_name = f"{name} ({sa['uuid'][:3]})"
 
             parts.append(f"{icon} {display_name}")

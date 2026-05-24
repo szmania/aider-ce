@@ -1646,7 +1646,7 @@ class Coder(metaclass=UsageMeta):
                 # Compacting is wasteful since /clear will clear everything
                 # and /exit will exit the application
                 stripped = user_message.strip()
-                if stripped not in ("/clear", "/exit", "/quit"):
+                if stripped not in ("/clear", "/reset", "/exit", "/quit"):
                     self.compact_context_completed = False
                     await self.compact_context_if_needed()
                     self.compact_context_completed = True

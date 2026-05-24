@@ -7,6 +7,7 @@ from cecli.commands.utils.helpers import format_command_result
 class ContextBlocksCommand(BaseCommand):
     NORM_NAME = "context-blocks"
     DESCRIPTION = "Toggle enhanced context blocks or print a specific block"
+    show_completion_notification = False
 
     @classmethod
     async def execute(cls, io, coder, args, **kwargs):

@@ -39,5 +39,6 @@ for SUFFIX in "${SUFFIXES[@]}"; do
         --constraint=requirements/common-constraints.txt \
         --output-file=requirements/requirements-${SUFFIX}.txt \
         requirements/requirements-${SUFFIX}.in \
+        --universal
         $1
 done

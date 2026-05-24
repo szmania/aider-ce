@@ -7,6 +7,7 @@ from cecli.commands.utils.helpers import format_command_result
 class ListSkillsCommand(BaseCommand):
     NORM_NAME = "list-skills"
     DESCRIPTION = "List all available skills with their states and file paths"
+    show_completion_notification = False
 
     @classmethod
     async def execute(cls, io, coder, args, **kwargs):

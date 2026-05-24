@@ -10,6 +10,7 @@ from cecli.llm import litellm
 class VoiceCommand(BaseCommand):
     NORM_NAME = "voice"
     DESCRIPTION = "Record and transcribe voice input"
+    show_completion_notification = False
 
     @classmethod
     async def execute(cls, io, coder, args, **kwargs):

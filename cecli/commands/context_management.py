@@ -8,6 +8,7 @@ from cecli.helpers.conversation import ConversationService, MessageTag
 class ContextManagementCommand(BaseCommand):
     NORM_NAME = "context-management"
     DESCRIPTION = "Toggle context management for large files"
+    show_completion_notification = False
 
     @classmethod
     async def execute(cls, io, coder, args, **kwargs):

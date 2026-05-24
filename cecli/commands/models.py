@@ -8,6 +8,7 @@ from cecli.commands.utils.helpers import format_command_result
 class ModelsCommand(BaseCommand):
     NORM_NAME = "models"
     DESCRIPTION = "Search the list of available models"
+    show_completion_notification = False
 
     @classmethod
     async def execute(cls, io, coder, args, **kwargs):

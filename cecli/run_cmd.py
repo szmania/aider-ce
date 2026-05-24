@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import os
 import platform
 import subprocess
@@ -54,8 +55,11 @@ def run_cmd_subprocess(
         if platform.system() == "Windows":
             parent_process = get_windows_parent_process_name()
             if parent_process == "powershell.exe":
-                command = f"powershell -Command {command}"
-
+                # Silence progress/error streams at the source to prevent CLIXML
+                silenced_command = f"$ProgressPreference='SilentlyContinue'; {command}"
+                cmd_bytes = silenced_command.encode("utf-16-le")
+                encoded = base64.b64encode(cmd_bytes).decode()
+                command = f"powershell -NoProfile -NonInteractive -OutputFormat Text -EncodedCommand {encoded}"
         if verbose:
             print("Running command:", command)
             print("SHELL:", shell)
@@ -93,7 +97,7 @@ def run_cmd_subprocess(
                     print(line, end="", flush=True)
 
         process.wait()
-        return process.returncode, "".join(output)
+        return process.returncode, _clean_output("".join(output))
     except Exception as e:
         return 1, str(e)
 
@@ -116,7 +120,11 @@ async def run_cmd_async(
     if platform.system() == "Windows":
         parent_process = get_windows_parent_process_name()
         if parent_process == "powershell.exe":
-            command = f"powershell -Command {command}"
+            # Silence progress/error streams at the source to prevent CLIXML
+            silenced_command = f"$ProgressPreference='SilentlyContinue'; {command}"
+            cmd_bytes = silenced_command.encode("utf-16-le")
+            encoded = base64.b64encode(cmd_bytes).decode()
+            command = f"powershell -NoProfile -NonInteractive -OutputFormat Text -EncodedCommand {encoded}"
 
     if verbose:
         print("Running command:", command)
@@ -124,12 +132,41 @@ async def run_cmd_async(
         if platform.system() == "Windows":
             print("Parent process:", parent_process)
 
+    if platform.system() == "Windows":
+        loop = asyncio.get_running_loop()
+        if hasattr(asyncio, "SelectorEventLoop") and not isinstance(
+            loop, asyncio.SelectorEventLoop
+        ):
+            # Fallback to synchronous version if not using SelectorEventLoop
+            return await loop.run_in_executor(
+                None,
+                run_cmd_subprocess,
+                command,
+                verbose,
+                cwd,
+                encoding,
+                should_print,
+            )
+
     try:
         process = await asyncio.create_subprocess_shell(
             command,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT,
             cwd=cwd,
+        )
+    except NotImplementedError:
+        # On Windows with SelectorEventLoop, asyncio does not support subprocesses.
+        # Fall back to synchronous subprocess via loop.run_in_executor.
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(
+            None,
+            run_cmd_subprocess,
+            command,
+            verbose,
+            cwd,
+            encoding,
+            should_print,
         )
     except FileNotFoundError:
         return 1, f"Command not found: {command}"
@@ -175,7 +212,7 @@ async def run_cmd_async(
     if not reader_task.done():
         await reader_task
 
-    return process.returncode, "".join(output)
+    return process.returncode, _clean_output("".join(output))
 
 
 def run_cmd_pexpect(command, verbose=False, cwd=None, should_print=True):
@@ -222,3 +259,26 @@ def run_cmd_pexpect(command, verbose=False, cwd=None, should_print=True):
     except (pexpect.ExceptionPexpect, TypeError, ValueError) as e:
         error_msg = f"Error running command {command}: {e}"
         return 1, error_msg
+
+
+def _clean_output(output):
+    """Remove CLIXML progress output from PowerShell commands."""
+    if platform.system() != "Windows":
+        return output
+
+    if output.startswith("#< CLIXML"):
+        lines = output.splitlines()
+        filtered = []
+        for line in lines:
+            # Skip the CLIXML header line
+            if line.startswith("#< CLIXML"):
+                continue
+            # Skip CLIXML XML object tags (progress messages)
+            stripped = line.strip()
+            if stripped.startswith("<Objs ") or stripped == "</Objs>":
+                continue
+            if stripped.startswith("<Obj "):
+                continue
+            filtered.append(line)
+        return "\n".join(filtered)
+    return output

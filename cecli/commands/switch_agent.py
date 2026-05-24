@@ -87,11 +87,19 @@ class SwitchAgentCommand(BaseCommand):
 
             # Add sub-agent names, excluding the currently active one
             if agent_service and agent_service.sub_agents:
+                # First pass: count name occurrences
+                name_counts = {}
+                for uuid, sub_agent_info in agent_service.sub_agents.items():
+                    name_counts[sub_agent_info.name] = name_counts.get(sub_agent_info.name, 0) + 1
+
+                # Second pass: only show UUID prefix when name appears multiple times
                 for uuid, sub_agent_info in agent_service.sub_agents.items():
                     if uuid != foreground_uuid:
                         name = sub_agent_info.name
-                        # Always include UUID prefix for sub-agents
-                        names.append(f"{name} ({uuid[:3]})")
+                        if name_counts[name] > 1:
+                            names.append(f"{name} ({uuid[:3]})")
+                        else:
+                            names.append(name)
 
             current_arg = args.strip().lower()
             if current_arg:

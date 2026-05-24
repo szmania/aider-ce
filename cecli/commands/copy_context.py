@@ -10,6 +10,7 @@ from cecli.helpers.conversation import ConversationService, MessageTag
 class CopyContextCommand(BaseCommand):
     NORM_NAME = "copy-context"
     DESCRIPTION = "Copy the current chat context as markdown, suitable to paste into a web UI"
+    show_completion_notification = False
 
     @classmethod
     async def execute(cls, io, coder, args, **kwargs):

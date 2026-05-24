@@ -8,6 +8,7 @@ from cecli.helpers.conversation import ConversationService
 class MapCommand(BaseCommand):
     NORM_NAME = "map"
     DESCRIPTION = "Print out the current repository map"
+    show_completion_notification = False
 
     @classmethod
     async def execute(cls, io, coder, args, **kwargs):

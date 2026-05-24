@@ -245,7 +245,9 @@ class Tool(BaseTool):
 
                 # Format output
                 output_content = output or ""
-                output_limit = coder.large_file_token_threshold
+                # Tokens are roughly 3-4 characters
+                output_limit = coder.large_file_token_threshold * 3.5
+
                 if coder.context_management_enabled and len(output_content) > output_limit * 1.25:
                     # Save full output to paginated files instead of truncating
                     folder_path, file_list, alias_paths = (
@@ -266,8 +268,8 @@ class Tool(BaseTool):
                         f"File Aliases (for use with ContextManager):\n{alias_list_str}\n"
                         "Use the `ContextManager` tool to view these files."
                         "Do not use standard cli tools to view these files."
-                        "Remove them from context after taking note of the relevant information "
-                        "in the output to prevent overfilling stale context."
+                        "Remove them from context after taking notes on the relevant information "
+                        "to prevent overfilling stale context."
                     )
 
                 # Remove from background tracking since it's done

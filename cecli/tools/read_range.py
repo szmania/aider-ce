@@ -201,7 +201,7 @@ class Tool(BaseTool):
                 found_by = ""
 
                 if start_text is not None and end_text is not None:
-                    if start_text == "@000":
+                    if start_text == "@000" or start_text == "000@":
                         start_indices = [0]
                     else:
                         start_pattern_lines = start_text.split("\n")
@@ -213,7 +213,7 @@ class Tool(BaseTool):
                             ):
                                 start_indices.append(i)
 
-                    if end_text == "000@":
+                    if end_text == "000@" or end_text == "@000":
                         end_indices = [num_lines - 1]
                     else:
                         end_pattern_lines = end_text.split("\n")

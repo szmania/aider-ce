@@ -10,6 +10,7 @@ from cecli.helpers.conversation import ConversationService
 class CopyCommand(BaseCommand):
     NORM_NAME = "copy"
     DESCRIPTION = "Copy the last assistant message to the clipboard"
+    show_completion_notification = False
 
     @classmethod
     async def execute(cls, io, coder, args, **kwargs):
