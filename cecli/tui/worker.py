@@ -181,7 +181,11 @@ class CoderWorker:
             except RuntimeError:
                 # Loop may already be closed
                 pass
-
+            except KeyboardInterrupt:
+                # An interrupt was not caught within the async run loop.
+                # We'll just pass to allow the thread to exit gracefully
+                # without a scary traceback.
+                pass
         self.interrupt()
 
         # Wait for thread to finish
