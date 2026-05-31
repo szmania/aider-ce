@@ -6,6 +6,7 @@ from .utils.base_command import BaseCommand
 class SpawnAgentCommand(BaseCommand):
     NORM_NAME = "spawn-agent"
     DESCRIPTION = "Spawn a sub-agent without a prompt (waits for user input)"
+    show_completion_notification = False
 
     @classmethod
     async def execute(cls, io, coder, args, **kwargs):
