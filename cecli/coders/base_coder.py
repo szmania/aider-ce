@@ -1457,7 +1457,12 @@ class Coder(metaclass=UsageMeta):
         try:
             if with_message:
                 self.io.user_input(with_message)
-                await self.run_one(with_message, preproc)
+                self.output_running = True
+                self.user_message = (
+                    await self.preproc_user_input(with_message) if preproc else with_message
+                )
+                output_task = asyncio.create_task(self.output_task(preproc))
+                await output_task
                 return self.partial_response_content
 
             # Initialize state for task coordination
