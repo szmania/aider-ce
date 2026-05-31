@@ -76,10 +76,12 @@ def tool_body_unwrapped(coder, tool_response):
             if first_key:
                 coder.io.tool_output("\n")
                 first_key = False
-            coder.io.tool_output(f"{color_start}{key}:{color_end} {value}")
-            coder.io.tool_output("")
-    except json.JSONDecodeError:
+            
+            # Combine key and value into a single line
+            output_line = f"{color_start}{key}:{color_end} {value}"
+            coder.io.tool_output(output_line)
         # If JSON parsing fails, show raw arguments
+    except json.JSONDecodeError:
         raw_args = tool_response.function.arguments
         coder.io.tool_output(f"{color_start}Arguments:{color_end} {raw_args}")
 
