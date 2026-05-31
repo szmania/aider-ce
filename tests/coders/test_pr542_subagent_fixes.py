@@ -33,8 +33,10 @@ class TestSubAgentStallingFixes:
     @pytest.fixture(autouse=True)
     def setup(self, gpt35_model):
         self.GPT35 = gpt35_model
+        self.coders_to_clean = []
         yield
-        ConversationService.get_chunks(self).reset()
+        for coder_uuid in self.coders_to_clean:
+            ConversationService.destroy_instances(coder_uuid)
 
     # ------------------------------------------------------------------
     # Step 10: Spawn a sub-agent that makes a tool call (e.g., file read),
@@ -54,6 +56,8 @@ class TestSubAgentStallingFixes:
         with GitTemporaryDirectory():
             io = InputOutput(yes=True, pretty=False)
             coder = await Coder.create(self.GPT35, None, io=io)
+
+            self.coders_to_clean.append(coder.uuid)
             
             # Track what _run_parallel does internally
             original_output_task = coder.output_task

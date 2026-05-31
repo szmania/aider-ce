@@ -725,6 +725,7 @@ class Coder(metaclass=UsageMeta):
         self.post_init()
 
     def post_init(self):
+        self.user_message = ""
         pass
 
     @property
@@ -1603,7 +1604,7 @@ class Coder(metaclass=UsageMeta):
             pass
         except Exception:
             # Other exceptions should be reported
-            self.io.show_internal_error(traceback.format_exc())
+            self.io.tool_error(traceback.format_exc())
         finally:
             self.output_running = False
             self.io.stop_output_task()
