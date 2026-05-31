@@ -225,15 +225,17 @@ class OutputContainer(RichLog):
                 self.output(Padding(Text(clean_line, style="dim bright_cyan"), (0, 0, 0, 2)))
             else:
                 # Subsequent lines (arguments) - prefix with corner to show they belong to the call
-                arg_string_list = re.split(r"(^\S+:)", clean_line, maxsplit=1)[1:]
-
-                if len(arg_string_list) > 1:
-                    tool_property = arg_string_list[0].replace("_", " ").title()
+                # Use a more robust regex to handle different whitespace and multiline values
+                match = re.match(r"(\S+?):\s*(.*)", clean_line, re.DOTALL)
+                if match:
+                    key = match.group(1).replace("_", " ").title()
+                    value = match.group(2)
                     content = Text()
-                    content.append(f"ᴸ{tool_property}", style="dim bright_cyan")
-                    content.append(arg_string_list[1], style="dim")
+                    content.append(f"ᴸ{key}: ", style="dim bright_cyan")
+                    content.append(value, style="dim")
                     self.output(Padding(content, (0, 0, 0, 2)))
                 else:
+                    # Fallback for lines that don't match "key: value" format
                     self.output(Padding(Text(clean_line, style="dim"), (0, 0, 0, 3)))
 
             # self.set_last_write_type("tool_call")
