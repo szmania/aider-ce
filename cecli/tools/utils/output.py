@@ -76,13 +76,7 @@ def tool_body_unwrapped(coder, tool_response):
             if first_key:
                 coder.io.tool_output("\n")
                 first_key = False
-            coder.io.tool_output(f"{color_start}{key}:{color_end}")
-            # Split the value by newlines and output each line separately
-            if isinstance(value, str):
-                for line in value.split("\n"):
-                    coder.io.tool_output(f"{line}")
-            else:
-                coder.io.tool_output(f"{str(value)}")
+            coder.io.tool_output(f"{color_start}{key}:{color_end} {value}")
             coder.io.tool_output("")
     except json.JSONDecodeError:
         # If JSON parsing fails, show raw arguments
