@@ -1457,7 +1457,11 @@ class Coder(metaclass=UsageMeta):
         try:
             if with_message:
                 self.io.user_input(with_message)
-                await self.run_one(with_message, preproc)
+                self.output_running = True
+                self.user_message = (
+                    await self.preproc_user_input(with_message) if preproc else with_message
+                )
+                await self.output_task(preproc, single_run=True)
                 return self.partial_response_content
 
             # Initialize state for task coordination
@@ -1576,7 +1580,7 @@ class Coder(metaclass=UsageMeta):
                 if self.verbose or self.args.debug:
                     print(e)
 
-    async def output_task(self, preproc):
+    async def output_task(self, preproc, single_run=False):
         """
         Handles output task generation and monitoring.
         This task manages the output loop and coordinates with input_task.
@@ -1620,6 +1624,9 @@ class Coder(metaclass=UsageMeta):
 
                         # And stop monitoring the output task
                         await self.io.stop_output_task()
+
+                        if single_run:
+                            break
 
                 await self.auto_save_session()
                 await asyncio.sleep(0.1)  # Small yield to prevent tight loop
