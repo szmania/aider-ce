@@ -10,6 +10,7 @@ class MainFooter(Static):
 
     # Left side info
     coder_mode = reactive("code")
+    agent_name = reactive("")
     model_name = reactive("")
 
     # Right side info
@@ -46,6 +47,7 @@ class MainFooter(Static):
         self.project_name = project_name
         self.git_branch = git_branch
         self.coder_mode = coder_mode
+        self.agent_name = ""
         self._spinner_interval = None
 
     def on_mount(self):
@@ -77,7 +79,7 @@ class MainFooter(Static):
             else:
                 name = coder.get_active_model().name
         except Exception:
-            name = self.app.worker.coder.get_active_model().name
+            name = self.model_name
 
         # Strip common prefixes like "openrouter/x-ai/"
         if len(name) > 40:
@@ -98,9 +100,10 @@ class MainFooter(Static):
         if self.spinner_visible:
             spinner_char = self._spinner_chars[self._spinner_frame]
             left.append(f"{spinner_char} ")
+            if self.agent_name:
+                left.append(f"({self.agent_name}) ")
             if self.spinner_text:
                 left.append(self.spinner_text)
-
             # When a sub-agent is generating, show its model alongside the spinner
             # if self._has_running_sub_agent():
             #     model_display = self._get_display_model()
@@ -176,9 +179,10 @@ class MainFooter(Static):
         self.coder_mode = mode
         self.refresh()
 
-    def start_spinner(self, text: str = ""):
+    def start_spinner(self, text: str = "", agent_name: str = ""):
         """Show spinner with optional text."""
         self.spinner_text = text
+        self.agent_name = agent_name
         self.spinner_visible = True
         self.refresh()
 
@@ -204,6 +208,7 @@ class MainFooter(Static):
 
         self.spinner_visible = False
         self.spinner_text = ""
+        self.agent_name = ""
         self.refresh()
 
     def _has_running_sub_agent(self) -> bool:

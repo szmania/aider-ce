@@ -1601,7 +1601,7 @@ class Coder(metaclass=UsageMeta):
                     self.io.output_task = asyncio.create_task(self.generate(user_message, preproc))
 
                     # Start spinner for output task
-                    self.io.start_spinner("Processing...")
+                    self.io.start_spinner("Processing...", coder_uuid=getattr(self, "uuid", None))
                     await self.io.recreate_input()
 
                 # Monitor output task
@@ -2372,7 +2372,7 @@ class Coder(metaclass=UsageMeta):
             if not self.tui:
                 spinner_text += f" • ${self.format_cost(self.total_cost)} session"
 
-            self.io.start_spinner(spinner_text)
+            self.io.start_spinner(spinner_text, coder_uuid=getattr(self, "uuid", None))
             if self.stream:
                 self.mdstream = True
             else:
@@ -2459,9 +2459,7 @@ class Coder(metaclass=UsageMeta):
             self.mdstream = None
 
             # Ensure any waiting spinner is stopped
-            self.io.start_spinner("Processing Answer...")
-
-            self.partial_response_content = self.get_multi_response_content_in_progress(True)
+            self.io.start_spinner("Processing Answer...", coder_uuid=getattr(self, "uuid", None))
             self.remove_reasoning_content()
             self.multi_response_content = ""
 

@@ -553,7 +553,7 @@ class InputOutput:
         except Exception:
             return False
 
-    def start_spinner(self, text, update_last_text=True):
+    def start_spinner(self, text, update_last_text=True, **kwargs):
         """Start the spinner."""
         self.stop_spinner()
 

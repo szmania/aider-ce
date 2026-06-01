@@ -502,9 +502,10 @@ class TUI(App):
             pass
 
     def handle_output_message(self, msg):
-        """Route output messages to appropriate handlers."""
         msg_type = msg["type"]
 
+        # Resolve agent_name from coder_uuid for agent-specific status messages
+        agent_name = self._resolve_agent_name(msg.get("coder_uuid"))
         if msg_type == "output":
             container = self._get_output_container(msg)
             container.add_output(msg["text"], msg.get("task_id"))
@@ -532,15 +533,15 @@ class TUI(App):
             container = self._get_output_container(msg)
             container.start_task(msg["task_id"], msg["title"], msg.get("task_type"))
         elif msg_type == "confirmation":
-            self.show_confirmation(msg)
+            self.show_confirmation(msg, agent_name=agent_name)
         elif msg_type == "spinner":
-            self.update_spinner(msg)
+            self.update_spinner(msg, agent_name=agent_name)
         elif msg_type == "ready_for_input":
             self.enable_input(msg)
             footer = self.query_one(MainFooter)
             footer.stop_spinner()
         elif msg_type == "error":
-            self.show_error(msg["message"])
+            self.show_error(msg["message"], agent_name=agent_name)
         elif msg_type == "cost_update":
             footer = self.query_one(MainFooter)
             footer.update_cost(msg.get("cost", 0))
@@ -562,6 +563,53 @@ class TUI(App):
                 self.show_error("Agent container not found. Cannot switch.")
             else:
                 self._switch_to_container(target_uuid)
+
+    def _resolve_agent_name(self, coder_uuid: str | None) -> str | None:
+        """Resolve an agent display name from a coder_uuid.
+
+        Returns the sub-agent's name if the coder_uuid belongs to a known
+        sub-agent. For the primary agent, returns "primary" if sub-agents
+        exist, otherwise None.
+
+        If multiple sub-agents share the same name, disambiguates by
+        appending the first 3 characters of the UUID in parentheses.
+        """
+        if not coder_uuid:
+            return None
+        try:
+            if not self.worker or not self.worker.coder:
+                return None  # Cannot resolve without a coder
+            from cecli.helpers.agents.service import AgentService
+
+            agent_service = AgentService.get_instance(self.worker.coder)
+            if not agent_service:
+                return None
+            primary_uuid = str(agent_service.coder.uuid)
+            if coder_uuid == primary_uuid:
+                if agent_service.sub_agents:
+                    return "primary"
+                return None  # Primary agent gets no prefix
+            if not agent_service.sub_agents:
+                return None
+            for info in agent_service.sub_agents.values():
+                if not info or not info.coder:
+                    continue
+                if str(info.coder.uuid) == coder_uuid:
+                    # Check for duplicate names among sub-agents
+                    name_count = sum(
+                        1
+                        for i in agent_service.sub_agents.values()
+                        if i and hasattr(i, "name") and i.name == info.name
+                    )
+                    if name_count > 1:
+                        # Disambiguate with first 3 UUID characters
+                        short_uuid = str(info.coder.uuid)[:3]
+                        return f"{info.name} ({short_uuid})"
+                    return info.name
+        except (AttributeError, ImportError, KeyError):
+            # Agent service not available or coder not yet initialized
+            pass
+        return None
 
     def add_output(self, text, task_id=None):
         """Add output to the output container."""
@@ -601,7 +649,7 @@ class TUI(App):
         output_container = self.query_one("#output", OutputContainer)
         output_container.start_task(task_id, title, task_type)
 
-    def show_confirmation(self, msg):
+    def show_confirmation(self, msg, agent_name: str | None = None):
         """Show inline confirmation bar."""
         # Disable input while confirm bar is active
         input_area = self.query_one("#input", InputArea)
@@ -623,6 +671,7 @@ class TUI(App):
             allow_never=allow_never,
             default=options.get("default", "y"),
             explicit_yes_required=options.get("explicit_yes_required", False),
+            agent_name=agent_name,
         )
 
     def enable_input(self, msg, coder=None):
@@ -657,13 +706,13 @@ class TUI(App):
 
         input_area.focus()
 
-    def update_spinner(self, msg):
+    def update_spinner(self, msg, agent_name: str | None = None):
         """Update spinner in footer."""
         footer = self.query_one(MainFooter)
         action = msg.get("action", "start")
 
         if action == "start":
-            footer.start_spinner(msg.get("text", ""))
+            footer.start_spinner(msg.get("text", ""), agent_name=agent_name or "")
         elif action == "update":
             footer.spinner_text = msg.get("text", "")
         elif action == "update_suffix":
@@ -671,10 +720,11 @@ class TUI(App):
         elif action == "stop":
             footer.stop_spinner()
 
-    def show_error(self, message):
-        """Show error notification."""
-        status_bar = self.query_one("#status-bar", StatusBar)
-        status_bar.show_notification(f"Error: {message}", severity="error", timeout=10)
+    def show_error(self, message, agent_name: str | None = None):
+        """Show an error message in the status bar."""
+        self.status_bar.show_notification(
+            message, severity="error", timeout=5, agent_name=agent_name
+        )
 
     def on_resize(self) -> None:
         file_list = self.query_one("#file-list", FileList)
@@ -781,15 +831,21 @@ class TUI(App):
 
         # Update footer to show processing
         footer = self.query_one(MainFooter)
-        footer.start_spinner("Processing...")
 
         coder = self.worker.coder
-
-        if coder:
-            coder.io.start_spinner("Processing...")
-
         # Determine which coder is in the foreground for input routing
         foreground_coder = AgentService.get_instance(coder).foreground_coder
+        coder_uuid = (
+            str(foreground_coder.uuid)
+            if foreground_coder and hasattr(foreground_coder, "uuid")
+            else None
+        )
+        agent_name = self._resolve_agent_name(coder_uuid)
+
+        footer.start_spinner("Processing...", agent_name=agent_name or "")
+
+        if coder:
+            coder.io.start_spinner("Processing...", coder_uuid=coder_uuid)
 
         is_primary = foreground_coder is coder
         agent_service = AgentService.get_instance(coder)
@@ -808,7 +864,10 @@ class TUI(App):
                         )
                 else:
                     # Busy sub-agent: add message to its conversation
-                    from cecli.helpers.conversation import ConversationService, MessageTag
+                    from cecli.helpers.conversation import (
+                        ConversationService,
+                        MessageTag,
+                    )
 
                     ConversationService.get_manager(foreground_coder).add_message(
                         message_dict=dict(
