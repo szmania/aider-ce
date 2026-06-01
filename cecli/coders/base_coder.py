@@ -725,6 +725,7 @@ class Coder(metaclass=UsageMeta):
         self.post_init()
 
     def post_init(self):
+        self.user_message = ""
         pass
 
     @property
@@ -1454,63 +1455,68 @@ class Coder(metaclass=UsageMeta):
             await self.io.stop_task_streams()
 
     async def _run_parallel(self, with_message=None, preproc=True):
-        try:
-            if with_message:
-                self.io.user_input(with_message)
-                await self.run_one(with_message, preproc)
-                return self.partial_response_content
-
-            # Initialize state for task coordination
-            self.input_running = True
+        if with_message:
             self.output_running = True
-            self.user_message = ""
+            self.user_message = (
+                await self.preproc_user_input(with_message) if preproc else with_message
+            )
+            await self.output_task(preproc, single_run=True)
+            return
 
-            # Cancel any existing tasks
-            await self.io.stop_task_streams()
+        self.output_running = True
+        self.user_message = None
 
-            # Start the input and output tasks
-            input_task = asyncio.create_task(self.input_task(preproc))
-            output_task = asyncio.create_task(self.output_task(preproc))
+        input_task = asyncio.create_task(self.input_task(preproc))
+        output_task = asyncio.create_task(self.output_task(preproc))
 
-            try:
-                # Wait for both tasks to complete or for one to raise an exception
-                done, pending = await asyncio.wait(
-                    [input_task, output_task], return_when=asyncio.FIRST_EXCEPTION
-                )
+        try:
+            # Wait for the first task to complete
+            done, pending = await asyncio.wait(
+                [input_task, output_task], return_when=asyncio.FIRST_COMPLETED
+            )
 
-                # Check for exceptions
-                for task in done:
-                    if task.exception():
-                        raise task.exception()
+            # If input_task is done, it might have a result or an exception
+            if input_task in done:
+                try:
+                    # this will raise an exception if the task failed
+                    input_task.result()
+                except asyncio.CancelledError:
+                    # This is expected if the output_task completes first
+                    pass
+                except SwitchCoderSignal:
+                    # if we are switching coders, we need to gracefully exit
+                    # both the input and output tasks
+                    self.io.stop_input_task()
+                    self.io.stop_output_task()
+                    raise
 
-            except (SwitchCoderSignal, SystemExit):
-                # Re-raise SwitchCoder to be handled by outer try block
-                raise
-            finally:
-                # Signal tasks to stop
-                self.input_running = False
-                self.output_running = False
+            # If output_task is done, it might have a result or an exception
+            if output_task in done:
+                try:
+                    output_task.result()
+                except asyncio.CancelledError:
+                    # This is expected if the input_task completes first
+                    pass
+                except SwitchCoderSignal:
+                    self.io.stop_input_task()
+                    self.io.stop_output_task()
+                    raise
 
-                # Cancel tasks
+            # Cancel any pending tasks to ensure cleanup
+            for task in pending:
+                task.cancel()
+
+            # Wait for all tasks to acknowledge cancellation
+            await asyncio.gather(*pending, return_exceptions=True)
+
+        finally:
+            # Final cleanup to ensure no tasks are left running
+            if not input_task.done():
                 input_task.cancel()
+            if not output_task.done():
                 output_task.cancel()
 
-                # Wait for tasks to finish
-                try:
-                    await asyncio.gather(input_task, output_task, return_exceptions=True)
-                except (asyncio.CancelledError, KeyboardInterrupt):
-                    pass
-
-                # Ensure IO tasks are properly cancelled
-                await self.io.stop_task_streams()
-
-            await self.auto_save_session()
-        except EOFError:
-            return
-        finally:
-            await self.io.stop_task_streams()
-
-    async def input_task(self, preproc):
+            await asyncio.gather(input_task, output_task, return_exceptions=True)
         """
         Handles input creation/recreation and user message processing.
         This task manages the input loop and coordinates with output_task.
@@ -1576,68 +1582,32 @@ class Coder(metaclass=UsageMeta):
                 if self.verbose or self.args.debug:
                     print(e)
 
-    async def output_task(self, preproc):
-        """
-        Handles output task generation and monitoring.
-        This task manages the output loop and coordinates with input_task.
-        """
-        while self.output_running:
-            try:
-                # Wait for commands to finish
-                if not self.commands.cmd_running_event.is_set():
-                    await self.commands.cmd_running_event.wait()
-                    continue
+    async def output_task(self, preproc, single_run=False):
+        "Generate output in a background task."
 
-                # Check if we have a user message to process
-                if self.user_message and not self.io.get_confirmation_acknowledgement():
-                    user_message = self.user_message
-                    self.user_message = ""
-
-                    # Create output task for processing
-                    self.io.output_task = asyncio.create_task(self.generate(user_message, preproc))
-
-                    # Start spinner for output task
-                    self.io.start_spinner("Processing...")
-                    await self.io.recreate_input()
-
-                # Monitor output task
-                if self.io.output_task:
-                    if self.io.output_task.done():
-                        exception = self.io.output_task.exception()
-                        if exception:
-                            if isinstance(exception, SwitchCoderSignal):
-                                await self.io.output_task
-                                raise exception
-
-                            self.io.tool_error(f"Error during generation: {exception}")
-                            if self.verbose:
-                                traceback.print_exception(
-                                    type(exception), exception, exception.__traceback__
-                                )
-
-                        # Stop spinner when processing task completes
-                        self.io.stop_spinner()
-
-                        # And stop monitoring the output task
-                        await self.io.stop_output_task()
-
-                await self.auto_save_session()
-                await asyncio.sleep(0.1)  # Small yield to prevent tight loop
-
-            except KeyboardInterrupt:
-                self.io.stop_spinner()
-                self.keyboard_interrupt()
-                await self.io.stop_task_streams()
-            except (SwitchCoderSignal, SystemExit):
-                raise
-            except Exception as e:
-                traceback_str = traceback.format_exc()
-                update_error_prefix(traceback_str)
-
-                if self.verbose or self.args.debug:
-                    print(e)
-
-    async def generate(self, user_message, preproc):
+        try:
+            while self.user_message is not None:
+                user_message = self.user_message
+                self.user_message = None
+                generate_task = asyncio.create_task(self.generate(user_message, preproc))
+                self.io.add_generate_task(generate_task)
+                await generate_task
+                if single_run:
+                    break
+        except SwitchCoderSignal:
+            # Let the main run loop handle this
+            raise
+        except (KeyboardInterrupt, asyncio.CancelledError):
+            # The user interrupted, or the input task's completion
+            # has cancelled us.
+            # We need to exit gracefully.
+            pass
+        except Exception:
+            # Other exceptions should be reported
+            self.io.tool_error(traceback.format_exc())
+        finally:
+            self.output_running = False
+            self.io.stop_output_task()
         await asyncio.sleep(0.1)
 
         try:

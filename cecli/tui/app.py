@@ -791,55 +791,56 @@ class TUI(App):
         # Determine which coder is in the foreground for input routing
         foreground_coder = AgentService.get_instance(coder).foreground_coder
 
-        if coder and is_active(getattr(coder.io, "output_task", None)):
-            from cecli.helpers.conversation import ConversationService, MessageTag
+        is_primary = foreground_coder is coder
+        agent_service = AgentService.get_instance(coder)
 
-            # Check if the foreground coder is the primary coder
-            is_primary = foreground_coder is coder
-            if not is_primary:
-                # Could be a sub-agent
-                parent_uuid = getattr(foreground_coder, "parent_uuid", None)
-                if parent_uuid:
-                    # It's a sub-agent — check if it's idle
-                    agent_service = AgentService.get_instance(coder)
-                    for info in agent_service.sub_agents.values():
-                        if info.coder.uuid == foreground_coder.uuid:
-                            if not is_active(info.generate_task):
-                                # Idle sub-agent: start a new generate task via worker loop
-                                if self.worker.loop is not None:
-                                    self.worker.loop.call_soon_threadsafe(
-                                        lambda: agent_service.start_generate_task(info, user_input)
-                                    )
-                                return
-                            break
+        # --- Route input based on foreground agent and its state ---
 
-            # Default (primary coder, actively generating sub-agent,
-            # or sub-agent not found in tracking): append to conversation
-            ConversationService.get_manager(foreground_coder).add_message(
-                message_dict=dict(
-                    role="user", content=foreground_coder.wrap_user_input(user_input)
-                ),
-                tag=MessageTag.CUR,
-                hash_key=("user_message", user_input, str(time.monotonic_ns())),
-                promotion=ConversationService.get_manager(
-                    foreground_coder
-                ).DEFAULT_TAG_PROMOTION_VALUE,
-                mark_for_demotion=1,
-            )
-        else:
-            self.update_key_hints(generating=True)
-            coder_uuid = (
-                str(foreground_coder.uuid)
-                if foreground_coder and hasattr(foreground_coder, "uuid")
-                else None
-            )
-            # Route to per-coder queue when available
-            if coder_uuid and coder_uuid in TextualInputOutput._per_coder_queues:
-                TextualInputOutput._per_coder_queues[coder_uuid].put(
-                    {"text": user_input, "coder_uuid": coder_uuid}
-                )
+        if not is_primary:
+            # --- Input is for a SUB-AGENT ---
+            info = agent_service.sub_agents.get(foreground_coder.uuid)
+            if info:
+                if not is_active(info.generate_task):
+                    # Idle sub-agent: start a new generate task
+                    if self.worker.loop is not None:
+                        self.worker.loop.call_soon_threadsafe(
+                            lambda: agent_service.start_generate_task(info, user_input)
+                        )
+                else:
+                    # Busy sub-agent: add message to its conversation
+                    from cecli.helpers.conversation import ConversationService, MessageTag
+
+                    ConversationService.get_manager(foreground_coder).add_message(
+                        message_dict=dict(
+                            role="user", content=foreground_coder.wrap_user_input(user_input)
+                        ),
+                        tag=MessageTag.CUR,
+                        hash_key=("user_message", user_input, str(time.monotonic_ns())),
+                        promotion=ConversationService.get_manager(
+                            foreground_coder
+                        ).DEFAULT_TAG_PROMOTION_VALUE,
+                        mark_for_demotion=1,
+                    )
             else:
-                self.input_queue.put({"text": user_input, "coder_uuid": coder_uuid})
+                # This case should ideally not be reached
+                self.show_error(f"Could not find info for sub-agent {foreground_coder.uuid}")
+        else:
+            # --- Input is for the PRIMARY AGENT ---
+            if not is_active(getattr(coder.io, "output_task", None)):
+                # Idle primary agent: queue input for its run loop
+                self.update_key_hints(generating=True)
+                self.input_queue.put({"text": user_input, "coder_uuid": str(coder.uuid)})
+            else:
+                # Busy primary agent: add message to its conversation
+                from cecli.helpers.conversation import ConversationService, MessageTag
+
+                ConversationService.get_manager(coder).add_message(
+                    message_dict=dict(role="user", content=coder.wrap_user_input(user_input)),
+                    tag=MessageTag.CUR,
+                    hash_key=("user_message", user_input, str(time.monotonic_ns())),
+                    promotion=ConversationService.get_manager(coder).DEFAULT_TAG_PROMOTION_VALUE,
+                    mark_for_demotion=1,
+                )
 
     def set_input_value(self, text) -> None:
         """Find the input widget and set focus to it."""
