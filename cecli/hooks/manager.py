@@ -1,7 +1,6 @@
-import json
 import threading
+import weakref
 from collections import defaultdict
-from pathlib import Path
 from typing import Any, Dict, List
 
 from .base import BaseHook
@@ -9,32 +8,66 @@ from .types import HookType
 
 
 class HookManager:
-    """Central registry and dispatcher for hooks."""
+    """Per-coder registry and dispatcher for hooks."""
 
-    _instance = None
-    _lock = threading.Lock()
+    _instances = weakref.WeakKeyDictionary()  # coder -> HookManager
+    _uuid_index = weakref.WeakValueDictionary()  # uuid -> HookManager
 
-    def __new__(cls):
-        """Singleton pattern."""
-        if cls._instance is None:
-            cls._instance = super(HookManager, cls).__new__(cls)
-            cls._instance._initialized = False
-        return cls._instance
+    def __init__(self, coder):
+        """Initialize the hook manager for a specific coder.
 
-    def __init__(self):
-        """Initialize the hook manager."""
-        if self._initialized:
-            return
-
+        Args:
+            coder: The coder instance this manager belongs to.
+        """
+        self.coder = weakref.ref(coder)
+        self.uuid = coder.uuid
         self._hooks_by_type: Dict[str, List[BaseHook]] = defaultdict(list)
         self._hooks_by_name: Dict[str, BaseHook] = {}
-        self._state_file = Path.home() / ".cecli" / "hooks_state.json"
-        self._state_lock = threading.Lock()
+        self._lock = threading.Lock()
 
-        # Ensure state directory exists
-        self._state_file.parent.mkdir(parents=True, exist_ok=True)
+    @classmethod
+    def get_instance(cls, coder) -> "HookManager":
+        """Get or create a HookManager for the given coder.
 
-        self._initialized = True
+        Args:
+            coder: The coder instance.
+
+        Returns:
+            The HookManager instance for this coder.
+        """
+        # Fast path: exact coder object already registered
+        if coder in cls._instances:
+            return cls._instances[coder]
+
+        # Fallback: child coder inheriting parent's uuid
+        if coder.uuid in cls._uuid_index:
+            instance = cls._uuid_index[coder.uuid]
+            if instance.get_coder() is not coder:
+                instance.coder = weakref.ref(coder)
+            cls._instances[coder] = instance
+            return instance
+
+        # New coder with a new uuid — create fresh
+        instance = cls(coder)
+        cls._instances[coder] = instance
+        cls._uuid_index[coder.uuid] = instance
+        return instance
+
+    @classmethod
+    def destroy_instance(cls, coder_uuid: str):
+        """Explicit cleanup for sub-agents."""
+        if coder_uuid in cls._uuid_index:
+            instance = cls._uuid_index[coder_uuid]
+            # Remove from coder-keyed dict
+            for key, val in list(cls._instances.items()):
+                if val is instance:
+                    del cls._instances[key]
+                    break
+            del cls._uuid_index[coder_uuid]
+
+    def get_coder(self):
+        """Get strong reference to coder (or None if destroyed)."""
+        return self.coder()
 
     def register_hook(self, hook: BaseHook) -> None:
         """Register a hook instance.
@@ -48,9 +81,6 @@ class HookManager:
         with self._lock:
             if hook.name in self._hooks_by_name:
                 raise ValueError(f"Hook with name '{hook.name}' already exists")
-
-            # Load saved state if available
-            # self._load_hook_state(hook)
 
             # Add to registries
             self._hooks_by_type[hook.type.value].append(hook)
@@ -95,7 +125,7 @@ class HookManager:
             return name in self._hooks_by_name
 
     def enable_hook(self, name: str) -> bool:
-        """Enable a hook by name and persist state.
+        """Enable a hook by name.
 
         Args:
             name: The hook name to enable.
@@ -106,14 +136,12 @@ class HookManager:
         with self._lock:
             if name not in self._hooks_by_name:
                 return False
-
             hook = self._hooks_by_name[name]
             hook.enabled = True
-            # self._save_state()
             return True
 
     def disable_hook(self, name: str) -> bool:
-        """Disable a hook by name and persist state.
+        """Disable a hook by name.
 
         Args:
             name: The hook name to disable.
@@ -124,10 +152,8 @@ class HookManager:
         with self._lock:
             if name not in self._hooks_by_name:
                 return False
-
             hook = self._hooks_by_name[name]
             hook.enabled = False
-            # self._save_state()
             return True
 
     async def call_hooks(self, hook_type: str, coder: Any, metadata: Dict[str, Any]) -> bool:
@@ -177,64 +203,6 @@ class HookManager:
                 # Continue with other hooks even if one fails
 
         return all_succeeded
-
-    def _load_hook_state(self, hook: BaseHook) -> None:
-        """Load saved state for a hook."""
-        if not self._state_file.exists():
-            return
-
-        try:
-            with self._state_lock:
-                with open(self._state_file, "r") as f:
-                    state = json.load(f)
-
-                if hook.name in state:
-                    hook.enabled = state[hook.name]
-        except (json.JSONDecodeError, IOError) as e:
-            print(f"Warning: Could not load hook state from {self._state_file}: {e}")
-
-    def _save_state(self) -> None:
-        """Save hook states to configuration file."""
-        try:
-            with self._state_lock:
-                # Create backup of existing state
-                if self._state_file.exists():
-                    backup_file = self._state_file.with_suffix(".json.bak")
-                    import shutil
-
-                    shutil.copy2(self._state_file, backup_file)
-
-                # Save current state
-                state = {name: hook.enabled for name, hook in self._hooks_by_name.items()}
-
-                # Write to temporary file first, then rename (atomic write)
-                temp_file = self._state_file.with_suffix(".json.tmp")
-                with open(temp_file, "w") as f:
-                    json.dump(state, f, indent=2)
-
-                # Atomic rename
-                temp_file.rename(self._state_file)
-
-        except Exception as e:
-            print(f"Warning: Could not save hook state to {self._state_file}: {e}")
-
-    def _load_state(self) -> None:
-        """Load hook states from configuration file."""
-        if not self._state_file.exists():
-            return
-
-        try:
-            with self._state_lock:
-                with open(self._state_file, "r") as f:
-                    state = json.load(f)
-
-                # Apply loaded state to registered hooks
-                for name, enabled in state.items():
-                    if name in self._hooks_by_name:
-                        self._hooks_by_name[name].enabled = enabled
-
-        except (json.JSONDecodeError, IOError) as e:
-            print(f"Warning: Could not load hook state from {self._state_file}: {e}")
 
     def clear(self) -> None:
         """Clear all registered hooks (for testing)."""

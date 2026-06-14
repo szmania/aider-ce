@@ -128,7 +128,7 @@ class TestReasoning:
 
             # Now verify ai_output was called with the right content
             io.assistant_output.assert_called_once()
-            output = io.assistant_output.call_args[0][0]
+            output = io.assistant_output.call_args[1]["message"]
 
             dump(output)
 
@@ -169,7 +169,7 @@ class TestReasoning:
         with patch.object(model, "send_completion", return_value=(mock_hash, completion)):
             [item async for item in coder.send([{"role": "user", "content": "describe"}])]
 
-        output = io.assistant_output.call_args[0][0]
+        output = io.assistant_output.call_args[1]["message"]
         assert REASONING_START in output
         assert "Internal reasoning about how to describe the repo." in output
         assert "Final synthetic summary of the repository." in output
@@ -313,7 +313,7 @@ class TestReasoning:
 
             # Now verify ai_output was called with the right content
             io.assistant_output.assert_called_once()
-            output = io.assistant_output.call_args[0][0]
+            output = io.assistant_output.call_args[1]["message"]
 
             dump(output)
 
@@ -499,7 +499,7 @@ End"""
 
             # Now verify ai_output was called with the right content
             io.assistant_output.assert_called_once()
-            output = io.assistant_output.call_args[0][0]
+            output = io.assistant_output.call_args[1]["message"]
 
             dump(output)
 

@@ -18,6 +18,8 @@ def mock_workspace(tmp_path):
     p1_dir = workspace_root / "p1" / "main"
     p1_dir.mkdir(parents=True)
     subprocess.run(["git", "init"], cwd=p1_dir, check=True)
+    subprocess.run(["git", "config", "user.email", "test@test.com"], cwd=p1_dir, check=True)
+    subprocess.run(["git", "config", "user.name", "Test"], cwd=p1_dir, check=True)
     (p1_dir / "file1.py").write_text("def func1(): pass")
     subprocess.run(["git", "add", "file1.py"], cwd=p1_dir, check=True)
     subprocess.run(["git", "commit", "-m", "p1 init"], cwd=p1_dir, check=True)
@@ -26,6 +28,8 @@ def mock_workspace(tmp_path):
     p2_dir = workspace_root / "p2" / "main"
     p2_dir.mkdir(parents=True)
     subprocess.run(["git", "init"], cwd=p2_dir, check=True)
+    subprocess.run(["git", "config", "user.email", "test@test.com"], cwd=p2_dir, check=True)
+    subprocess.run(["git", "config", "user.name", "Test"], cwd=p2_dir, check=True)
     (p2_dir / "file2.py").write_text("def func2(): pass")
     subprocess.run(["git", "add", "file2.py"], cwd=p2_dir, check=True)
     subprocess.run(["git", "commit", "-m", "p2 init"], cwd=p2_dir, check=True)

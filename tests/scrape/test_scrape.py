@@ -21,6 +21,8 @@ class TestScrape:
                 )()
                 self.tui = None
                 self.args = type("Args", (), {"disable_playwright": False})()
+                self.io = io
+                self.args = type("Args", (), {"disable_playwright": False})()
 
             def get_rel_fname(self, fname):
                 return fname

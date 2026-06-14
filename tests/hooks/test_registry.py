@@ -5,7 +5,14 @@ from pathlib import Path
 import pytest  # noqa: F401
 import yaml
 
-from cecli.hooks import BaseHook, HookManager, HookRegistry, HookType
+from cecli.hooks import BaseHook, HookRegistry, HookType
+
+
+class MockCoder:
+    """Mock coder for testing."""
+
+    def __init__(self, uuid="test-uuid"):
+        self.uuid = uuid
 
 
 class MockHook(BaseHook):
@@ -33,10 +40,15 @@ class TestHookRegistry:
 
     def setup_method(self):
         """Set up test environment."""
-        # Clear singleton instance
-        HookManager._instance = None
-        self.manager = HookManager()
-        self.registry = HookRegistry(self.manager)
+        self.coder = MockCoder("test-uuid")
+        self.registry = HookRegistry(self.coder)
+
+    def test_registry_with_coder(self):
+        """Test registry can be created with a coder."""
+        coder = MockCoder("test-uuid-2")
+        registry = HookRegistry(coder)
+        assert registry.hook_manager is not None
+        assert registry.loaded_modules == set()
 
     def test_load_hooks_from_directory(self, tmp_path):
         """Test loading hooks from a directory."""
@@ -66,8 +78,8 @@ class AnotherHook(BaseHook):
         assert "AnotherHook" in loaded
 
         # Verify hooks were registered
-        assert self.manager.hook_exists("TestHook")
-        assert self.manager.hook_exists("AnotherHook")
+        assert self.registry.hook_manager.hook_exists("TestHook")
+        assert self.registry.hook_manager.hook_exists("AnotherHook")
 
     def test_load_hooks_from_empty_directory(self, tmp_path):
         """Test loading hooks from empty directory."""
@@ -132,16 +144,16 @@ class MyStartHook(BaseHook):
         assert "cleanup_hook" in loaded
 
         # Verify hooks were registered
-        assert self.manager.hook_exists("MyStartHook")
-        assert self.manager.hook_exists("cleanup_hook")
+        assert self.registry.hook_manager.hook_exists("MyStartHook")
+        assert self.registry.hook_manager.hook_exists("cleanup_hook")
 
         # Verify properties
-        start_hook = self.manager._hooks_by_name["MyStartHook"]
+        start_hook = self.registry.hook_manager._hooks_by_name["MyStartHook"]
         assert start_hook.priority == 5
         assert start_hook.enabled is True
         assert start_hook.description == "Test start hook"
 
-        cleanup_hook = self.manager._hooks_by_name["cleanup_hook"]
+        cleanup_hook = self.registry.hook_manager._hooks_by_name["cleanup_hook"]
         assert cleanup_hook.priority == 10
         assert cleanup_hook.enabled is False
         assert cleanup_hook.description == "Test cleanup hook"
@@ -361,5 +373,5 @@ class NewHook(BaseHook):
         assert "MyHook" not in loaded2  # Old hook should be gone
 
         # Verify manager was cleared
-        assert not self.manager.hook_exists("MyHook")
-        assert self.manager.hook_exists("NewHook")
+        assert not self.registry.hook_manager.hook_exists("MyHook")
+        assert self.registry.hook_manager.hook_exists("NewHook")

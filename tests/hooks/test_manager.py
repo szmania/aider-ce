@@ -1,10 +1,15 @@
-"""Tests for HookManager."""
-
-import json
+"""Tests for HookManager and HookService."""
 
 import pytest
 
-from cecli.hooks import BaseHook, HookManager, HookType
+from cecli.hooks import BaseHook, HookManager, HookService, HookType
+
+
+class MockCoder:
+    """Mock coder for testing."""
+
+    def __init__(self, uuid="test-uuid"):
+        self.uuid = uuid
 
 
 class MockHook(BaseHook):
@@ -32,18 +37,61 @@ class TestHookManager:
 
     def setup_method(self):
         """Set up test environment."""
-        # Clear singleton instance
-        HookManager._instance = None
-        self.manager = HookManager()
+        self.mock_coder = MockCoder()
+        self.manager = HookManager(self.mock_coder)
 
-    def test_singleton_pattern(self):
-        """Test that HookManager is a singleton."""
-        manager1 = HookManager()
-        manager2 = HookManager()
+    def test_get_instance_same_coder(self):
+        """Test get_instance returns same instance for same coder."""
+        manager1 = HookManager.get_instance(self.mock_coder)
+        manager2 = HookManager.get_instance(self.mock_coder)
 
         assert manager1 is manager2
-        assert manager1._initialized is True
-        assert manager2._initialized is True
+        assert manager1.get_coder() is self.mock_coder
+
+    def test_get_instance_different_coders(self):
+        """Test get_instance returns different instances for different coders."""
+        coder1 = MockCoder(uuid="uuid-1")
+        coder2 = MockCoder(uuid="uuid-2")
+
+        manager1 = HookManager.get_instance(coder1)
+        manager2 = HookManager.get_instance(coder2)
+
+        assert manager1 is not manager2
+        assert manager1.get_coder() is coder1
+        assert manager2.get_coder() is coder2
+
+    def test_get_instance_uuid_fallback(self):
+        """Test get_instance fallback for child coder with same uuid."""
+        coder1 = MockCoder(uuid="shared-uuid")
+        coder2 = MockCoder(uuid="shared-uuid")
+
+        manager = HookManager.get_instance(coder1)
+        same_manager = HookManager.get_instance(coder2)
+
+        assert manager is same_manager
+        # The weakref should be updated to the new coder
+        assert manager.get_coder() is coder2
+
+    def test_destroy_instance(self):
+        """Test destroying an instance by uuid."""
+        coder = MockCoder(uuid="destroy-me")
+        manager = HookManager.get_instance(coder)
+
+        assert manager is not None
+        assert HookManager.get_instance(coder) is manager
+
+        HookManager.destroy_instance("destroy-me")
+
+        # After destruction, a new instance should be created
+        new_manager = HookManager.get_instance(coder)
+        assert new_manager is not manager
+
+    def test_get_coder(self):
+        """Test get_coder returns the correct coder."""
+        coder = MockCoder(uuid="test-uuid")
+        manager = HookManager(coder)
+
+        assert manager.get_coder() is coder
 
     def test_register_hook(self):
         """Test hook registration."""
@@ -57,7 +105,7 @@ class TestHookManager:
     def test_register_duplicate_hook(self):
         """Test duplicate hook registration fails."""
         hook1 = MockHook(name="test_hook")
-        hook2 = MockHook(name="test_hook")  # Same name
+        hook2 = MockHook(name="test_hook")
 
         self.manager.register_hook(hook1)
 
@@ -67,27 +115,22 @@ class TestHookManager:
     def test_get_hooks(self):
         """Test getting hooks by type."""
         hook1 = MockHook(name="hook1", priority=10)
-        hook2 = MockHook(name="hook2", priority=5)  # Higher priority
+        hook2 = MockHook(name="hook2", priority=5)
         hook3 = MockPreToolHook(name="hook3", priority=10)
 
         self.manager.register_hook(hook1)
         self.manager.register_hook(hook2)
         self.manager.register_hook(hook3)
 
-        # Get start hooks
         start_hooks = self.manager.get_hooks(HookType.START.value)
         assert len(start_hooks) == 2
+        assert start_hooks[0].name == "hook2"
+        assert start_hooks[1].name == "hook1"
 
-        # Should be sorted by priority (lower = higher priority)
-        assert start_hooks[0].name == "hook2"  # priority 5
-        assert start_hooks[1].name == "hook1"  # priority 10
-
-        # Get pre_tool hooks
         pre_tool_hooks = self.manager.get_hooks(HookType.PRE_TOOL.value)
         assert len(pre_tool_hooks) == 1
         assert pre_tool_hooks[0].name == "hook3"
 
-        # Get non-existent type
         no_hooks = self.manager.get_hooks("non_existent_type")
         assert len(no_hooks) == 0
 
@@ -124,25 +167,22 @@ class TestHookManager:
         hook = MockHook(name="test_hook", enabled=False)
         self.manager.register_hook(hook)
 
-        # Initially disabled
         start_hooks = self.manager.get_hooks(HookType.START.value)
-        assert len(start_hooks) == 0  # Disabled hooks not returned
+        assert len(start_hooks) == 0
 
-        # Enable hook
         result = self.manager.enable_hook("test_hook")
         assert result is True
         assert hook.enabled is True
 
         start_hooks = self.manager.get_hooks(HookType.START.value)
-        assert len(start_hooks) == 1  # Now enabled
+        assert len(start_hooks) == 1
 
-        # Disable hook
         result = self.manager.disable_hook("test_hook")
         assert result is True
         assert hook.enabled is False
 
         start_hooks = self.manager.get_hooks(HookType.START.value)
-        assert len(start_hooks) == 0  # Disabled again
+        assert len(start_hooks) == 0
 
     def test_enable_nonexistent_hook(self):
         """Test enabling non-existent hook."""
@@ -153,52 +193,6 @@ class TestHookManager:
         """Test disabling non-existent hook."""
         result = self.manager.disable_hook("non_existent")
         assert result is False
-
-    def test_state_persistence(self, tmp_path):
-        """Test hook state persistence."""
-        # Create temporary state file
-        state_file = tmp_path / "hooks_state.json"
-
-        # Monkey-patch state file location
-        self.manager._state_file = state_file
-
-        # Create and register hooks
-        hook1 = MockHook(name="hook1", enabled=True)
-        hook2 = MockHook(name="hook2", enabled=False)
-
-        self.manager.register_hook(hook1)
-        self.manager.register_hook(hook2)
-
-        # Save state
-        self.manager._save_state()
-
-        # Verify state file was created
-        assert state_file.exists()
-
-        # Load and verify state
-        with open(state_file, "r") as f:
-            state = json.load(f)
-
-        assert state["hook1"] is True
-        assert state["hook2"] is False
-
-        # Create new manager instance to test loading
-        HookManager._instance = None
-        new_manager = HookManager()
-        new_manager._state_file = state_file
-
-        # Register hooks with new manager
-        new_hook1 = MockHook(name="hook1", enabled=False)  # Default disabled
-        new_hook2 = MockHook(name="hook2", enabled=True)  # Default enabled
-
-        new_manager.register_hook(new_hook1)
-        new_manager.register_hook(new_hook2)
-
-        # Load state should override defaults
-        new_manager._load_state()
-
-        assert new_hook1.enabled is True  # Loaded from state
-        assert new_hook2.enabled is False  # Loaded from state
 
     def test_clear(self):
         """Test clearing all hooks."""
@@ -220,7 +214,6 @@ class TestHookManager:
     async def test_call_hooks(self):
         """Test calling hooks."""
 
-        # Create hooks with different return values
         class TrueHook(BaseHook):
             type = HookType.PRE_TOOL
 
@@ -247,21 +240,61 @@ class TestHookManager:
         self.manager.register_hook(false_hook)
         self.manager.register_hook(error_hook)
 
-        # Test with all hooks enabled
         result = await self.manager.call_hooks(HookType.PRE_TOOL.value, None, {})
-        assert result is False  # false_hook returns False
+        assert result is False
 
-        # Disable false_hook
         self.manager.disable_hook("false_hook")
 
-        # Test with only true_hook and error_hook enabled
         result = await self.manager.call_hooks(HookType.PRE_TOOL.value, None, {})
-        assert result is True  # Only true_hook returns True, error is caught
+        assert result is True
 
-        # Disable all hooks
         self.manager.disable_hook("true_hook")
         self.manager.disable_hook("error_hook")
 
-        # Test with no enabled hooks
         result = await self.manager.call_hooks(HookType.PRE_TOOL.value, None, {})
-        assert result is True  # No hooks to run = success
+        assert result is True
+
+
+class TestHookService:
+    """Test HookService class."""
+
+    def test_get_manager(self):
+        """Test get_manager returns a HookManager for a coder."""
+        coder = MockCoder(uuid="service-test")
+
+        manager = HookService.get_manager(coder)
+
+        assert isinstance(manager, HookManager)
+        assert manager.get_coder() is coder
+
+    def test_get_manager_same_coder(self):
+        """Test get_manager returns same manager for same coder."""
+        coder = MockCoder(uuid="same-coder")
+
+        manager1 = HookService.get_manager(coder)
+        manager2 = HookService.get_manager(coder)
+
+        assert manager1 is manager2
+
+    def test_get_manager_different_coders(self):
+        """Test get_manager returns different managers for different coders."""
+        coder1 = MockCoder(uuid="different-1")
+        coder2 = MockCoder(uuid="different-2")
+
+        manager1 = HookService.get_manager(coder1)
+        manager2 = HookService.get_manager(coder2)
+
+        assert manager1 is not manager2
+
+    def test_destroy_instances(self):
+        """Test destroying instances by uuid."""
+        coder = MockCoder(uuid="destroy-service")
+        manager = HookService.get_manager(coder)
+
+        assert manager is not None
+
+        HookService.destroy_instances("destroy-service")
+
+        # After destruction, a new instance should be created
+        new_manager = HookService.get_manager(coder)
+        assert new_manager is not manager

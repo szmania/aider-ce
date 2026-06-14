@@ -6,6 +6,7 @@ from cecli.commands.utils.base_command import BaseCommand
 class WorkspaceCommand(BaseCommand):
     NORM_NAME = "workspace"
     DESCRIPTION = "Print information about the current workspace"
+    show_completion_notification = True
 
     @classmethod
     async def execute(cls, io, coder, args, **kwargs):

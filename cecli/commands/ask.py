@@ -9,6 +9,7 @@ class AskCommand(BaseCommand):
         "Ask questions about the code base without editing any files. If no prompt provided,"
         " switches to ask mode."
     )
+    show_completion_notification = True
 
     @classmethod
     async def execute(cls, io, coder, args, **kwargs):

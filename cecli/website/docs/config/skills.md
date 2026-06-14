@@ -178,6 +178,7 @@ agent-config: |
     # Other Agent Mode settings
     "large_file_token_threshold": 12500,  # Token threshold for large file warnings
     "skip_cli_confirmations": false,  # YOLO mode - be brave and let the LLM cook
+    "allowed_commands": ["wc -l*"],  # Commands matching these glob patterns will not prompt for confirmation
     "tools_includelist": ["view", "makeeditable", "replacetext", "finished"],  # Optional: Whitelist of tools
     "tools_excludelist": ["command", "commandinteractive"],  # Optional: Blacklist of tools
     "include_context_blocks": ["todo_list", "git_status"],  # Optional: Context blocks to include

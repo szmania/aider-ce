@@ -34,13 +34,15 @@ dependencies = { file = "requirements/requirements.in" }
 dev = { file = "requirements/requirements-dev.in" }
 help = { file = "requirements/requirements-help.in" }
 playwright = { file = "requirements/requirements-playwright.in" }
-tui = { file = "requirements/requirements-tui.in" }
 
 [tool.setuptools]
 include-package-data = true
 
 [tool.setuptools.packages.find]
 include = ["cecli*"]
+
+[tool.uv]
+exclude-newer = "2 days"
 
 [build-system]
 requires = ["setuptools>=68", "setuptools_scm[toml]>=8"]

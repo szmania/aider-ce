@@ -70,6 +70,15 @@ def resolve_workspace_config(config_arg: Optional[str] = None) -> Optional[Any]:
     return workspace_conf
 
 
+def load_workspace_config_file(path: Path) -> Dict[str, Any]:
+    """Load and validate a repo-local ``.cecli.workspaces.yml`` file."""
+    from cecli.helpers.monorepo.local_workspace import load_workspace_file
+
+    config = load_workspace_file(path)
+    validate_config(config)
+    return config
+
+
 def load_workspace_config(
     config_arg: Optional[str] = None, name: Optional[str] = None
 ) -> Dict[str, Any]:
@@ -108,7 +117,10 @@ def load_workspace_config(
 
 def validate_config(config: Dict[str, Any]) -> None:
     """
-    Minimal validation of required fields.
+    Validate workspace config shape.
+
+    Each project must have a ``name`` and exactly one of ``path`` (local git
+    root) or ``repo`` (clone URL). At most one project may set ``primary: true``.
     """
     if not config:
         return
@@ -120,12 +132,23 @@ def validate_config(config: Dict[str, Any]) -> None:
         config["projects"] = []
 
     project_names = set()
+    primary_count = 0
     for project in config["projects"]:
-        if "name" not in project or "repo" not in project:
-            raise ValueError("Each project must have a 'name' and 'repo' URL")
+        if "name" not in project:
+            raise ValueError("Each project must have a 'name'")
+        has_path = bool(project.get("path"))
+        has_repo = bool(project.get("repo"))
+        if has_path == has_repo:
+            raise ValueError(
+                f"Project '{project['name']}' must have exactly one of 'path' or 'repo'"
+            )
+        if project.get("primary"):
+            primary_count += 1
         if project["name"] in project_names:
             raise ValueError(f"Duplicate project name: {project['name']}")
         project_names.add(project["name"])
+    if primary_count > 1:
+        raise ValueError("Only one project may be marked primary: true")
 
 
 def find_active_workspace_name(config_arg: Optional[str] = None) -> Optional[str]:

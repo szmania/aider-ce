@@ -50,6 +50,7 @@ class SkillsManager:
         directory_paths: List[str],
         include_list: Optional[List[str]] = None,
         exclude_list: Optional[List[str]] = None,
+        initialize_list: Optional[List[str]] = None,
         git_root: Optional[str] = None,
         coder=None,
     ):
@@ -60,6 +61,7 @@ class SkillsManager:
             directory_paths: List of directory paths to search for skills
             include_list: Optional list of skill names to include (whitelist)
             exclude_list: Optional list of skill names to exclude (blacklist)
+            initialize_list: Optional list of skill names to load and include on startup
             git_root: Optional git root directory for relative path resolution
             coder: Optional reference to the coder instance (weak reference)
         """
@@ -78,9 +80,30 @@ class SkillsManager:
         self._loaded_skills: set[str] = set()
 
         # Restore state from global store (sticky across SkillsManager recreation)
-        if not self._restore_state():
-            # First time initialization - save initial state from config
-            self._save_state()
+        state_restored = self._restore_state()
+
+        if not state_restored:
+            # First time initialization - process initialize_list
+            if initialize_list:
+                for skill_name in initialize_list:
+                    if not skill_name:
+                        continue
+                    # Verify the skill exists
+                    skills = self.find_skills()
+                    if any(skill.name == skill_name for skill in skills):
+                        # Add to loaded skills set
+                        self._loaded_skills.add(skill_name)
+                        # Add to include list (whitelist)
+                        if self.include_list is None:
+                            self.include_list = set()
+                        self.include_list.add(skill_name)
+                        # Remove from exclude list if present
+                        self.exclude_list.discard(skill_name)
+
+                # Clear caches so find_skills reflects the change
+                self.hot_reload()
+
+            # Save initial state from config
 
     def _save_state(self):
         """Save current mutable state to the global skill state store.
@@ -137,6 +160,7 @@ class SkillsManager:
         skills = []
 
         for directory_path in self.directory_paths:
+            directory_path = Path(directory_path)
             if not directory_path.exists():
                 continue
 
@@ -425,7 +449,10 @@ class SkillsManager:
             return "Error: Skills manager not connected to a coder instance."
 
         # Check if we're in agent mode
-        if not hasattr(self.coder, "edit_format") or self.coder.edit_format != "agent":
+        if not hasattr(self.coder, "edit_format") or self.coder.edit_format not in (
+            "agent",
+            "subagent",
+        ):
             return "Error: Skill loading is only available in agent mode."
 
         # Check if skill is already loaded
@@ -474,7 +501,10 @@ class SkillsManager:
             return "Error: Skills manager not connected to a coder instance."
 
         # Check if we're in agent mode
-        if not hasattr(self.coder, "edit_format") or self.coder.edit_format != "agent":
+        if not hasattr(self.coder, "edit_format") or self.coder.edit_format not in (
+            "agent",
+            "subagent",
+        ):
             return "Error: Skill removal is only available in agent mode."
 
         # Check if skill is already removed
@@ -508,7 +538,10 @@ class SkillsManager:
             return "Error: Skills manager not connected to a coder instance."
 
         # Check if we're in agent mode
-        if not hasattr(self.coder, "edit_format") or self.coder.edit_format != "agent":
+        if not hasattr(self.coder, "edit_format") or self.coder.edit_format not in (
+            "agent",
+            "subagent",
+        ):
             return "Error: Skill inclusion is only available in agent mode."
 
         # Find the skill to verify it exists
@@ -566,7 +599,10 @@ class SkillsManager:
             return "Error: Skills manager not connected to a coder instance."
 
         # Check if we're in agent mode
-        if not hasattr(self.coder, "edit_format") or self.coder.edit_format != "agent":
+        if not hasattr(self.coder, "edit_format") or self.coder.edit_format not in (
+            "agent",
+            "subagent",
+        ):
             return "Error: Skill exclusion is only available in agent mode."
 
         # Find the skill to verify it exists

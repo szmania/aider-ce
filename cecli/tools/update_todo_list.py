@@ -1,10 +1,15 @@
 from cecli.tools.utils.base_tool import BaseTool
 from cecli.tools.utils.helpers import ToolError, format_tool_result, handle_tool_error
 from cecli.tools.utils.output import tool_footer, tool_header
+from cecli.tools.validations import ToolValidations
 
 
 class Tool(BaseTool):
     NORM_NAME = "updatetodolist"
+    VALIDATIONS = {
+        "tasks": ["coerce_list"],
+        "tasks[]": ["coerce_dict"],
+    }
     SCHEMA = {
         "type": "function",
         "function": {
@@ -42,17 +47,6 @@ class Tool(BaseTool):
                             " Defaults to False."
                         ),
                     },
-                    "change_id": {
-                        "type": "string",
-                        "description": "Optional change ID for tracking.",
-                    },
-                    "dry_run": {
-                        "type": "boolean",
-                        "description": (
-                            "Whether to perform a dry run without actually updating the file."
-                            " Defaults to False."
-                        ),
-                    },
                 },
                 "required": ["tasks"],
             },
@@ -70,6 +64,7 @@ class Tool(BaseTool):
             # Define the todo file path
             todo_file_path = coder.local_agent_folder("todo.txt")
             abs_path = coder.abs_root_path(todo_file_path)
+            coder.current_tasks = []
 
             # Format tasks into string
             done_tasks = []
@@ -89,6 +84,7 @@ class Tool(BaseTool):
                     # Check if this is the current task
                     if task_item.get("current", False):
                         remaining_tasks.append(f"→ {task_item['task']}")
+                        coder.current_tasks.append(f"- {task_item['task']}")
                     else:
                         remaining_tasks.append(f"○ {task_item['task']}")
 
@@ -127,7 +123,7 @@ class Tool(BaseTool):
             # Check if content exceeds 4096 characters and warn
             if len(new_content) > 4096:
                 coder.io.tool_warning(
-                    "⚠️ Todo list content exceeds 4096 characters. Consider summarizing the plan"
+                    "⚠ Todo list content exceeds 4096 characters. Consider summarizing the plan"
                     " before proceeding."
                 )
 
@@ -158,7 +154,16 @@ class Tool(BaseTool):
             coder.io.write_text(abs_path, new_content)
 
             # Track the change
-            final_change_id = coder.change_tracker.track_change(
+            # final_change_id = coder.change_tracker.track_change(
+            #     file_path=todo_file_path,
+            #     change_type="updatetodolist",
+            #     original_content=existing_content,
+            #     new_content=new_content,
+            #     metadata=metadata,
+            #     change_id=change_id,
+            # )
+
+            coder.change_tracker.track_change(
                 file_path=todo_file_path,
                 change_type="updatetodolist",
                 original_content=existing_content,
@@ -170,14 +175,15 @@ class Tool(BaseTool):
             coder.coder_edited_files.add(todo_file_path)
 
             # Format and return result
-            action = "appended to" if append else "updated"
-            success_message = f"Successfully {action} todo list"
-            return format_tool_result(
-                coder,
-                tool_name,
-                success_message,
-                change_id=final_change_id,
-            )
+            # action = "appended to" if append else "updated"
+            # success_message = f"Successfully {action} todo list"
+            # return format_tool_result(
+            #     coder,
+            #     tool_name,
+            #     success_message,
+            #     change_id=final_change_id,
+            # )
+            return new_content
 
         except ToolError as e:
             return handle_tool_error(coder, tool_name, e, add_traceback=False)
@@ -186,16 +192,21 @@ class Tool(BaseTool):
 
     @classmethod
     def format_output(cls, coder, mcp_server, tool_response):
-        import json
-
         from cecli.tools.utils.output import color_markers
 
         color_start, color_end = color_markers(coder)
 
+        # Output header
         tool_header(coder=coder, mcp_server=mcp_server, tool_response=tool_response)
 
-        # Parse the parameters to display formatted todo list
-        params = json.loads(tool_response.function.arguments)
+        try:
+            params = ToolValidations.validate_params(
+                tool_response.function.arguments, cls.VALIDATIONS, cls.SCHEMA
+            )
+        except ToolError:
+            coder.io.tool_error("Invalid Tool JSON")
+            return
+
         tasks = params.get("tasks", [])
 
         if tasks:
@@ -234,4 +245,4 @@ class Tool(BaseTool):
 
             coder.io.tool_output("")
 
-        tool_footer(coder=coder, tool_response=tool_response)
+        tool_footer(coder=coder, tool_response=tool_response, params=params)

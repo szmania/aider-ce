@@ -1,7 +1,7 @@
 from typing import List
 
 from cecli.commands.utils.base_command import BaseCommand
-from cecli.hooks.manager import HookManager
+from cecli.hooks.service import HookService
 
 
 class RemoveHookCommand(BaseCommand):
@@ -16,7 +16,7 @@ class RemoveHookCommand(BaseCommand):
             io.tool_error("Usage: /remove-hook <hook-name>")
             return 1
         hook_names = args.strip().split()
-        hook_manager = HookManager()
+        hook_manager = HookService.get_manager(coder)
         results = []
         errors = 0
 
@@ -41,7 +41,7 @@ class RemoveHookCommand(BaseCommand):
     @classmethod
     def get_completions(cls, io, coder, args) -> List[str]:
         """Get completion options for remove-hook command."""
-        hook_manager = HookManager()
+        hook_manager = HookService.get_manager(coder)
         all_hooks = hook_manager.get_all_hooks()
 
         # Get all hook names

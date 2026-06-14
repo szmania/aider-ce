@@ -17,6 +17,7 @@ from cecli.commands.utils.helpers import format_command_result
 class TerminalSetupCommand(BaseCommand):
     NORM_NAME = "terminal-setup"
     DESCRIPTION = "Configure terminal config files to support shift+enter for newline"
+    show_completion_notification = True
 
     KITTY_BINDING = "\n# Added by cecli terminal-setup command\nmap shift+enter send_text all \\n\n"
 

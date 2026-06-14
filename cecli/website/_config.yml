@@ -11,7 +11,7 @@ defaults:
       path: "README.md"
       type: "pages"
     values:
-      description: "cecli speaks fluent terminal"
+      description: "Oh, to live in a terminal"
 
 exclude:
   - "tmp*"

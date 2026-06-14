@@ -5,7 +5,11 @@ description: Workspaces allow you to work across multiple related repositories s
 ---
 # Workspaces
 
-Workspaces allow you to manage multiple git repositories within a single monorepo-like folder structure, enabling development across multiple related projects.
+Workspaces allow you to manage multiple git repositories within a single monorepo-like folder structure, enabling development across multiple related projects. `cecli` supports two workspace modes: 
+
+**clone** workspaces (remote `repo:` URLs cloned into `~/.cecli/workspaces/`)
+
+**local** workspaces (existing on-disk git roots referenced by absolute `path:`)
 
 ## Configuration
 
@@ -14,6 +18,8 @@ You can configure workspaces in multiple locations. `cecli` searches for configu
 1. **CLI Argument**: Via a JSON/YAML configuration or file path passed to the `--workspaces` argument.
 2. **Local Workspaces File**: `.cecli.workspaces.yml` or `.cecli.workspaces.yaml` in the current directory.
 3. **Global Workspaces File**: `~/.cecli/workspaces.yml` or `~/.cecli/workspaces.yaml`.
+
+4. **Repo-Local Config File**: `.cecli.workspaces.yml` or `.cecli.workspaces.yaml` placed at a common ancestor of your project directories. `cecli` discovers this file by walking up from any project path, enabling a **local** workspace layout without cloning into `~/.cecli/workspaces/`.
 
 ### Example Configuration
 
@@ -33,6 +39,38 @@ workspaces:
       use_current_branch: true  # Default: true. Set to false to force branch switching on init.
       ignore: "~/.cecli/backend.ignore" # Optional: Path to a custom ignore file for this project
 ```
+
+### Local Workspace Configuration
+
+For **local** workspaces, place a `.cecli.workspaces.yml` file at a common ancestor of your project directories. Each project references an existing git root via `path:` instead of a remote `repo:` URL.
+
+```yaml
+# .cecli.workspaces.yml
+name: my-workspace
+projects:
+  - name: app
+    path: /abs/path/to/app
+    primary: true        # At most one project can be primary
+  - name: lib
+    path: /abs/path/to/lib
+    readonly: true       # Prevents commits to this project
+```
+
+**Validation rules:**
+
+- Each project must have a `name` and **exactly one** of `path` (local git root) or `repo` (clone URL).
+- At most one project can be marked `primary: true`.
+- Projects with `readonly: true` are excluded from commits.
+
+### Path Layout
+
+The workspace layout determines how file paths are structured within the workspace:
+
+| Layout | Prefix | Example |
+|--------|--------|--------|
+| **clone** (repo-based) | `{project}/main/{file}` | `app/main/src/main.py` |
+| **local** (path-based) | `{project}/{file}` | `app/src/main.py` |
+
 
 ### Multiple Workspaces
 
@@ -61,9 +99,9 @@ cecli --workspace-name my-workspace
 cecli --workspaces path/to/workspaces.yml --workspace-name my-workspace
 ```
 
-If the workspace does not exist, `cecli` will create the directory structure at `~/.cecli/workspaces/my-workspace/` and clone the configured repositories.
+If the workspace does not exist, `cecli` will create the directory structure at `~/.cecli/workspaces/my-workspace/` and clone the configured repositories. For **local** workspaces, the configured `path:` directories are used in-place — no cloning occurs.
 
-### Workspace Structure
+### Clone Workspace Structure
 
 ```
 ~/.cecli/workspaces/
@@ -73,6 +111,17 @@ If the workspace does not exist, `cecli` will create the directory structure at 
         ├── main/        # Main repository clone
         └── worktrees/   # Additional worktrees
 ```
+
+### Local Workspace Structure
+
+Local workspaces do **not** create a `~/.cecli/workspaces/` directory. Instead, the config file directory itself serves as the workspace root, with metadata stored at:
+
+```
+.cecli/
+└── .workspace-meta.json
+```
+
+The project directories exist at their configured `path:` locations on disk.
 
 ## Arguments
 

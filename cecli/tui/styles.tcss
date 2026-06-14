@@ -24,7 +24,7 @@ Screen {
 }
 
 /* Output area */
-#output {
+#output,  .subagent-output {
     height: 1fr;
     width: 100%;
     background: $surface;
@@ -128,3 +128,4 @@ TextArea > .text-area--selection {
     color: $accent;
     padding: 0 1;
 }
+

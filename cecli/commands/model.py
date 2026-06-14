@@ -111,7 +111,7 @@ class ModelCommand(BaseCommand):
     @classmethod
     def get_completions(cls, io, coder, args) -> List[str]:
         """Get completion options for model command."""
-        return models.get_chat_model_names()
+        return models.get_chat_model_names(query=args)
 
     @classmethod
     def get_help(cls) -> str:

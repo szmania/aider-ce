@@ -13,9 +13,34 @@ def test_validate_config_no_name():
         validate_config({"projects": []})
 
 
-def test_validate_config_invalid_project():
-    with pytest.raises(ValueError, match="Each project must have a 'name' and 'repo' URL"):
+def test_validate_config_invalid_project_missing_source():
+    with pytest.raises(ValueError, match="exactly one of 'path' or 'repo'"):
         validate_config({"name": "test", "projects": [{"name": "p1"}]})
+
+
+def test_validate_config_invalid_project_both_sources():
+    with pytest.raises(ValueError, match="exactly one of 'path' or 'repo'"):
+        validate_config(
+            {
+                "name": "test",
+                "projects": [
+                    {
+                        "name": "p1",
+                        "path": "/tmp/p1",
+                        "repo": "https://github.com/org/r.git",
+                    }
+                ],
+            }
+        )
+
+
+def test_validate_config_path_project():
+    validate_config(
+        {
+            "name": "local",
+            "projects": [{"name": "app", "path": "/abs/app", "primary": True}],
+        }
+    )
 
 
 def test_validate_config_duplicate_project():

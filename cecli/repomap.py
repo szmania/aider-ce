@@ -153,12 +153,15 @@ class RepoMap:
     }
 
     @staticmethod
-    def get_file_stub(fname, io, line_numbers=False):
+    def get_file_stub(fname, io, line_numbers=False, start_line=None, end_line=None):
         """Generate a complete structural outline of a source code file.
 
         Args:
             fname (str): Absolute path to the source file
             io: InputOutput instance for file operations
+            line_numbers (bool): Whether to include line numbers
+            start_line (int, optional): 0-based start line to restrict the stub to
+            end_line (int, optional): 0-based end line (inclusive) to restrict the stub to
 
         Returns:
             str: Formatted outline showing the file's structure
@@ -176,11 +179,22 @@ class RepoMap:
         if not tags:
             return "# No outline available"
 
-        # Get all definition lines
-        lois = [tag.line for tag in tags if tag.kind == "def"]
+        # Get all definition lines, plus import lines for structural context
+        lois = [tag.line for tag in tags if tag.kind == "def" or tag.specific_kind == "import"]
 
-        # Reuse existing tree rendering
-        outline = rm.render_tree(fname, rel_fname, lois, line_numbers=line_numbers)
+        # Restrict to the requested line range if provided
+        if start_line is not None or end_line is not None:
+            start = start_line if start_line is not None else 0
+            end = end_line if end_line is not None else max(lois) if lois else 0
+            lois = [ln for ln in lois if start <= ln <= end]
+        outline = rm.render_tree(
+            fname,
+            rel_fname,
+            lois,
+            line_numbers=line_numbers,
+            start_line=start_line,
+            end_line=end_line,
+        )
 
         return f"{outline}"
 
@@ -732,6 +746,7 @@ class RepoMap:
 
         num_fnames = len(fnames)
         fname_index = 0
+        skipped_missing = 0
         for fname in fnames:
             if self.verbose:
                 self.io.tool_output(f"Processing {fname}")
@@ -748,12 +763,14 @@ class RepoMap:
                 file_ok = False
 
             if not file_ok:
+                skipped_missing += 1
                 if fname not in self.warned_files:
-                    self.io.tool_warning(f"Repo-map can't include {fname}")
-                    self.io.tool_output(
-                        "Has it been deleted from the file system but not from git?"
-                    )
                     self.warned_files.add(fname)
+                    if skipped_missing <= 2:
+                        self.io.tool_warning(
+                            f"Repo-map skipping missing file: {fname}"
+                            " (removed on disk or not yet written)."
+                        )
                 continue
 
             # dump(fname)
@@ -828,6 +845,11 @@ class RepoMap:
 
                     if tag.specific_kind == "import":
                         file_imports[rel_fname].add(tag.name)
+
+        if skipped_missing > 2:
+            self.io.tool_output(
+                f"Repo-map skipped {skipped_missing} paths that are not readable on disk."
+            )
 
         self.io.profile("Process Files")
 
@@ -1254,9 +1276,11 @@ class RepoMap:
 
     tree_cache = dict()
 
-    def render_tree(self, abs_fname, rel_fname, lois, line_numbers=False):
+    def render_tree(
+        self, abs_fname, rel_fname, lois, line_numbers=False, start_line=None, end_line=None
+    ):
         mtime = self.get_mtime(abs_fname)
-        key = (rel_fname, tuple(sorted(lois)), mtime)
+        key = (rel_fname, tuple(sorted(lois)), mtime, start_line, end_line)
 
         if key in self.tree_cache:
             return self.tree_cache[key]
@@ -1288,6 +1312,13 @@ class RepoMap:
         context.lines_of_interest = set()
         context.add_lines_of_interest(lois)
         context.add_context()
+
+        # Restrict shown lines to the requested range if provided
+        if start_line is not None or end_line is not None:
+            start = start_line if start_line is not None else 0
+            end = end_line if end_line is not None else context.num_lines - 1
+            context.show_lines = {ln for ln in context.show_lines if start <= ln <= end}
+
         res = context.format()
         self.tree_cache[key] = res
         return res

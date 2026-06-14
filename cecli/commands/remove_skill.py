@@ -18,7 +18,7 @@ class RemoveSkillCommand(BaseCommand):
         skill_names = args.strip().split()
 
         # Check if we're in agent mode
-        if not hasattr(coder, "edit_format") or coder.edit_format != "agent":
+        if not hasattr(coder, "edit_format") or coder.edit_format not in ("agent", "subagent"):
             io.tool_output("Skill removal is only available in agent mode.")
             return format_command_result(
                 io, "remove-skill", "Skill removal is only available in agent mode"

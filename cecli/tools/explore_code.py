@@ -1,9 +1,9 @@
-import json
 import os
 
 from cecli.tools.utils.base_tool import BaseTool
 from cecli.tools.utils.helpers import ToolError
 from cecli.tools.utils.output import color_markers, tool_footer, tool_header
+from cecli.tools.validations import ToolValidations
 
 cwd = os.getcwd()
 
@@ -19,6 +19,10 @@ finally:
 
 class Tool(BaseTool):
     NORM_NAME = "explorecode"
+    VALIDATIONS = {
+        "queries": ["coerce_list"],
+        "queries[]": ["coerce_dict"],
+    }
     SCHEMA = {
         "type": "function",
         "function": {
@@ -116,7 +120,10 @@ class Tool(BaseTool):
 
                 try:
                     if action == "search":
-                        results = c.search(symbol, limit=limit)
+                        # Sanitize symbol: Cymbal's CLI interprets hyphens as SQL operators.
+                        # Replace hyphens with underscores (common in code) and strip special chars.
+                        safe_symbol = symbol.replace("-", "_") if symbol else symbol
+                        results = c.search(safe_symbol, limit=limit)
                         all_results.append(cls._format_search_results(results, symbol))
                     elif action == "investigate":
                         symbol_name = symbol
@@ -127,8 +134,11 @@ class Tool(BaseTool):
                                 file_hint = parts[0]
                                 symbol_name = parts[1]
 
+                        # Sanitize for Cymbal search
+                        safe_name = symbol_name.replace("-", "_") if symbol_name else symbol_name
+
                         try:
-                            investigation = c.investigate(symbol_name, file_hint)
+                            investigation = c.investigate(safe_name, file_hint)
                             all_results.append(
                                 cls._format_investigation_results(investigation, symbol)
                             )
@@ -147,7 +157,8 @@ class Tool(BaseTool):
                             else:
                                 raise e
                     elif action == "find_references":
-                        references = c.find_references(symbol, limit=limit)
+                        safe_symbol = symbol.replace("-", "_") if symbol else symbol
+                        references = c.find_references(safe_symbol, limit=limit)
                         all_results.append(cls._format_reference_results(references, symbol))
                     else:
                         all_failed_queries.append(
@@ -169,7 +180,7 @@ class Tool(BaseTool):
                 for failed_msg in all_failed_queries:
                     coder.io.tool_error(failed_msg)
             else:
-                coder.io.tool_output("✅ All queries successful.")
+                coder.io.tool_output("✓ All queries successful.", type="tool-result")
 
             return "\n\n" + "=" * 40 + "\n\n".join(all_results)
 
@@ -296,14 +307,17 @@ class Tool(BaseTool):
         """Format output for ExploreCode tool."""
         color_start, color_end = color_markers(coder)
 
+        # Output header
+        tool_header(coder=coder, mcp_server=mcp_server, tool_response=tool_response)
+
         try:
-            params = json.loads(tool_response.function.arguments)
-        except json.JSONDecodeError:
+            params = ToolValidations.validate_params(
+                tool_response.function.arguments, cls.VALIDATIONS, cls.SCHEMA
+            )
+        except ToolError:
             coder.io.tool_error("Invalid Tool JSON")
             return
 
-        # Output header
-        tool_header(coder=coder, mcp_server=mcp_server, tool_response=tool_response)
         queries = params.get("queries", [])
         if queries:
             coder.io.tool_output("")
@@ -320,4 +334,4 @@ class Tool(BaseTool):
             coder.io.tool_output("")
 
         # Output footer
-        tool_footer(coder=coder, tool_response=tool_response)
+        tool_footer(coder=coder, tool_response=tool_response, params=params)

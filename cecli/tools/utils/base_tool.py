@@ -2,6 +2,7 @@ from abc import ABC, abstractmethod
 
 from cecli.tools.utils.helpers import handle_tool_error
 from cecli.tools.utils.output import print_tool_response
+from cecli.tools.validations import ToolValidations
 
 
 class BaseTool(ABC):
@@ -11,6 +12,9 @@ class BaseTool(ABC):
     # Note: NORM_NAME should be the lowercase version of the function name in the SCHEMA
     NORM_NAME = None
     SCHEMA = None
+
+    # Declarative validations (maps param paths to lists of validation method names)
+    VALIDATIONS = {}
 
     # Invocation tracking for detecting repeated tool calls
     _invocations = {}  # Dict to store last 3 invocations per tool
@@ -111,8 +115,8 @@ class BaseTool(ABC):
             for i, (prev_params_tuple, _) in enumerate(cls._invocations[tool_name]):
                 if prev_params_tuple == current_params_tuple:
                     error_msg = (
-                        f"Tool '{tool_name}' has been called with identical parameters recently. "
-                        "This request is denied."
+                        f"Tool '{tool_name}' has been called with identical parameters. "
+                        "Duplicate tool call rejected."
                     )
                     cls.on_duplicate_request(coder, **params)
                     return handle_tool_error(
@@ -125,6 +129,9 @@ class BaseTool(ABC):
             if len(cls._invocations[tool_name]) > 3:
                 cls._invocations[tool_name] = cls._invocations[tool_name][-3:]
 
+        # Apply declarative validations from VALIDATIONS dict
+        params = ToolValidations.validate_params(params, cls.VALIDATIONS, cls.SCHEMA)
+
         try:
             return cls.execute(coder, **params)
         except Exception as e:
@@ -132,7 +139,12 @@ class BaseTool(ABC):
 
     @classmethod
     def format_output(cls, coder, mcp_server, tool_response):
-        print_tool_response(coder=coder, mcp_server=mcp_server, tool_response=tool_response)
+        params = ToolValidations.validate_params(
+            tool_response.function.arguments, cls.VALIDATIONS, cls.SCHEMA
+        )
+        print_tool_response(
+            coder=coder, mcp_server=mcp_server, tool_response=tool_response, params=params
+        )
 
     @classmethod
     def on_duplicate_request(cls, coder, **kwargs):

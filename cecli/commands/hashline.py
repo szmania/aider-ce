@@ -9,6 +9,7 @@ class HashlineCommand(BaseCommand):
         "Enter agent mode to autonomously discover and manage relevant files. If no prompt"
         " provided, switches to hashline mode."
     )
+    show_completion_notification = True
 
     @classmethod
     async def execute(cls, io, coder, args, **kwargs):

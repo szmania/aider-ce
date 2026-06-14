@@ -50,6 +50,20 @@ class TestRepoMap:
             # close the open cache files, so Windows won't error
             del repo_map
 
+    def test_repomap_resolves_relative_paths(self):
+        """Relative paths from git status must resolve against repo_root."""
+        with IgnorantTemporaryDirectory() as temp_dir:
+            py_file = os.path.join(temp_dir, "module.py")
+            with open(py_file, "w", encoding="utf-8") as f:
+                f.write("def helper():\n    return 1\n")
+
+            io = InputOutput()
+            repo_map = RepoMap(main_model=self.GPT35, io=io, repo_root=temp_dir)
+            ranked = repo_map.get_ranked_tags([], ["module.py"], set(), set(), progress=False)
+            assert ranked is not None
+            assert len(ranked) > 0
+            del repo_map
+
     def test_repo_map_refresh_files(self):
         with GitTemporaryDirectory() as temp_dir:
             repo = git.Repo(temp_dir, odbt=git.GitCmdObjectDB)
@@ -443,6 +457,9 @@ class TestRepoMapAllLanguages:
     def setup(self, gpt35_model):
         self.GPT35 = gpt35_model
         self.fixtures_dir = Path(__file__).parent.parent / "fixtures" / "languages"
+
+    def test_language_bash(self):
+        self._test_language_repo_map("bash", "sh", "greet")
 
     def test_language_c(self):
         self._test_language_repo_map("c", "c", "main")

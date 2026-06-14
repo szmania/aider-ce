@@ -18,7 +18,8 @@ class LoadSkillCommand(BaseCommand):
         skill_names = args.strip().split()
 
         # Check if we're in agent mode
-        if not hasattr(coder, "edit_format") or coder.edit_format != "agent":
+        io.tool_output(coder.edit_format)
+        if not hasattr(coder, "edit_format") or coder.edit_format not in ("agent", "subagent"):
             io.tool_output("Skill loading is only available in agent mode.")
             return format_command_result(
                 io, "load-skill", "Skill loading is only available in agent mode"

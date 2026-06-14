@@ -1,7 +1,7 @@
-import json
-
 from cecli.tools.utils.base_tool import BaseTool
+from cecli.tools.utils.helpers import ToolError
 from cecli.tools.utils.output import color_markers, tool_footer, tool_header
+from cecli.tools.validations import ToolValidations
 
 
 class Tool(BaseTool):
@@ -34,19 +34,27 @@ class Tool(BaseTool):
         A place to allow the model to record freeform text as it
         iterates over tools to ideally help it guide itself to a proper solution
         """
-        coder.io.tool_output("🧠 Thoughts recorded in context")
+        coder.io.tool_output("🧠 Thoughts recorded in context", type="tool-result")
         return "🧠 Thoughts recorded in context. Please proceed with your task"
 
     @classmethod
     def format_output(cls, coder, mcp_server, tool_response):
         color_start, color_end = color_markers(coder)
-        params = json.loads(tool_response.function.arguments)
 
+        # Output header
         tool_header(coder=coder, mcp_server=mcp_server, tool_response=tool_response)
+
+        try:
+            params = ToolValidations.validate_params(
+                tool_response.function.arguments, cls.VALIDATIONS, cls.SCHEMA
+            )
+        except ToolError:
+            coder.io.tool_error("Invalid Tool JSON")
+            return
 
         coder.io.tool_output("")
         coder.io.tool_output(f"{color_start}Thoughts:{color_end}")
         coder.io.tool_output(params["content"])
         coder.io.tool_output("")
 
-        tool_footer(coder=coder, tool_response=tool_response)
+        tool_footer(coder=coder, tool_response=tool_response, params=params)

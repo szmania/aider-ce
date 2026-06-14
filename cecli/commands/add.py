@@ -16,6 +16,7 @@ from cecli.utils import is_image_file, run_fzf
 class AddCommand(BaseCommand):
     NORM_NAME = "add"
     DESCRIPTION = "Add files to the chat so cecli can edit them or review them in detail"
+    show_completion_notification = False
 
     @classmethod
     async def execute(cls, io, coder, args, **kwargs):
@@ -70,6 +71,20 @@ class AddCommand(BaseCommand):
             if len(confirm_fname) > 64:
                 confirm_fname = f".../{os.path.basename(confirm_fname)}"
 
+            # Check if the path matches any exempt-path regex patterns
+            exempt_paths = getattr(coder.args, "exempt_paths", None) or []
+            if exempt_paths:
+                try:
+                    rel_norm = os.path.relpath(fname, coder.root).replace("\\", "/")
+                except ValueError:
+                    rel_norm = str(fname).replace("\\", "/")
+                if any(re.search(p, rel_norm) for p in exempt_paths):
+                    io.tool_error(
+                        f"Path '{confirm_fname}' matches an exempt-path pattern. "
+                        "Skipping file creation."
+                    )
+                    continue
+
             if await io.confirm_ask(
                 f"No files matched '{confirm_fname}'. Do you want to create this file?"
             ):
@@ -83,12 +98,9 @@ class AddCommand(BaseCommand):
         for matched_file in sorted(all_matched_files):
             abs_file_path = coder.abs_root_path(matched_file)
 
-            if (
-                coder.repo
-                and coder.repo.git_ignored_file(matched_file)
-                and not coder.add_gitignore_files
-            ):
-                io.tool_error(f"Can't add {matched_file} which is in gitignore")
+            blocked = cls._add_blocked_message(coder, matched_file)
+            if blocked:
+                io.tool_error(blocked)
                 continue
 
             if abs_file_path in coder.abs_fnames:
@@ -239,3 +251,79 @@ class AddCommand(BaseCommand):
         help_text += "Files can be moved from read-only to editable status.\n"
         help_text += "Image files can be added if the model supports vision.\n"
         return help_text
+
+    @staticmethod
+    def _display_add_path(matched_file: str) -> str:
+        try:
+            label = os.path.relpath(matched_file)
+        except ValueError:
+            label = matched_file
+        if len(label) > 64:
+            label = f".../{os.path.basename(label)}"
+        return label
+
+    @staticmethod
+    def _git_repo_for_add_check(coder, matched_file: str):
+        """Resolve the GitRepo used for ignore checks (RepoSet-aware)."""
+        repo = coder.repo
+        if not repo:
+            return None, matched_file
+        if hasattr(repo, "repo_for_rel_path"):
+            git_repo = repo.repo_for_rel_path(matched_file)
+            try:
+                rel = repo.path_relative_to_repo(matched_file, git_repo)
+            except (ValueError, OSError):
+                rel = matched_file
+            return git_repo, rel
+        return repo, matched_file
+
+    @classmethod
+    def _add_blocked_message(cls, coder, matched_file: str) -> str | None:
+        """
+        Explain why /add refused a path. Distinguishes .gitignore vs .cecli.ignore when possible.
+        """
+        if not coder.repo or coder.add_gitignore_files:
+            return None
+        if not coder.repo.git_ignored_file(matched_file):
+            return None
+
+        display = cls._display_add_path(matched_file)
+        git_repo, rel = cls._git_repo_for_add_check(coder, matched_file)
+        if not git_repo:
+            return (
+                f"Can't add {display}: excluded by ignore rules for this session. "
+                "Confirm Settings \u2192 project folder is the git root for this file."
+            )
+
+        gitignore_hit = False
+        cecli_hit = False
+        if hasattr(git_repo, "_is_gitignored_by_pathspec"):
+            try:
+                gitignore_hit = bool(git_repo._is_gitignored_by_pathspec(rel))
+            except (ValueError, OSError):
+                gitignore_hit = False
+
+        ignore_file = getattr(git_repo, "cecli_ignore_file", None) or getattr(
+            git_repo, "aider_ignore_file", None
+        )
+        if ignore_file and Path(ignore_file).is_file() and hasattr(git_repo, "ignored_file_raw"):
+            try:
+                cecli_hit = bool(git_repo.ignored_file_raw(rel))
+            except (ValueError, OSError):
+                cecli_hit = False
+
+        if cecli_hit and not gitignore_hit:
+            return (
+                f"Can't add {display}: blocked by {Path(ignore_file).name} "
+                "(cecli ignore rules), not .gitignore."
+            )
+        if gitignore_hit:
+            return (
+                f"Can't add {display}: matched .gitignore under the session workspace. "
+                "If this is normal tracked source, check the project folder in Settings."
+            )
+        return (
+            f"Can't add {display}: excluded by ignore rules for this session "
+            "(.gitignore and/or cecli ignore). "
+            "Confirm the project folder is the git root that contains this file."
+        )

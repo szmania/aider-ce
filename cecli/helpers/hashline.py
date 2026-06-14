@@ -236,6 +236,102 @@ def extract_hashline_range(
     return original_range_content
 
 
+def resolve_content_to_hashline_ids(
+    original_content: str,
+    start_value: str,
+    end_value: str = None,
+) -> tuple:
+    """
+    Resolve potential line content values to proper hashline content IDs.
+
+    If start_value or end_value does not look like a content ID (hash),
+    search for the content in the original file using substring matching.
+
+    For start_value: Only resolves if exactly one line contains it as a
+    substring (unique match).
+
+    For end_value: Resolves by finding the closest line (by position) to
+    the resolved start line that contains it as a substring.
+
+    This handles the case where LLMs return entire line content or fragments
+    instead of content IDs in edit parameters.
+
+    Args:
+        original_content: Original file content (without hash prefixes)
+        start_value: The start_line value from the edit
+        end_value: The end_line value from the edit (optional)
+
+    Returns:
+        tuple: (resolved_start, resolved_end) with hash IDs or original values
+               unchanged if resolution is not possible
+    """
+    if not original_content:
+        return start_value, end_value
+
+    def _looks_like_content_id(value: str) -> bool:
+        """Check if value looks like a content ID rather than line content."""
+        if value in ("@000", "000@"):
+            return True
+        # Try to normalize - if it succeeds, it's a valid content ID
+        try:
+            normalize_hashline(value)
+            return True
+        except (ContentHashError, ValueError):
+            return False
+
+    def _find_substring_matches(lines, value):
+        """Find all line indices where the value appears as a substring."""
+        value_stripped = value.rstrip("\r\n")
+        return [i for i, line in enumerate(lines) if value_stripped in line]
+
+    def _resolve_to_hash_id(lines, idx, hp):
+        """Generate a hash ID for the line at the given index."""
+        hash_id = hp.generate_public_id(lines[idx], idx)
+        return hash_id + "::"
+
+    lines = original_content.splitlines()
+    hp = HashPos(original_content)
+
+    # Resolve start_value first (must be unique substring match)
+    resolved_start = start_value
+    resolved_start_idx = None
+
+    if start_value is not None and not _looks_like_content_id(start_value):
+        containing_indices = _find_substring_matches(lines, start_value)
+        if len(containing_indices) == 1:
+            resolved_start_idx = containing_indices[0]
+            resolved_start = _resolve_to_hash_id(lines, resolved_start_idx, hp)
+    elif start_value is not None and _looks_like_content_id(start_value):
+        # Already a content ID - try to resolve it to find the line position
+        # for proximity matching with end_value
+        try:
+            normalized = normalize_hashline(start_value)
+            candidates = hp.resolve_to_lines(normalized)
+            if candidates:
+                resolved_start_idx = candidates[0]
+        except (ContentHashError, ValueError):
+            pass
+
+    # Resolve end_value based on proximity to start position
+    resolved_end = end_value
+
+    if end_value is not None and not _looks_like_content_id(end_value):
+        containing_indices = _find_substring_matches(lines, end_value)
+        if len(containing_indices) == 1:
+            # Unique match - resolve directly
+            idx = containing_indices[0]
+            resolved_end = _resolve_to_hash_id(lines, idx, hp)
+        elif len(containing_indices) > 1 and resolved_start_idx is not None:
+            # Multiple matches - pick closest to start position
+            closest_idx = min(
+                containing_indices,
+                key=lambda idx: abs(idx - resolved_start_idx),
+            )
+            resolved_end = _resolve_to_hash_id(lines, closest_idx, hp)
+
+    return resolved_start, resolved_end
+
+
 def find_best_line(content, target_line_num, content_to_lines, used_lines, hashlines):
     """
     Find the best matching line for given content near target_line_num.
@@ -327,18 +423,46 @@ def get_hashline_diff(
     elif operation == "insert":
         find_text = ""
         # For insert operations, we need to calculate hashlines for the text to insert
-        # The text should be hashed starting at the line after the end line
+        # with surrounding context for proper neighborhood-based hashing
         if text:
-            # Insert after the end line, so start hashline at found_end + 2 (1-indexed)
-            replace_text = hashline(text, start_line=found_end + 2)
+            original_lines = original_content.splitlines()
+            text_lines = text.splitlines()
+            # Get up to 3 lines of context before (ending at found_end) and after the insertion point
+            ctx_before = original_lines[max(0, found_end - 2) : found_end + 1]
+            ctx_after = original_lines[found_end + 1 : min(len(original_lines), found_end + 4)]
+            # Build a mini document with context so HashPos computes correct neighborhood hashes
+            mini_lines = ctx_before + text_lines + ctx_after
+            mini_text = "\n".join(mini_lines)
+            hashed_mini = hashline(mini_text)
+            hashed_mini_lines = hashed_mini.splitlines(keepends=True)
+            # Extract only the replacement text portion's hashlines
+            replace_lines_hashed = hashed_mini_lines[
+                len(ctx_before) : len(ctx_before) + len(text_lines)
+            ]
+            replace_text = "".join(replace_lines_hashed)
         else:
             replace_text = ""
     # For replace operation, we're replacing the range
     elif operation == "replace":
         find_text = original_range_content
-        # For replace operations, the replacement text should be hashed starting at the start line
+        # For replace operations, the replacement text should be hashed
+        # with surrounding context for proper neighborhood-based hashing
         if text:
-            replace_text = hashline(text, start_line=found_start + 1)
+            original_lines = original_content.splitlines()
+            text_lines = text.splitlines()
+            # Get up to 3 lines of context before and after the range
+            ctx_before = original_lines[max(0, found_start - 3) : found_start]
+            ctx_after = original_lines[found_end + 1 : min(len(original_lines), found_end + 4)]
+            # Build a mini document with context so HashPos computes correct neighborhood hashes
+            mini_lines = ctx_before + text_lines + ctx_after
+            mini_text = "\n".join(mini_lines)
+            hashed_mini = hashline(mini_text)
+            hashed_mini_lines = hashed_mini.splitlines(keepends=True)
+            # Extract only the replacement text portion's hashlines
+            replace_lines_hashed = hashed_mini_lines[
+                len(ctx_before) : len(ctx_before) + len(text_lines)
+            ]
+            replace_text = "".join(replace_lines_hashed)
         else:
             replace_text = ""
     else:
@@ -622,6 +746,20 @@ def _apply_start_stitching(
                     # The replacement line matches the line being replaced
                     # Don't stitch to a line in lines_before_range
                     continue
+
+                # Require 2 consecutive matching lines to avoid false positives
+                # (single boilerplate lines like "import sys" or "def foo():"
+                # are too likely to be coincidental)
+                if line_idx + 1 < len(replacement_lines) and match_index + 1 < len(
+                    lines_before_range_normalized
+                ):
+                    next_repl = replacement_lines[line_idx + 1]
+                    next_repl_stripped = strip_hashline(next_repl)
+                    if not next_repl_stripped.endswith("\n"):
+                        next_repl_stripped += "\n"
+                    if next_repl_stripped != lines_before_range_normalized[match_index + 1]:
+                        continue  # Only 1 line matches — likely coincidental
+
                 # Found a line that already exists before the range!
                 # This is a non-contiguous match - we need to "stitch" the replacement
                 # at this exact content match to prevent duplicate code structures
@@ -666,9 +804,9 @@ def _apply_start_stitching(
                     start_idx = new_start_idx
                     replacement_lines = new_replacement_lines
                 else:
-                    # Can't extend backward due to overlap, but we can still truncate
-                    # the replacement text to avoid duplication
-                    replacement_lines = new_replacement_lines
+                    # Can't extend backward due to overlap with another operation
+                    # Don't truncate without extending — that would silently lose content
+                    continue  # Try next line instead
 
                 # We've found our stitching point, break out of the loop
                 break
@@ -744,6 +882,15 @@ def _apply_end_stitching(
             # Check if this line exists anywhere in lines_after_range_normalized
             try:
                 match_index = lines_after_range_normalized.index(replacement_line_stripped)
+
+                # Require 2 consecutive matching lines to reduce false positives
+                if line_idx - 1 >= 0 and match_index - 1 >= 0:
+                    prev_repl = replacement_lines[line_idx - 1]
+                    prev_repl_stripped = strip_hashline(prev_repl)
+                    if not prev_repl_stripped.endswith("\n"):
+                        prev_repl_stripped += "\n"
+                    if prev_repl_stripped != lines_after_range_normalized[match_index - 1]:
+                        continue  # Only 1 line matches — likely coincidental
                 # Found a line that already exists after the range!
                 # This is a non-contiguous match - we need to "stitch" the replacement
                 # at this exact content match to prevent duplicate code structures
@@ -868,109 +1015,6 @@ def _apply_range_shifting(hashed_lines, resolved_ops):
                         if not overlap:
                             resolved["start_idx"] = new_start
                             resolved["end_idx"] = new_end
-
-    return resolved_ops
-
-
-# Regex configuration
-RE_CODE_NOISE = r'(#.*|//.*|/\*[\s\S]*?\*/|"(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\])*\')'
-
-
-def get_brace_balance(lines_to_check: list[str]) -> int:
-    """
-    Calculates the net curly brace debt of a list of lines.
-    Automatically strips hashlines, comments, and string literals.
-    """
-    text = "".join(lines_to_check)
-    clean_code = strip_hashline(text)
-    clean_code = re.sub(RE_CODE_NOISE, "", clean_code)
-    return clean_code.count("{") - clean_code.count("}")
-
-
-def _apply_closure_safeguard(hashed_lines, resolved_ops):
-    """
-    Enhanced closure safeguard with dynamic bidirectional search.
-    """
-    # Tune these to adjust how far the 'healing' logic searches
-    MAX_LOOK_DOWN = 5
-    # Note: We'll calculate the actual MAX_LOOK_UP per operation
-    # to ensure we don't scan past the start_idx.
-
-    for i, resolved in enumerate(resolved_ops):
-        op = resolved["op"]
-        if op["operation"] not in {"replace", "delete"}:
-            continue
-
-        replacement_text = op.get("text", "") or ""
-        replacement_lines = replacement_text.splitlines(keepends=True)
-
-        # --- PHASE 1: BIDIRECTIONAL STRUCTURAL HEALING ---
-        if get_brace_balance([replacement_text]) == 0:
-            start_idx = resolved["start_idx"]
-            orig_end_idx = resolved["end_idx"]
-
-            if get_brace_balance(hashed_lines[start_idx : orig_end_idx + 1]) != 0:
-                # Dynamic Search List Generation
-                # We limit look-up so we don't scan before the start_idx
-                actual_max_up = orig_end_idx - start_idx
-                actual_max_down = max(MAX_LOOK_DOWN, orig_end_idx - start_idx)
-                search_offsets = []
-
-                # Generate alternating offsets: [1, -1, 2, -2, ... N]
-                for dist in range(1, max(actual_max_down, actual_max_up) + 1):
-                    if dist <= actual_max_down:
-                        search_offsets.append(dist)
-                    if dist <= actual_max_up:
-                        search_offsets.append(-dist)
-
-                for offset in search_offsets:
-                    candidate_end = orig_end_idx + offset
-
-                    # Safety: check bounds and avoid overlapping other ops
-                    if candidate_end < start_idx or candidate_end >= len(hashed_lines):
-                        continue
-
-                    if any(
-                        j != i and (other["start_idx"] <= candidate_end <= other["end_idx"])
-                        for j, other in enumerate(resolved_ops)
-                    ):
-                        continue
-
-                    if get_brace_balance(hashed_lines[start_idx : candidate_end + 1]) == 0:
-                        resolved["end_idx"] = candidate_end
-                        break
-
-        # --- PHASE 2: CONTRACTION (Indentation Guard) ---
-        # Prevents replacing an outer-scope brace if the replacement text already
-        # includes its own correctly indented closer.
-        if not replacement_lines:
-            continue
-
-        last_repl_line = strip_hashline(replacement_lines[-1])
-        last_repl_stripped = last_repl_line.strip().rstrip(";,")
-
-        if last_repl_stripped and last_repl_stripped[-1] in "})]":
-            # Calculate replacement indent
-            repl_indent = len(last_repl_line) - len(last_repl_line.lstrip(" \t"))
-
-            if resolved["end_idx"] < len(hashed_lines):
-                end_line = strip_hashline(hashed_lines[resolved["end_idx"]])
-                check_end = end_line.strip().rstrip(";,")
-
-                if check_end and check_end[-1] in "})]":
-                    # Calculate indent of the existing brace in the file
-                    file_indent = len(end_line) - len(end_line.lstrip(" \t"))
-
-                    # If the file's brace is less indented, it belongs to an outer scope
-                    if file_indent < repl_indent and resolved["end_idx"] > resolved["start_idx"]:
-                        new_end_idx = resolved["end_idx"] - 1
-
-                        # Safety: don't contract into another operation's territory
-                        if not any(
-                            j != i and (other["start_idx"] <= new_end_idx <= other["end_idx"])
-                            for j, other in enumerate(resolved_ops)
-                        ):
-                            resolved["end_idx"] = new_end_idx
 
     return resolved_ops
 
@@ -1383,9 +1427,6 @@ def apply_hashline_operations(
     resolved_ops = _merge_replace_operations(resolved_ops)
     # Apply content-aware range expansion/shifting for replace operations
     # resolved_ops = _apply_range_shifting(hashed_lines, resolved_ops)
-    # Apply closure safeguard for braces/brackets
-    resolved_ops = _apply_closure_safeguard(hashed_lines, resolved_ops)
-
     # Sort by start_idx descending to apply from bottom to top
     # When operations have same start_idx, apply in order: insert, replace, delete
     # This ensures correct behavior when multiple operations target the same line
@@ -1430,23 +1471,23 @@ def apply_hashline_operations(
                     # Check for overlapping lines to prevent duplication
                     # This handles cases where the model underspecifies the range and
                     # the replacement text includes lines that already exist after the range
-                    max_overlap_check = 2  # Check up to 2 lines for overlap
+                    # max_overlap_check = 2  # Check up to 2 lines for overlap
 
                     # Check for overlapping lines BEFORE the range (bidirectional stitching)
-                    start_idx, replacement_lines = _apply_start_stitching(
-                        hashed_lines,
-                        start_idx,
-                        end_idx,
-                        replacement_lines,
-                        resolved_ops,
-                        resolved,
-                        max_overlap_check,
-                    )
+                    # start_idx, replacement_lines = _apply_start_stitching(
+                    #    hashed_lines,
+                    #    start_idx,
+                    #    end_idx,
+                    #    replacement_lines,
+                    #    resolved_ops,
+                    #    resolved,
+                    #    max_overlap_check,
+                    # )
 
                     # Now check for overlapping lines AFTER the range
-                    end_idx, replacement_lines = _apply_end_stitching(
-                        hashed_lines, start_idx, end_idx, replacement_lines, max_overlap_check
-                    )
+                    # end_idx, replacement_lines = _apply_end_stitching(
+                    #    hashed_lines, start_idx, end_idx, replacement_lines, max_overlap_check
+                    # )
 
                     hashed_lines[start_idx : end_idx + 1] = replacement_lines
                 else:

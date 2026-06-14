@@ -17,8 +17,11 @@ Usage:
 from __future__ import annotations
 
 import gc
+import os
 import sys
+import tracemalloc
 from collections import Counter
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
@@ -349,3 +352,42 @@ class MemorySnapshot:
 
         results.sort(key=lambda x: x.size_bytes, reverse=True)
         return results[:n]
+
+
+@contextmanager
+def track_memory(label="Block"):
+    """Tracks both OS-level RSS memory and Python-level allocations."""
+    import psutil
+
+    process = psutil.Process(os.getpid())
+
+    # OS Baseline
+    rss_before = process.memory_info().rss
+
+    tracemalloc.start(10)
+    snapshot_before = tracemalloc.take_snapshot()
+    try:
+        yield
+    finally:
+        gc.collect()
+        snapshot_after = tracemalloc.take_snapshot()
+        tracemalloc.stop()
+
+        # OS After
+        rss_after = process.memory_info().rss
+
+        # Calculate changes
+        stats = snapshot_after.compare_to(snapshot_before, "lineno")
+        tracemalloc_total = sum(stat.size_diff for stat in stats)
+        rss_diff = rss_after - rss_before
+
+        print(f"\n=== Memory Report: {label} ===")
+        print(f"OS RSS Change:      {rss_diff / (1024 * 1024):.2f} MB")
+        print(f"Tracemalloc Change: {tracemalloc_total / (1024 * 1024):.2f} MB")
+        print(
+            f"Invisible to Python (C-Extensions/Buffers): {(rss_diff - tracemalloc_total) / (1024 * 1024):.2f} MB\n"
+        )
+
+        print("Top 5 Python Allocations:")
+        for stat in stats[:5]:
+            print(stat)

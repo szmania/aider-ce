@@ -1,18 +1,16 @@
 """Integration of hooks into the cecli agent loop."""
 
 import time
-from typing import Any, Optional
+from typing import Any
 
-from .manager import HookManager
 from .types import HookType
 
 
 class HookIntegrationBase:
-    """Class to integrate hooks into the cecli agent loop."""
+    """Class to integrate hooks into the cecli agent loop.
 
-    def __init__(self, hook_manager: Optional[HookManager] = None):
-        """Initialize hook integration."""
-        self.hook_manager = hook_manager or HookManager()
+    Routes hook calls to the per-coder HookManager via HookService.
+    """
 
     async def call_start_hooks(self, coder: Any) -> bool:
         """Call start hooks when agent session begins.
@@ -23,12 +21,14 @@ class HookIntegrationBase:
         Returns:
             True if all hooks succeeded, False otherwise.
         """
+        from .service import HookService
+
+        manager = HookService.get_manager(coder)
         metadata = {
             "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
             "coder_type": coder.__class__.__name__,
         }
-
-        return await self.hook_manager.call_hooks(HookType.START.value, coder, metadata)
+        return await manager.call_hooks(HookType.START.value, coder, metadata)
 
     async def call_end_hooks(self, coder: Any) -> bool:
         """Call end hooks when agent session ends.
@@ -39,11 +39,14 @@ class HookIntegrationBase:
         Returns:
             True if all hooks succeeded, False otherwise.
         """
+        from .service import HookService
+
+        manager = HookService.get_manager(coder)
         metadata = {
             "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
             "coder_type": coder.__class__.__name__,
         }
-        return await self.hook_manager.call_hooks(HookType.END.value, coder, metadata)
+        return await manager.call_hooks(HookType.END.value, coder, metadata)
 
     async def call_on_message_hooks(self, coder: Any, message: str) -> bool:
         """Call on_message hooks when a new message is received.
@@ -55,12 +58,15 @@ class HookIntegrationBase:
         Returns:
             True if all hooks succeeded, False otherwise.
         """
+        from .service import HookService
+
+        manager = HookService.get_manager(coder)
         metadata = {
             "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
             "message": message,
             "message_length": len(message),
         }
-        return await self.hook_manager.call_hooks(HookType.ON_MESSAGE.value, coder, metadata)
+        return await manager.call_hooks(HookType.ON_MESSAGE.value, coder, metadata)
 
     async def call_end_message_hooks(self, coder: Any, message: str) -> bool:
         """Call end_message hooks when message processing completes.
@@ -72,12 +78,15 @@ class HookIntegrationBase:
         Returns:
             True if all hooks succeeded, False otherwise.
         """
+        from .service import HookService
+
+        manager = HookService.get_manager(coder)
         metadata = {
             "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
             "message": message,
             "message_length": len(message),
         }
-        return await self.hook_manager.call_hooks(HookType.END_MESSAGE.value, coder, metadata)
+        return await manager.call_hooks(HookType.END_MESSAGE.value, coder, metadata)
 
     async def call_pre_tool_hooks(self, coder: Any, tool_name: str, arg_string: str) -> bool:
         """Call pre_tool hooks before tool execution.
@@ -90,12 +99,15 @@ class HookIntegrationBase:
         Returns:
             True if all hooks succeeded (tool execution should proceed), False otherwise.
         """
+        from .service import HookService
+
+        manager = HookService.get_manager(coder)
         metadata = {
             "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
             "tool_name": tool_name,
             "arg_string": arg_string,
         }
-        return await self.hook_manager.call_hooks(HookType.PRE_TOOL.value, coder, metadata)
+        return await manager.call_hooks(HookType.PRE_TOOL.value, coder, metadata)
 
     async def call_post_tool_hooks(
         self, coder: Any, tool_name: str, arg_string: str, output: str
@@ -111,14 +123,16 @@ class HookIntegrationBase:
         Returns:
             True if all hooks succeeded, False otherwise.
         """
+        from .service import HookService
+
+        manager = HookService.get_manager(coder)
         metadata = {
             "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
             "tool_name": tool_name,
             "arg_string": arg_string,
             "output": output,
         }
-        return await self.hook_manager.call_hooks(HookType.POST_TOOL.value, coder, metadata)
+        return await manager.call_hooks(HookType.POST_TOOL.value, coder, metadata)
 
 
-# Global instance for easy access
 HookIntegration = HookIntegrationBase()

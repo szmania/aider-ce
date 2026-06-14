@@ -158,6 +158,17 @@ Sessions are stored as JSON files in the `.cecli/sessions/` directory within you
 ### Version Control
 - Consider adding `.cecli/sessions/` to your `.gitignore` if sessions contain sensitive information
 
+### Optional encryption (AES-256-GCM)
+
+When enabled, session files on disk are encrypted (plaintext JSON is unchanged when disabled).
+
+```bash
+export CECLI_SESSION_KEY="$(python -c 'import os,base64; print(base64.urlsafe_b64encode(os.urandom(32)).decode())')"
+cecli --session-encrypt --auto-save
+```
+
+Or use `--session-key-file` pointing at a file with the same urlsafe-base64 32-byte key.
+
 ## Troubleshooting
 
 ### Session Not Found

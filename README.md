@@ -20,6 +20,7 @@ LLMs are a part of our lives from here on out so join us in learning about and c
 * [MCP Configuration](https://github.com/dwash96/cecli/blob/main/cecli/website/docs/config/mcp.md)
 * [TUI Configuration](https://github.com/dwash96/cecli/blob/main/cecli/website/docs/config/tui.md)
 * [Skills](https://github.com/dwash96/cecli/blob/main/cecli/website/docs/config/skills.md)
+* [Subagents](https://github.com/dwash96/cecli/blob/main/cecli/website/docs/config/subagents.md)
 * [Session Management](https://github.com/dwash96/cecli/blob/main/cecli/website/docs/sessions.md)
 * [Hooks](https://github.com/dwash96/cecli/blob/main/cecli/website/docs/config/hooks.md)
 * [Workspaces](https://github.com/dwash96/cecli/blob/main/cecli/website/docs/config/workspaces.md)
@@ -142,7 +143,7 @@ The current priorities are to improve core capabilities and user experience of t
   * [ ] Build an explicit workflow and local tooling for internal discovery mechanisms
 
 4. **Context Delivery** - [Discussion](https://github.com/dwash96/cecli/issues/47)
-  * [ ] Use workflow for internal discovery to better target file snippets needed for specific tasks
+  * [x] Use workflow for internal discovery to better target file snippets needed for specific tasks (ExploreCode and ReadRange)
   * [x] Add support for partial files and code snippets in model completion messages
   * [x] Update message request structure for optimal caching
 
@@ -161,12 +162,12 @@ The current priorities are to improve core capabilities and user experience of t
   * [x] Add a dynamic tool discovery tool to allow the system to have only the tools it needs in context
 
 7. **Sub Agents**
-  * [ ] Add `/fork` and `/rejoin` commands to manually manage parts of the conversation history
+  * [x] Add `/invoke-agent` command to manually branch a sub agent and return a summary to the main context
   * [x] Add an instance-able view of the conversation system so sub agents get their own context and workspaces
   * [x] Modify coder classes to have discrete identifiers for themselves/management utilities for them to have their own slices of the world
   * [x] Refactor global files like todo lists to live inside instance folders to avoid state conflicts
-  * [ ] Add a `spawn` tool that launches a sub agent as a background command that the parent model waits for to finish
-  * [ ] Add visibility into active sub agent calls in TUI
+  * [x] Add a `Delegate` tool that launches a sub agent as a background command that the parent model waits for to finish
+  * [x] Add visibility into active sub agent calls in TUI
 
 8. **Hooks**
   * [x] Add hooks base class for user defined python hooks with an execute method with type and priority settings
@@ -180,7 +181,7 @@ The current priorities are to improve core capabilities and user experience of t
   * [x] Update internal file diff representation to support hashline propagation
 
 10. **Dynamic Context Management** 
-  * [ ] Update compaction to use observational memory sub agent calls to generate decision records that are used as the compaction basis
+  * [x] Update compaction to use observational memory sub agent calls to generate decision records that are used as the compaction basis
   * [ ] Persist decision records to disk for sessions with some settings for managing lifetimes of such persistence
   * [ ] Integrate RLM to extract information from decision records on disk and other definable notes
   * [ ] Add a "describe" tool that launches a sub agent workflow that populates an RLM call's context with:

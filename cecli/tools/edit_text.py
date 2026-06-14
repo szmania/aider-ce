@@ -1,9 +1,8 @@
-import json
-
 from cecli.helpers.hashline import (
     ContentHashError,
     apply_hashline_operations,
     get_hashline_diff,
+    resolve_content_to_hashline_ids,
     strip_hashline,
 )
 from cecli.tools.utils.base_tool import BaseTool
@@ -15,6 +14,7 @@ from cecli.tools.utils.helpers import (
     validate_file_for_edit,
 )
 from cecli.tools.utils.output import color_markers, tool_footer, tool_header
+from cecli.tools.validations import ToolValidations
 
 VALID_OPERATIONS = {"replace", "delete", "insert"}
 OPERATION_NOUNS = {
@@ -27,18 +27,23 @@ OPERATION_NOUNS = {
 class Tool(BaseTool):
     NORM_NAME = "edittext"
     TRACK_INVOCATIONS = False
+    VALIDATIONS = {
+        "edits": ["coerce_list"],
+        "edits[]": ["coerce_dict"],
+    }
     SCHEMA = {
         "type": "function",
         "function": {
             "name": "EditText",
             "description": (
-                "Edit text in one or more files using content hash markers. "
+                "Edit text in one or more files using content ID markers. "
                 "Supports replace, delete, and insert operations in a single call. "
-                "Can handle an array of up to 10 edits across multiple files. "
+                "Can handle an array of edits across multiple files. "
                 "Each edit must include its own file_path and operation type. "
-                "Use content hash ranges with the start_line and end_line parameters with format "
-                "`{4 char hash}` (without the braces). For empty files, use `@000` as the "
-                "content hash references."
+                "Use content ID ranges with the start_line and end_line parameters with format "
+                "`content_id::` (the content id with the :: demarcator). For empty files, use `@000` as the "
+                "content ID references. "
+                "Edits within a file must not be adjacent or overlapping."
             ),
             "parameters": {
                 "type": "object",
@@ -61,25 +66,24 @@ class Tool(BaseTool):
                                         " after start_line). Defaults to 'replace'."
                                     ),
                                 },
-                                "text": {
-                                    "type": "string",
-                                    "description": (
-                                        "Text content for replace/insert operations. "
-                                        "Not required for delete operations."
-                                    ),
-                                },
                                 "start_line": {
                                     "type": "string",
                                     "description": (
-                                        "Content hash for start line: `{4 char hash}` (without "
-                                        "the braces)"
+                                        "Content ID for start line. Only include the id and demarcator."
                                     ),
                                 },
                                 "end_line": {
                                     "type": "string",
                                     "description": (
-                                        "Content hash for end line: `{4 char hash}` (without the"
-                                        " braces)"
+                                        "Content ID for end line. Only include the id and demarcator."
+                                    ),
+                                },
+                                "text": {
+                                    "type": "string",
+                                    "description": (
+                                        "Text content for replace operations. "
+                                        "Empty string for delete operations. "
+                                        "Do not include content IDs inside replacement text"
                                     ),
                                 },
                             },
@@ -88,7 +92,6 @@ class Tool(BaseTool):
                         "description": "Array of edits to apply.",
                     },
                     "change_id": {"type": "string"},
-                    "dry_run": {"type": "boolean", "default": False},
                 },
                 "required": ["edits"],
             },
@@ -109,9 +112,23 @@ class Tool(BaseTool):
         Can handle single edit or array of edits across multiple files.
         Each edit object must include its own file_path.
         """
+        from cecli.helpers.conversation import ConversationService, MessageTag
+
         if not coder.edit_allowed:
-            raise ToolError(
-                "Please call `ReadRange` first to make sure edits are appropriately scoped"
+            ConversationService.get_manager(coder).add_message(
+                message_dict=dict(
+                    role="user",
+                    content=(
+                        "Please call `ReadRange` on files you intend to edit to"
+                        " make sure edits are appropriately targeted."
+                    ),
+                ),
+                tag=MessageTag.CUR,
+                hash_key=("edit_text", "reminder"),
+                promotion=ConversationService.get_manager(coder).DEFAULT_TAG_PROMOTION_VALUE,
+                mark_for_delete=0,
+                mark_for_demotion=1,
+                force=True,
             )
 
         tool_name = "EditText"
@@ -168,6 +185,13 @@ class Tool(BaseTool):
                             )
                             edit_start_line = edit.get("start_line")
                             edit_end_line = edit.get("end_line")
+
+                            # Try to resolve line content values to content IDs
+                            # This handles cases where LLMs pass actual line content
+                            # instead of content ID markers
+                            edit_start_line, edit_end_line = resolve_content_to_hashline_ids(
+                                original_content, edit_start_line, edit_end_line
+                            )
 
                             # Validate required fields based on operation type
                             if operation in ("replace", "insert"):
@@ -231,7 +255,7 @@ class Tool(BaseTool):
                         if new_content != original_content:
                             file_successful_edits += len(successful_ops)
                         else:
-                            raise ToolError("Invalid Edit - Edit Results In Same Content")
+                            raise ToolError("Invalid Edit - Update content ID bounds")
 
                         if len(failed_ops):
                             for failed_op in failed_ops:
@@ -369,12 +393,16 @@ class Tool(BaseTool):
     def format_output(cls, coder, mcp_server, tool_response):
         color_start, color_end = color_markers(coder)
 
-        try:
-            params = json.loads(tool_response.function.arguments)
-        except json.JSONDecodeError:
-            coder.io.tool_error("Invalid Tool JSON")
-
+        # Output header
         tool_header(coder=coder, mcp_server=mcp_server, tool_response=tool_response)
+
+        try:
+            params = ToolValidations.validate_params(
+                tool_response.function.arguments, cls.VALIDATIONS, cls.SCHEMA
+            )
+        except ToolError:
+            coder.io.tool_error("Invalid Tool JSON")
+            return
 
         # Group edits by file_path for display
         edits_by_file = {}
@@ -425,7 +453,7 @@ class Tool(BaseTool):
                                     text=strip_hashline(text),
                                 )
                         except ContentHashError as e:
-                            diff_output = f"Content hash verification failed: {str(e)}"
+                            diff_output = f"content ID verification failed: {str(e)}"
                         except Exception:
                             pass
 
@@ -449,4 +477,4 @@ class Tool(BaseTool):
                     coder.io.tool_output(range_info)
                     coder.io.tool_output("")
 
-        tool_footer(coder=coder, tool_response=tool_response)
+        tool_footer(coder=coder, tool_response=tool_response, params=params)

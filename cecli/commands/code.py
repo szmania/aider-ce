@@ -6,6 +6,7 @@ from cecli.commands.utils.base_command import BaseCommand
 class CodeCommand(BaseCommand):
     NORM_NAME = "code"
     DESCRIPTION = "Ask for changes to your code. If no prompt provided, switches to code mode."
+    show_completion_notification = True
 
     @classmethod
     async def execute(cls, io, coder, args, **kwargs):

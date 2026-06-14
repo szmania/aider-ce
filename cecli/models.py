@@ -592,11 +592,25 @@ class Model(ModelSettings):
 
             valid_model_settings_fields = {f.name for f in fields(ModelSettings)}
 
+            # Detect structured keys: api_settings, api, llm_settings, or llm keys indicate the new format
+            has_structured_keys = any(
+                k in self.override_kwargs
+                for k in (
+                    "api_settings",
+                    "api-settings",
+                    "llm_settings",
+                    "llm-settings",
+                    "api",
+                    "llm",
+                    "agent",
+                )
+            )
+
             for key, value in self.override_kwargs.items():
-                if key == "model_settings" or key == "model-settings":
+                if key in ("agent", "model_settings", "model-settings"):
                     if not isinstance(value, dict):
                         raise ValueError(
-                            f"override_kwargs 'model_settings' must be a dict, got {type(value)}"
+                            f"override_kwargs '{key}' must be a dict, got {type(value)}"
                         )
                     for setting_key, setting_value in value.items():
                         if setting_key not in valid_model_settings_fields:
@@ -605,6 +619,26 @@ class Model(ModelSettings):
                                 f"Must be one of: {sorted(valid_model_settings_fields)}"
                             )
                         setattr(self, setting_key, setting_value)
+                elif has_structured_keys and key in ("api", "api_settings", "api-settings"):
+                    # api_settings: merge each sub-key into extra_params
+                    if not isinstance(value, dict):
+                        raise ValueError(
+                            f"override_kwargs '{key}' must be a dict, got {type(value)}"
+                        )
+                    for api_key, api_value in value.items():
+                        if isinstance(api_value, dict) and isinstance(
+                            self.extra_params.get(api_key), dict
+                        ):
+                            self.extra_params[api_key] = {**self.extra_params[api_key], **api_value}
+                        else:
+                            self.extra_params[api_key] = api_value
+                elif has_structured_keys and key in ("llm", "llm_settings", "llm-settings"):
+                    # llm_settings: merge into self.info
+                    if not isinstance(value, dict):
+                        raise ValueError(
+                            f"override_kwargs '{key}' must be a dict, got {type(value)}"
+                        )
+                    self.info = {**self.info, **value}
                 elif isinstance(value, dict) and isinstance(self.extra_params.get(key), dict):
                     self.extra_params[key] = {**self.extra_params[key], **value}
                 else:
@@ -1206,9 +1240,12 @@ class Model(ModelSettings):
             kwargs["max_tokens"] = max_tokens
         if "max_tokens" in kwargs and kwargs["max_tokens"]:
             kwargs["max_completion_tokens"] = kwargs.pop("max_tokens")
-        if self.is_ollama() and "num_ctx" not in kwargs:
-            num_ctx = int(self.token_count(messages) * 1.25) + 8192
-            kwargs["num_ctx"] = num_ctx
+        if self.is_ollama():
+            # Ollama defaults to ~5m unload unless every request sets keep_alive (see Ollama API docs).
+            kwargs.setdefault("keep_alive", -1)
+            if "num_ctx" not in kwargs:
+                num_ctx = int(self.token_count(messages) * 1.25) + 8192
+                kwargs["num_ctx"] = num_ctx
         key = json.dumps(kwargs, sort_keys=True).encode()
         hash_object = hashlib.sha1(key)
         if "timeout" not in kwargs:
@@ -1278,7 +1315,14 @@ class Model(ModelSettings):
 
                 if override_kwargs:
                     kwargs = deep_merge(kwargs, override_kwargs)
-                res = await litellm.acompletion(**kwargs)
+
+                kwargs = deep_merge(kwargs, {"allowed_openai_params": ["tools", "tool_choice"]})
+
+                completion_coro = litellm.acompletion(**kwargs)
+                res, interrupted = await coroutines.interruptible(completion_coro, interrupt_event)
+                if interrupted:
+                    raise KeyboardInterrupt("Interrupted during acompletion")
+
                 return hash_object, res
             except litellm.ContextWindowExceededError as err:
                 raise err
@@ -1326,19 +1370,34 @@ class Model(ModelSettings):
         messages,
         max_tokens=None,
         override_kwargs={},
+        coder=None,
     ):
         from cecli.exceptions import LiteLLMExceptions
 
         litellm_ex = LiteLLMExceptions()
         retry_delay = 0.125
+        temperature = None
+        tools = None
+
         if self.verbose:
             dump(messages)
+
+        if coder:
+            temperature = coder.temperature
+            tools = coder.get_tool_list()
+            merged_kwargs = coder.model_kwargs.copy()
+            merged_kwargs.update(override_kwargs)
+            override_kwargs = merged_kwargs
+
         while True:
             try:
+
                 _hash, response = await self.send_completion(
                     messages=messages,
                     functions=None,
                     stream=False,
+                    temperature=temperature,
+                    tools=tools,
                     max_tokens=max_tokens,
                     override_kwargs=override_kwargs,
                 )
@@ -1371,6 +1430,11 @@ class Model(ModelSettings):
                 continue
             except AttributeError:
                 return None
+            except KeyboardInterrupt:
+                # An interrupt was not caught within the async run loop.
+                # We'll just pass to allow the thread to exit gracefully
+                # without a scary traceback.
+                pass
 
     def model_error_response(self):
         return litellm.ModelResponse(
@@ -1527,7 +1591,7 @@ async def check_for_dependencies(io, model_name):
         )
 
 
-def get_chat_model_names():
+def get_chat_model_names(query: str = "") -> list:
     chat_models = set()
     model_metadata = list(litellm.model_cost.items())
     model_metadata += list(model_info_manager.local_model_metadata.items())
@@ -1545,7 +1609,38 @@ def get_chat_model_names():
                 fq_model = f"{provider}/{orig_model}"
             chat_models.add(fq_model)
         chat_models.add(orig_model)
-    return sorted(chat_models)
+
+    sorted_models = sorted(chat_models)
+
+    # Fuzzy match against the query when one is provided
+    if query:
+        try:
+            from ngram import NGram
+            from rapidfuzz import fuzz, process
+
+            score_cutoff = int(0.3 * 100)
+            results = process.extract(
+                query,
+                sorted_models,
+                scorer=fuzz.partial_ratio,
+                limit=20,
+                score_cutoff=score_cutoff,
+            )
+            match_names = [match for match, score, _ in results]
+
+            # Re-rank with ngram trigram similarity when result set is small
+            if len(match_names) < 100:
+                ng = NGram(match_names, N=3)
+                reranked = ng.search(query, threshold=0.0)
+                match_names = [item for item, score in reranked]
+
+            return match_names
+        except ImportError:
+            # Fall back to simple substring matching if fuzzy libs unavailable
+            query_lower = query.lower()
+            return [m for m in sorted_models if query_lower in m.lower()]
+
+    return sorted_models
 
 
 def fuzzy_match_models(name):

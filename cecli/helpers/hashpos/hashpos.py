@@ -5,8 +5,6 @@ import xxhash
 
 class HashPos:
     B64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789~_"
-    # The actual coprime period (64 * 63)
-    PERIOD = 4032
     # Regex pattern for HashPos format: {4-char-hash}::
     HASH_PREFIX_RE = re.compile(r"^([0-9a-zA-Z\~_@]{4})::")
     # Regex for normalization: 4 hash chars optionally followed by '::'
@@ -18,71 +16,53 @@ class HashPos:
         self.lines = source_text.splitlines()
         self.total = len(self.lines)
 
-    def _get_content_bits(self, text: str) -> int:
-        return xxhash.xxh3_64_intdigest(text.encode("utf-8")) & 0xFFF
+    def _get_region_bits(self, line_idx: int) -> tuple[int, int]:
+        """
+        Uses line_idx modulo 16 (4 bits) to get two 2-bit flags (b1, b2).
+        This guarantees up to 16 consecutive repeating lines get unique spatial anchors.
+        """
+        mod_val = line_idx % 16
 
-    def _get_anchor_bits(self, line_idx: int) -> int:
-        a1 = (line_idx * 53 + 13) % 64
-        a2 = (line_idx * 59 + 31) % 63
-        return (a1 << 6) | a2
+        # Split the 4-bit modulo value into two separate 2-bit flags
+        b1 = (mod_val >> 2) & 3  # Top 2 bits (mask with 0b11)
+        b2 = mod_val & 3  # Bottom 2 bits
+        return b1, b2
 
-    def _spread_bits(self, x: int) -> int:
+    def _get_neighborhood_hash(self, line_idx: int) -> int:
         """
-        Spreads 12 bits of x into 24 bits by inserting a 0 between each bit.
-        Input:  000000000000abcdefghijkl (12 bits)
-        Output: 0a0b0c0d0e0f0g0h0i0j0k0l (24 bits)
+        Creates a 20-bit digest using the current line and the 3 lines
+        before and after it.
         """
-        x &= 0xFFF  # Ensure we only have 12 bits
-        # Shift bits by 8, mask keeps the blocks separated
-        # x starts: 000000000000 abcdefgh ijkl
-        x = (x | (x << 8)) & 0x00FF00FF  # 0000abcd efgh0000 00000000 ijkl...
-        # Shift by 4, then 2, then 1 to create 1-bit gaps
-        x = (x | (x << 4)) & 0x0F0F0F0F
-        x = (x | (x << 2)) & 0x33333333
-        x = (x | (x << 1)) & 0x55555555  # Result: 0a0b0c0d0e0f0g0h0i0j0k0l
-        return x
+        start = max(0, line_idx - 3)
+        end = min(self.total, line_idx + 4)
 
-    def _compact_bits(self, x: int) -> int:
-        """
-        The inverse of spread: pulls every other bit back together.
-        Input:  0a0b0c0d0e0f0g0h0i0j0k0l (24 bits)
-        Output: 000000000000abcdefghijkl (12 bits)
-        """
-        x &= 0x55555555  # Mask to ensure we only look at the "active" bits
-        x = (x | (x >> 1)) & 0x33333333
-        x = (x | (x >> 2)) & 0x0F0F0F0F
-        x = (x | (x >> 4)) & 0x00FF00FF
-        x = (x | (x >> 8)) & 0x0000FFFF  # Result: abcdefghijkl
-        return x
+        context_window = "\n".join(self.lines[start:end])
+        full_hash = xxhash.xxh3_64_intdigest(context_window.encode("utf-8"))
 
-    def _interleave(self, content: int, anchor: int) -> int:
-        """
-        Weaves content and anchor bits together.
-        Content bits occupy the 'odd' positions, Anchor bits occupy the 'even'.
-        """
-        # Spread content bits and shift by 1 to put them in positions 1, 3, 5...
-        # Spread anchor bits and leave them in positions 0, 2, 4...
-        return (self._spread_bits(content) << 1) | self._spread_bits(anchor)
-
-    def _deinterleave(self, mixed: int) -> tuple[int, int]:
-        """
-        Extracts content and anchor bits from a 24-bit interleaved integer.
-        """
-        # To get content: shift right by 1, then compact
-        content = self._compact_bits(mixed >> 1)
-        # To get anchor: just compact (the mask inside _compact_bits handles the rest)
-        anchor = self._compact_bits(mixed)
-        return content, anchor
+        # Isolate exactly 20 bits
+        return full_hash & 0xFFFFF
 
     def generate_private_id(self, text: str) -> str:
-        bits = self._get_content_bits(text)
+        """
+        Generates a fast 12-bit (3 hex chars) hash based purely on the line text.
+        """
+        bits = xxhash.xxh3_64_intdigest(text.encode("utf-8")) & 0xFFF
         return f"{bits:03x}"
 
     def generate_public_id(self, text: str, line_idx: int) -> str:
-        content_bits = self._get_content_bits(text)
-        anchor_bits = self._get_anchor_bits(line_idx)
-        packed = self._interleave(content_bits, anchor_bits)
+        """
+        Generates a 4-char Base64 ID combining modulo buckets and context hash.
+        Layout: [2-bit b1] [2-bit b2] [10-bit Hash A] [10-bit Hash B]
+        """
+        b1, b2 = self._get_region_bits(line_idx)
+        neighborhood_hash = self._get_neighborhood_hash(line_idx)
 
+        # Split the 20-bit hash into two 10-bit halves
+        hash_a = (neighborhood_hash >> 10) & 0x3FF
+        hash_b = neighborhood_hash & 0x3FF
+
+        # Construct the mixed 24-bit integer
+        packed = (b1 << 22) | (b2 << 20) | (hash_a << 10) | hash_b
         res = ""
         for _ in range(4):
             res += self.B64[packed % 64]
@@ -90,11 +70,21 @@ class HashPos:
         return res
 
     def unpack_public_id(self, public_id: str) -> tuple[int, int]:
+        """
+        Reverses the Public ID back into its (Modulo 16, Neighborhood Hash) values.
+        """
         packed = 0
         for i, char in enumerate(public_id):
             packed |= self.B64.index(char) << (6 * i)
 
-        return self._deinterleave(packed)
+        b1 = (packed >> 22) & 3
+        b2 = (packed >> 20) & 3
+        hash_a = (packed >> 10) & 0x3FF
+        hash_b = packed & 0x3FF
+        mod_val = (b1 << 2) | b2
+        neighborhood_hash = (hash_a << 10) | hash_b
+
+        return mod_val, neighborhood_hash
 
     def format_content(self, use_private_ids: bool = False, start_line: int = 1) -> str:
         formatted_lines = []
@@ -102,44 +92,46 @@ class HashPos:
             prefix = (
                 self.generate_private_id(line)
                 if use_private_ids
-                else self.generate_public_id(line, i + start_line)
+                else self.generate_public_id(line, i)
             )
             formatted_lines.append(f"{prefix}::{line}")
         return "\n".join(formatted_lines)
 
     def resolve_to_lines(self, public_id: str, start_line: int = 1) -> list[int]:
-        target_content, target_anchor = self.unpack_public_id(public_id)
-        content_matches = []
-        perfect_matches = []
+        target_mod, target_hash = self.unpack_public_id(public_id)
+        matches = []
 
+        # Find all lines whose neighborhood hash matches our target
         for i, line in enumerate(self.lines):
-            if self._get_content_bits(line) == target_content:
-                current_anchor = self._get_anchor_bits(i + start_line)
-                if current_anchor == target_anchor:
-                    perfect_matches.append(i)
-                else:
-                    dist = abs(current_anchor - target_anchor)
-                    # Use the actual coprime period for the circular logic
-                    dist = min(dist, self.PERIOD - dist)
+            if self._get_neighborhood_hash(i) == target_hash:
+                matches.append(i)
 
-                    # ~1% chance of collision around 10 items
-                    if dist <= 1:
-                        content_matches.append((dist, i))
+        if not matches:
+            return []
 
-        if perfect_matches:
-            return perfect_matches
+        # If perfectly unique, return it immediately
+        if len(matches) == 1:
+            return matches
 
-        content_matches.sort(key=lambda x: x[0])
-        return [match[1] for match in content_matches]
+        # Distance Heuristic: If multiple matches exist (e.g. repeated code blocks),
+        # prioritize the one whose modulo is closest to the target modulo.
+        # We use circular distance since mod 16 wraps around (0 is adjacent to 15).
+        def modulo_distance(idx: int) -> int:
+            current_mod = idx % 16
+            dist = abs(current_mod - target_mod)
+            return min(dist, 16 - dist)
+
+        matches.sort(key=modulo_distance)
+
+        return matches
 
     def resolve_range(self, start_id: str, end_id: str) -> tuple[int, int]:
         """
         Resolves a block range from two Public IDs.
 
         Logic:
-        1. Resolve all candidates for both IDs.
-        2. Find the pair of (start, end) that are logically ordered and
-           have the lowest combined distance score.
+        1. Resolve all candidates for both IDs (sorted by best match).
+        2. Find the pair of (start, end) that are logically ordered.
         3. Returns (start_index, end_index)
         """
         starts = self.resolve_to_lines(start_id)
@@ -148,13 +140,9 @@ class HashPos:
         if not starts or not ends:
             raise ValueError(f"Could not resolve IDs: {start_id}..{end_id}")
 
-        # If both have 'perfect' matches that are logically ordered, use them immediately
-        # Note: resolve_to_lines returns perfect matches first.
         for s in starts:
             for e in ends:
                 if s <= e:
-                    # Return the first logical pair found
-                    # (This prioritizes perfect matches or closest heuristics)
                     return s, e
 
         raise ValueError(
@@ -233,6 +221,6 @@ class HashPos:
         # If no pattern matches, raise error
         raise ValueError(
             f"Invalid HashPos format '{hashpos_str}'. "
-            r"Expected \"{hash_prefix}\" "
-            r"where hash_prefix is exactly 4 characters from the set [0-9a-zA-Z\~_@]."
+            r"Expected \"{content ID}\" "
+            r"where content ID is exactly 4 characters from the set [0-9a-zA-Z\~_@]."
         )

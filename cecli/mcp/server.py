@@ -7,17 +7,6 @@ from contextlib import AsyncExitStack
 from enum import Enum, auto
 from urllib.parse import urlparse
 
-MIN_KEEPALIVE_INTERVAL = 5
-MAX_KEEPALIVE_INTERVAL = 300
-FAILED_PING_THRESHOLD = 3
-
-
-class ConnectionState(Enum):
-    CONNECTED = auto()
-    UNHEALTHY = auto()
-    DISCONNECTED = auto()
-
-
 import httpx
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.auth import OAuthClientProvider
@@ -32,6 +21,16 @@ from .oauth import (
     get_mcp_oauth_token,
     save_mcp_oauth_token,
 )
+
+MIN_KEEPALIVE_INTERVAL = 5
+MAX_KEEPALIVE_INTERVAL = 300
+FAILED_PING_THRESHOLD = 3
+
+
+class ConnectionState(Enum):
+    CONNECTED = auto()
+    UNHEALTHY = auto()
+    DISCONNECTED = auto()
 
 
 class McpServer:
@@ -55,6 +54,7 @@ class McpServer:
         self.io = io
         self.verbose = verbose
         self.session = None
+        self._connection_loop: asyncio.AbstractEventLoop | None = None
         self._cleanup_lock: asyncio.Lock = asyncio.Lock()
         self.exit_stack = AsyncExitStack()
 
@@ -72,10 +72,17 @@ class McpServer:
         Returns:
             ClientSession: The active session if mcp is not disabled
         """
+        current_loop = asyncio.get_running_loop()
         if self.session is not None:
+            # Event loop affinity check: streams from stdio_client() are bound
+            # to the loop that created them.  Reconnect if the loop changed.
+            if self._connection_loop is current_loop:
+                if self.verbose and self.io:
+                    self.io.tool_output(f"Using existing session for MCP server: {self.name}")
+                return self.session
             if self.verbose and self.io:
-                self.io.tool_output(f"Using existing session for MCP server: {self.name}")
-            return self.session
+                self.io.tool_output(f"Reconnecting MCP server {self.name} (event loop changed)")
+            await self.disconnect()
 
         if self.verbose and self.io:
             self.io.tool_output(f"Establishing new connection to MCP server: {self.name}")
@@ -100,6 +107,7 @@ class McpServer:
                 session = await self.exit_stack.enter_async_context(ClientSession(read, write))
                 await session.initialize()
                 self.session = session
+                self._connection_loop = current_loop
                 return session
         except Exception as e:
             logging.error(f"Error initializing server {self.name}: {e}")
@@ -213,10 +221,15 @@ class HttpBasedMcpServer(McpServer):
         raise NotImplementedError("Subclasses must implement _create_transport")
 
     async def connect(self):
+        current_loop = asyncio.get_running_loop()
         if self.session is not None:
+            if self._connection_loop is current_loop:
+                if self.verbose and self.io:
+                    self.io.tool_output(f"Using existing session for {self.name}")
+                return self.session
             if self.verbose and self.io:
-                self.io.tool_output(f"Using existing session for {self.name}")
-            return self.session
+                self.io.tool_output(f"Reconnecting {self.name} (event loop changed)")
+            await self.disconnect()
 
         if self.verbose and self.io:
             self.io.tool_output(f"Establishing new connection to {self.name}")
@@ -246,6 +259,7 @@ class HttpBasedMcpServer(McpServer):
             await session.initialize()
             self.session = session
             await self.start_keepalive()
+            self._connection_loop = current_loop
 
             if oauth_provider.context.oauth_metadata:
                 token_endpoint = oauth_provider._get_token_endpoint()
@@ -274,7 +288,8 @@ class HttpBasedMcpServer(McpServer):
             if not (MIN_KEEPALIVE_INTERVAL <= interval <= MAX_KEEPALIVE_INTERVAL):
                 if self.verbose and self.io:
                     self.io.tool_warning(
-                        f"Keepalive interval {interval} out of range ({MIN_KEEPALIVE_INTERVAL}-{MAX_KEEPALIVE_INTERVAL}). Ignoring."
+                        f"Keepalive interval {interval} out of range ({MIN_KEEPALIVE_INTERVAL}-"
+                        f"{MAX_KEEPALIVE_INTERVAL}). Ignoring."
                     )
                 return
         except (ValueError, TypeError):
@@ -315,13 +330,14 @@ class HttpBasedMcpServer(McpServer):
                             request=response.request,
                             response=response,
                         )
-                except Exception as e:
+                except Exception:
                     self._failed_pings += 1
                     if self._failed_pings >= FAILED_PING_THRESHOLD:
                         self._state = ConnectionState.DISCONNECTED
                         if self.verbose and self.io:
                             self.io.tool_warning(
-                                f"MCP server {self.name} disconnected after {self._failed_pings} failed pings. Attempting reconnect..."
+                                f"MCP server {self.name} disconnected after {self._failed_pings} failed"
+                                " pings. Attempting reconnect..."
                             )
                         await self.reconnect()
                     else:
@@ -402,9 +418,13 @@ class SseServer(McpServer):
     """SSE (Server-Sent Events) MCP server using mcp.client.sse_client."""
 
     async def connect(self):
+        current_loop = asyncio.get_running_loop()
         if self.session is not None:
-            logging.info(f"Using existing session for SSE MCP server: {self.name}")
-            return self.session
+            if self._connection_loop is current_loop:
+                logging.info(f"Using existing session for SSE MCP server: {self.name}")
+                return self.session
+            logging.info(f"Reconnecting SSE MCP server {self.name} (event loop changed)")
+            await self.disconnect()
 
         logging.info(f"Establishing new connection to SSE MCP server: {self.name}")
         try:
@@ -417,6 +437,7 @@ class SseServer(McpServer):
             session = await self.exit_stack.enter_async_context(ClientSession(read, write))
             await session.initialize()
             self.session = session
+            self._connection_loop = current_loop
             return session
         except Exception as e:
             logging.error(f"Error initializing SSE server {self.name}: {e}")

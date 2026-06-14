@@ -231,6 +231,23 @@ class TestCommands(TestCase):
         self.assertEqual(len(coder.abs_fnames), 1)
         self.assertTrue(fname.exists())
 
+    async def test_cmd_add_skips_create_on_exempt_path(self):
+        """Test that /add skips file creation for paths matching exempt-path regex patterns."""
+        io = InputOutput(pretty=False, fancy_input=False, yes=True)
+        from types import SimpleNamespace
+
+        from cecli.coders import Coder
+
+        args = SimpleNamespace(exempt_paths=[r"\.[^/]+/attachments"])
+        coder = await Coder.create(self.GPT35, None, io, args=args)
+        commands = Commands(io, coder)
+
+        staging = Path(".cecli/attachments/missing.png")
+        commands.execute("add", str(staging))
+
+        self.assertEqual(len(coder.abs_fnames), 0)
+        self.assertFalse(staging.exists())
+
     async def test_cmd_add_drop_directory(self):
         # Initialize the Commands and InputOutput objects
         io = InputOutput(pretty=False, fancy_input=False, yes=False)

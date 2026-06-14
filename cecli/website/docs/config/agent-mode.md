@@ -38,7 +38,7 @@ Agent Mode operates through a continuous loop where the LLM:
 3. **Executes editing tools** to make changes
 4. **Processes results** and continues exploration and editing until the task is complete
 
-This loop continues automatically until the `Finished` tool is called, or the maximum number of iterations is reached.
+This loop continues automatically until the `Yield` tool is called, or the maximum number of iterations is reached.
 
 ### Key Components
 
@@ -50,8 +50,9 @@ Agent Mode uses a centralized local tool registry that manages all available too
 - **Editing Tools**: `EditText`,
 - **Context Management Tools**: `ContextManager`, `GetLines`
 - **Git Tools**: `GitDiff`, `GitLog`, `GitShow`, `GitStatus`
-- **Utility Tools**: `UpdateTodoList`, `UndoChange`, `Finished`
+- **Utility Tools**: `UpdateTodoList`, `UndoChange`, `Yield`
 - **Skill Management**: `LoadSkill`, `RemoveSkill`
+- **Sub-Agent Tools**: `Delegate` - Delegate sub-tasks to specialized sub-agents
 
 #### Enhanced Context Management
 
@@ -137,48 +138,31 @@ Arguments: {}
 The above continues over and over until:
 
 ```
-Tool Call: Finished
+Tool Call: Yield
 Arguments: {}
 ```
 
 ### Agent Configuration
 Agent Mode can be configured using the `--agent-config` command line argument, which accepts a JSON string for fine-grained control over tool availability and behavior.
 
-Agent Mode can also be configured directly in the relevant config.yml file:
-
-```yaml
-agent: true
-agent-config:
-  # Tool configuration
-  tools_includelist: [contextmanager", "edittext", "finished"]  # Optional: Whitelist of tools
-  tools_excludelist: ["command", "commandinteractive"]  # Optional: Blacklist of tools
-  tools_paths: ["./custom-tools", "~/my-tools"]  # Optional: Directories or files containing custom tools
-  
-  # Context blocks configuration
-  include_context_blocks: ["todo_list", "git_status"]  # Optional: Context blocks to include
-  exclude_context_blocks: ["symbol_outline", "directory_structure"]  # Optional: Context blocks to exclude
-  
-  # Performance and behavior settings
-  hot_reload: false # automatically reload skills folders and definitions between turns
-  large_file_token_threshold: 12500  # Token threshold for large file warnings
-  skip_cli_confirmations: false  # YOLO mode - be brave and let the LLM cook
-  command_timeout: 30 # Time to wait for commands to finish before automatic backgrounding occurs
-  
-  # Skills configuration (see Skills documentation for details)
-  skills_paths: ["~/my-skills", "./project-skills"]  # Directories to search for skills
-  skills_includelist: ["python-refactoring", "react-components"]  # Optional: Whitelist of skills to include
-  skills_excludelist: ["legacy-tools"]  # Optional: Blacklist of skills to exclude
-```
+Agent Mode can also be configured directly in your configuration file. See the [Complete Configuration Example](#complete-configuration-example) below for a full reference.
 
 #### Configuration Options
 
-- **`large_file_token_threshold`**: Maximum token threshold for large file warnings (default: 25000)
+- **`large_file_token_threshold`**: Maximum token threshold for large file warnings (default: 32768)
 - **`skip_cli_confirmations`**: YOLO mode, be brave and let the LLM cook, can also use the option `yolo` (default: False)
+- **`allowed_commands`**: Array of glob patterns for commands that can be executed without prompting. Commands matching any pattern will skip the confirmation dialog. Example: `["wc -l*"]` (default: [])
 - **`tools_includelist`**: Array of tool names to allow (only these tools will be available)
 - **`tools_excludelist`**: Array of tool names to exclude (these tools will be disabled)
 - **`tools_paths`**: Array of directories or Python files containing custom tools to load
+- **`servers_includelist`**: Array of MCP server names to allow (only these servers will be available)
+- **`servers_excludelist`**: Array of MCP server names to exclude (these servers will be disabled)
+- **`subagent_paths`**: Array of directories to search for sub-agent definition `.md` files
+- **`max_sub_agents`**: Maximum number of concurrent sub-agents (default: 3)
+- **`allow_nested_delegation`**: Allow sub-agents to delegate tasks to further sub-agents (default: `false`). When enabled, the `Delegate` tool is made available in sub-agent tool schemas.
 - **`include_context_blocks`**: Array of context block names to include (overrides default set)
 - **`exclude_context_blocks`**: Array of context block names to exclude from default set
+- **`command_timeout`**: Time in seconds to wait for shell commands to finish before automatic backgrounding occurs (default: None)
 
 #### Essential Tools
 
@@ -256,6 +240,7 @@ The following context blocks are available by default and can be customized usin
 - **`symbol_outline`**: Lists classes, functions, and methods in current context
 - **`todo_list`**: Shows the current todo list managed via `UpdateTodoList` tool
 - **`skills`**: Include skills content in the conversation
+- **`sub_agents`**: Include registered sub-agents in the conversation context
 
 When `include_context_blocks` is specified, only the listed blocks will be included. When `exclude_context_blocks` is specified, the listed blocks will be removed from the default set.
 
@@ -282,18 +267,28 @@ agent-config:
   tools_excludelist: ["command", "commandinteractive"]  # Optional: Blacklist of tools
   tools_paths: ["./custom-tools", "~/my-tools"]  # Optional: Directories or files containing custom tools
   
+  # Server configuration
+  servers_includelist: ["local"]  # Optional: Whitelist of MCP server names to allow
+  servers_excludelist: []  # Optional: Blacklist of MCP server names to exclude
+  
+  # Sub-agent configuration
+  subagent_paths: [".cecli/subagents"]  # Optional: Directories to search for sub-agent definitions
+  max_sub_agents: 3  # Optional: Maximum concurrent sub-agents (default: 3)
+  allow_nested_delegation: false  # Optional: Allow sub-agents to delegate further (default: false)
+
   # Context blocks configuration
   include_context_blocks: ["todo_list", "git_status"]  # Optional: Context blocks to include
   exclude_context_blocks: ["symbol_outline", "directory_structure"]  # Optional: Context blocks to exclude
   
   # Performance and behavior settings
-  large_file_token_threshold: 12500  # Token threshold for large file warnings
+  large_file_token_threshold: 32768  # Token threshold for large file warnings (default: 32768)
   skip_cli_confirmations: false  # YOLO mode - be brave and let the LLM cook
-  
+  allowed_commands: ["wc -l*"]  # Commands matching these glob patterns will not prompt for confirmation
   # Skills configuration (see Skills documentation for details)
   skills_paths: ["~/my-skills", "./project-skills"]  # Directories to search for skills
   skills_includelist: ["python-refactoring", "react-components"]  # Optional: Whitelist of skills to include
   skills_excludelist: ["legacy-tools"]  # Optional: Blacklist of skills to exclude
+  skills_init: ["python-refactoring"]  # Optional: Skills to load and enable on startup
 
 # Other Agent Mode options
 use-enhanced-map: true  # Use enhanced repo map with import relationships
@@ -304,6 +299,13 @@ This configuration system allows for fine-grained control over which tools are a
 ### Skills
 
 Agent Mode includes a powerful skills system that allows you to extend the AI's capabilities with custom instructions, reference materials, scripts, and assets. Skills are configured through the `agent-config` parameter in the YAML configuration file.
+
+Skills can be configured to load automatically on startup using the `skills_init` option, which accepts a list of skill names that will be both loaded (included in context) and whitelisted (made discoverable) when the agent starts:
+
+```yaml
+agent-config:
+  skills_init: ["python-refactoring"]
+```
 
 For complete documentation on creating and using skills, including skill directory structure, SKILL.md format, and best practices, see the [Skills documentation](https://github.com/dwash96/cecli/blob/main/cecli/website/docs/config/skills.md).
 

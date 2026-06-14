@@ -43,6 +43,7 @@ from rich.text import Text
 
 from cecli.commands import SwitchCoderSignal
 from cecli.helpers import coroutines
+from cecli.helpers.threading import ThreadSafeEvent
 from cecli.report import update_error_prefix
 
 from .dump import dump  # noqa: F401
@@ -386,6 +387,7 @@ class InputOutput:
         self.verbose = verbose
         self.profile_start_time = None
         self.profile_last_time = None
+        self.last_notification_time = 0
 
         # Variables used to interface with base_coder
         self.coder = None
@@ -394,7 +396,7 @@ class InputOutput:
         self.linear = False
 
         # State tracking for confirmation input
-        self.confirmation_in_progress_event = asyncio.Event()
+        self.confirmation_in_progress_event = ThreadSafeEvent()
         self.confirmation_in_progress_event.set()  # Initially set, meaning no confirmation in progress
         self.confirmation_acknowledgement = False
         self.confirmation_input_active = False
@@ -552,7 +554,7 @@ class InputOutput:
         except Exception:
             return False
 
-    def start_spinner(self, text, update_last_text=True):
+    def start_spinner(self, text, update_last_text=True, **kwargs):
         """Start the spinner."""
         self.stop_spinner()
 
@@ -814,8 +816,11 @@ class InputOutput:
         abs_read_only_fnames=None,
         abs_read_only_stubs_fnames=None,
         edit_format=None,
+        **kwargs,
     ):
         self.rule()
+        if commands.last_command_show_notification:
+            self.notify_user_input_required()
 
         rel_fnames = list(rel_fnames)
         show = ""
@@ -1254,6 +1259,7 @@ class InputOutput:
         allow_never=False,
         allow_tweak=False,
         acknowledge=False,
+        **kwargs,
     ):
         self.num_user_asks += 1
 
@@ -1424,7 +1430,7 @@ class InputOutput:
 
         return res
 
-    def _tool_message(self, message="", strip=True, color=None):
+    def _tool_message(self, message="", strip=True, color=None, **kwargs):
         if message.strip():
             if "\n" in message:
                 for line in message.splitlines():
@@ -1444,13 +1450,13 @@ class InputOutput:
         style = RichStyle(**style)
 
         try:
-            self.stream_print(message, style=style)
+            self.stream_print(message, style=style, **kwargs)
         except UnicodeEncodeError:
             # Fallback to ASCII-safe output
             if isinstance(message, Text):
                 message = message.plain
             message = str(message).encode("ascii", errors="replace").decode("ascii")
-            self.stream_print(message, style=style)
+            self.stream_print(message, style=style, **kwargs)
 
     def format_json_in_string(self, text):
         if not isinstance(text, str):
@@ -1483,21 +1489,21 @@ class InputOutput:
 
         return text
 
-    def tool_success(self, message="", strip=True):
-        self._tool_message(message, strip, self.user_input_color)
+    def tool_success(self, message="", strip=True, **kwargs):
+        self._tool_message(message, strip, self.user_input_color, **kwargs)
 
-    def tool_error(self, message="", strip=True):
+    def tool_error(self, message="", strip=True, **kwargs):
         # import traceback
         # traceback.print_stack()
 
         self.num_error_outputs += 1
         message = self.format_json_in_string(message)
-        self._tool_message(message, strip, self.tool_error_color)
+        self._tool_message(message, strip, self.tool_error_color, **kwargs)
 
-    def tool_warning(self, message="", strip=True):
-        self._tool_message(message, strip, self.tool_warning_color)
+    def tool_warning(self, message="", strip=True, **kwargs):
+        self._tool_message(message, strip, self.tool_warning_color, **kwargs)
 
-    def tool_output(self, *messages, log_only=False, bold=False, type=None):
+    def tool_output(self, *messages, log_only=False, bold=False, type=None, **kwargs):
         if messages:
             hist = " ".join(messages)
             hist = f"{hist.strip()}"
@@ -1516,7 +1522,7 @@ class InputOutput:
 
         style = RichStyle(**style)
 
-        self.stream_print(*messages, style=style)
+        self.stream_print(*messages, style=style, **kwargs)
 
     def escape(self, text):
         """Formats valid Rich tags and prints invalid ones as literal text using a single regex pass."""
@@ -1561,7 +1567,7 @@ class InputOutput:
 
         self.profile_last_time = now
 
-    def assistant_output(self, message, pretty=None):
+    def assistant_output(self, message, pretty=None, **kwargs):
         if not message:
             return
 
@@ -1573,7 +1579,7 @@ class InputOutput:
 
         show_resp = Text(message or "(empty response)")
 
-        self.stream_print(show_resp)
+        self.stream_print(show_resp, **kwargs)
 
     def render_markdown(self, text):
         output = StringIO()
@@ -1582,7 +1588,7 @@ class InputOutput:
         console.print(md)
         return output.getvalue()
 
-    def stream_output(self, text, final=False):
+    def stream_output(self, text, final=False, **kwargs):
         """
         Stream output using Rich console to respect pretty print settings.
         This preserves formatting, colors, and other Rich features during streaming.
@@ -1662,11 +1668,14 @@ class InputOutput:
         """Check if a string contains the ANSI escape character."""
         return "\x1b" in s
 
-    def reset_streaming_response(self):
+    def reset_streaming_response(self, **kwargs):
         self._stream_buffer = ""
         self._stream_line_count = 0
 
     def stream_print(self, *messages, **kwargs):
+        kwargs.pop("coder_uuid", None)
+        kwargs.pop("type", None)
+
         with self.console.capture() as capture:
             self.console.print(*messages, **kwargs)
         capture_text = capture.get()
@@ -1729,6 +1738,12 @@ class InputOutput:
         return None  # Unknown system
 
     def _send_notification(self):
+        # Cooldown to prevent notification spam
+        current_time = time.time()
+        if current_time - self.last_notification_time < 2:  # 2-second cooldown
+            return
+        self.last_notification_time = current_time
+
         if self.notifications_command:
             try:
                 # Use Popen to run the command in the background without waiting for it

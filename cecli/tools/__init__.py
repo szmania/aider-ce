@@ -3,12 +3,13 @@
 
 # Import all tool modules
 from . import (
+    _yield,
     command,
     command_interactive,
     context_manager,
+    delegate,
     edit_text,
     explore_code,
-    finished,
     git_branch,
     git_diff,
     git_log,
@@ -30,9 +31,10 @@ TOOL_MODULES = [
     command,
     command_interactive,
     context_manager,
+    delegate,
     edit_text,
     explore_code,
-    finished,
+    _yield,
     git_branch,
     git_diff,
     git_log,

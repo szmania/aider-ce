@@ -2,7 +2,7 @@ import argparse
 from typing import List
 
 from cecli.commands.utils.base_command import BaseCommand
-from cecli.hooks.manager import HookManager
+from cecli.hooks.service import HookService
 from cecli.hooks.types import HookType
 
 
@@ -17,7 +17,7 @@ class HooksCommand(BaseCommand):
         parsed_args = cls._parse_args(args)
 
         # Get all hooks grouped by type
-        hook_manager = HookManager()
+        hook_manager = HookService.get_manager(coder)
         all_hooks = hook_manager.get_all_hooks()
 
         # Apply type filter if specified

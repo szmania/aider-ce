@@ -1,5 +1,6 @@
 import json
 import os
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -47,6 +48,17 @@ def mock_coder():
     coder.mcp_manager = None
     coder.skills_manager = None
     coder.io.read_text.return_value = "some todo content"
+    coder.format_chat_chunks = MagicMock()
+    coder.args = SimpleNamespace(
+        model="test_model",
+        weak_model="test_weak_model",
+        editor_model="test_editor_model",
+        agent_model="test_agent_model",
+        editor_edit_format="editor-diff",
+        verbose=False,
+        session_encrypt=False,
+        session_key_file=None,
+    )
 
     return coder
 
@@ -55,6 +67,21 @@ def mock_coder():
 def session_manager(mock_coder):
     """Fixture to create a SessionManager instance."""
     return SessionManager(mock_coder, mock_coder.io)
+
+
+@pytest.mark.asyncio
+async def test_load_session_quiet_skips_tool_error_on_invalid_json(
+    session_manager, mock_coder, tmp_path
+):
+    """BrightVision auto-load uses quiet=True when restore is best-effort."""
+    session_dir = tmp_path / ".cecli" / "sessions"
+    os.makedirs(session_dir, exist_ok=True)
+    mock_coder.abs_root_path.side_effect = lambda x: str(tmp_path / x)
+    bad = session_dir / "bad.json"
+    bad.write_text("not json", encoding="utf-8")
+
+    assert await session_manager.load_session(str(bad), switch=False, quiet=True) is False
+    mock_coder.io.tool_error.assert_not_called()
 
 
 def test_save_session(session_manager, mock_coder, tmp_path):

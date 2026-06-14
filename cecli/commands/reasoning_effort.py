@@ -9,6 +9,7 @@ class ReasoningEffortCommand(BaseCommand):
     DESCRIPTION = (
         "Set the reasoning effort level (values: number or low/medium/high depending on model)"
     )
+    show_completion_notification = True
 
     @classmethod
     async def execute(cls, io, coder, args, **kwargs):

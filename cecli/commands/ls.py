@@ -49,20 +49,20 @@ class LsCommand(BaseCommand):
         #     io.tool_output(f"  {file}")
 
         if rules_files:
-            io.tool_output("\nRules files:\n")
+            io.tool_output("Rules files:")
         for file in sorted(rules_files):
             io.tool_output(f"  {file}")
 
         # Read-only files:
         if read_only_files or read_only_stub_files:
-            io.tool_output("\nRead-only files:\n")
+            io.tool_output("Read-only files:")
         for file in read_only_files:
             io.tool_output(f"  {file}")
         for file in read_only_stub_files:
             io.tool_output(f"  {file} (stub)")
 
         if chat_files:
-            io.tool_output("\nFiles in chat:\n")
+            io.tool_output("Files in chat:")
         for file in chat_files:
             io.tool_output(f"  {file}")
 

@@ -4,8 +4,8 @@ from cecli.run_cmd import run_cmd
 
 
 def test_run_cmd_echo():
-    command = "echo Hello, World!"
+    command = "echo Hello"
     exit_code, output = run_cmd(command)
 
     assert exit_code == 0
-    assert output.strip() == "Hello, World!"
+    assert output.strip() == "Hello"

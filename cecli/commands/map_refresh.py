@@ -8,6 +8,7 @@ from cecli.helpers.conversation import ConversationService, MessageTag
 class MapRefreshCommand(BaseCommand):
     NORM_NAME = "map-refresh"
     DESCRIPTION = "Force a refresh of the repository map"
+    show_completion_notification = True
 
     @classmethod
     async def execute(cls, io, coder, args, **kwargs):

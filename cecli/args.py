@@ -121,6 +121,7 @@ def get_parser(default_config_files, git_root):
     )
     group.add_argument(
         "--model-overrides",
+        "--model-settings",
         metavar="MODEL_OVERRIDES_JSON",
         help=(
             'Specify model tag overrides directly as JSON/YAML string (e.g., \'{"gpt-4o": {"high":'
@@ -275,7 +276,10 @@ def get_parser(default_config_files, git_root):
     group.add_argument(
         "--retries",
         metavar="RETRIES_JSON",
-        help="Specify LLM retry configuration as a JSON string",
+        help=(
+            'Specify LLM retry configuration as a JSON/YAML string (e.g., \'{"retry_on_empty": '
+            "true}')"
+        ),
         default=None,
     )
 
@@ -371,6 +375,24 @@ def get_parser(default_config_files, git_root):
         ),
     )
     group.add_argument(
+        "--session-encrypt",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help=(
+            "Encrypt saved sessions on disk (AES-256-GCM). Requires CECLI_SESSION_KEY or"
+            " --session-key-file (default: False)"
+        ),
+    )
+    group.add_argument(
+        "--session-key-file",
+        metavar="SESSION_KEY_FILE",
+        default=None,
+        help=(
+            "File containing a urlsafe-base64 32-byte session encryption key"
+            " (default: use CECLI_SESSION_KEY only)"
+        ),
+    ).complete = shtab.FILE
+    group.add_argument(
         "--mcp-servers",
         metavar="MCP_CONFIG_JSON",
         help="Specify MCP server configurations as a JSON string",
@@ -403,7 +425,7 @@ def get_parser(default_config_files, git_root):
         "--use-enhanced-map",
         action="store_true",
         help="Use enhanced Repo Map that takes into account imports (default: False)",
-        default=False,
+        default=True,
     )
 
     ##########
@@ -534,6 +556,16 @@ def get_parser(default_config_files, git_root):
         help=(
             "Auto-configure terminal emulator for shift+enter support for new lines (default:"
             " False)"
+        ),
+    )
+    group.add_argument(
+        "--exempt-paths",
+        action="append",
+        default=[],
+        help=(
+            "Specify a regex pattern for paths that should be exempted from file creation. "
+            "When /add matches a path matching any exempt pattern, it will not offer to "
+            "create the file. Can be used multiple times."
         ),
     )
     ##########

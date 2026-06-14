@@ -1,7 +1,10 @@
 import difflib
+import json
 import os
 import re
 import traceback
+
+from cecli.helpers import responses
 
 
 class ToolError(Exception):
@@ -325,7 +328,7 @@ def format_tool_result(
         return full_message
     else:
         # Use the provided success message, potentially adding change_id and diff
-        full_message = f"✅ {success_message}"
+        full_message = f"✓ {success_message}"
         if change_id:
             full_message += f" (change_id: {change_id})"
         coder.io.tool_output(full_message)  # Log the success action
@@ -335,7 +338,52 @@ def format_tool_result(
             result_for_llm += f" Change ID: {change_id}."
         if diff_snippet:
             result_for_llm += f" Diff snippet:\n{diff_snippet}"
+        else:
+            result_for_llm += " A diff will be provided in a future message."
+
         return result_for_llm
+
+
+def normalize_json_array(value, *, param_name: str = "items", allow_empty: bool = False) -> list:
+    """
+    Coerce tool args that should be arrays but sometimes arrive as JSON strings.
+
+    Local models occasionally double-encode array parameters as JSON text, or emit
+    arrays as per-character string lists (see ``try_join_char_split_json_array``).
+    """
+    if isinstance(value, list):
+        coerced = responses.try_join_char_split_json_array(value)
+        if coerced is not None:
+            value = coerced
+        elif len(value) == 1 and isinstance(value[0], str):
+            # Single element wrapping the whole JSON array/object as a string.
+            if value[0].strip().startswith(("[", "{", '"')):
+                value = value[0]
+
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            if allow_empty:
+                return []
+            raise ToolError(f"{param_name} array cannot be empty")
+        parsed = responses.try_parse_json_value(text)
+        if parsed is None:
+            try:
+                parsed = json.loads(text)
+            except json.JSONDecodeError as err:
+                raise ToolError(f"Invalid {param_name} parameter JSON: {err}") from err
+        value = parsed
+
+    if isinstance(value, dict):
+        value = [value]
+
+    if not isinstance(value, list):
+        raise ToolError(f"{param_name} must be an array, got {type(value).__name__}")
+
+    if len(value) == 0 and not allow_empty:
+        raise ToolError(f"{param_name} array cannot be empty")
+
+    return value
 
 
 # Example usage within a hypothetical tool:

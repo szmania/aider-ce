@@ -8,8 +8,18 @@ class FileList(Static):
 
     chat_files = None
 
-    def update_files(self, chat_files):
-        """Update the file list display."""
+    def update_files(self):
+        """Update the file list display from the visible coder."""
+        coder = self.app._get_visible_coder()
+        chat_files = {
+            "rel_fnames": coder.get_inchat_relative_files(),
+            "rel_read_only_fnames": [
+                coder.get_rel_fname(f) for f in getattr(coder, "abs_read_only_fnames", [])
+            ],
+            "rel_read_only_stubs_fnames": [
+                coder.get_rel_fname(f) for f in getattr(coder, "abs_read_only_stubs_fnames", [])
+            ],
+        }
         self.chat_files = chat_files
 
         if not chat_files:

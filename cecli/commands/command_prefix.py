@@ -7,6 +7,7 @@ from cecli.commands.utils.helpers import format_command_result
 class CommandPrefixCommand(BaseCommand):
     NORM_NAME = "command-prefix"
     DESCRIPTION = "Change command prefix for all running commands"
+    show_completion_notification = True
 
     @classmethod
     async def execute(cls, io, coder, args, **kwargs):

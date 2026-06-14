@@ -1,4 +1,5 @@
 import inspect
+import weakref
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -12,17 +13,67 @@ from .types import HookType
 
 
 class HookRegistry:
-    """Registry for loading user-defined hooks from files."""
+    """Registry for loading user-defined hooks from files.
 
-    def __init__(self, hook_manager: Optional[HookManager] = None):
+    Per-coder instance managed via WeakKeyDictionary + _uuid_index,
+    matching the pattern used by HookManager and ConversationManager.
+    """
+
+    _instances = weakref.WeakKeyDictionary()  # coder -> HookRegistry
+    _uuid_index = weakref.WeakValueDictionary()  # uuid -> HookRegistry
+
+    def __init__(self, coder):
         """Initialize the hook registry.
 
         Args:
-            hook_manager: Optional HookManager instance. If not provided,
-                         uses the singleton instance.
+            coder: The coder instance this registry belongs to.
         """
-        self.hook_manager = hook_manager or HookManager()
+        self.coder = weakref.ref(coder)
+        self.uuid = coder.uuid
+        self.hook_manager = HookManager.get_instance(coder)
         self.loaded_modules = set()
+
+    @classmethod
+    def get_instance(cls, coder) -> "HookRegistry":
+        """Get or create a HookRegistry for the given coder.
+
+        Uses the same WeakKeyDictionary + _uuid_index pattern as HookManager.
+
+        Args:
+            coder: The coder instance.
+
+        Returns:
+            The HookRegistry instance for this coder.
+        """
+        if coder in cls._instances:
+            return cls._instances[coder]
+        if coder.uuid in cls._uuid_index:
+            instance = cls._uuid_index[coder.uuid]
+            if instance.get_coder() is not coder:
+                instance.coder = weakref.ref(coder)
+            cls._instances[coder] = instance
+            return instance
+        instance = cls(coder)
+        cls._instances[coder] = instance
+        cls._uuid_index[coder.uuid] = instance
+        return instance
+
+    @classmethod
+    def destroy_instance(cls, coder_uuid: str):
+        """Remove an instance by UUID.
+
+        Args:
+            coder_uuid: The UUID of the coder whose registry should be destroyed.
+        """
+        instance = cls._uuid_index.pop(coder_uuid, None)
+        if instance:
+            coder = instance.get_coder()
+            if coder is not None:
+                cls._instances.pop(coder, None)
+
+    def get_coder(self):
+        """Return the coder instance, or None if it has been garbage collected."""
+        return self.coder()
 
     def load_hooks_from_directory(self, directory: Path) -> List[str]:
         """Load hooks from a directory containing Python files.
@@ -122,6 +173,12 @@ class HookRegistry:
                         hook = obj()
                         self.hook_manager.register_hook(hook)
                         hooks.append(hook.name)
+                    except ValueError as e:
+                        # Hook might already be registered; still count as loaded
+                        if "already exists" in str(e):
+                            hooks.append(hook.name)
+                        else:
+                            print(f"Warning: Could not register hook '{name}': {e}")
                     except Exception as e:
                         print(f"Warning: Could not instantiate hook {name}: {e}")
 

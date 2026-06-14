@@ -9,6 +9,7 @@ class ContextCommand(BaseCommand):
         "Enter context mode to see surrounding code context. If no prompt provided, switches to"
         " context mode."
     )
+    show_completion_notification = True
 
     @classmethod
     async def execute(cls, io, coder, args, **kwargs):

@@ -8,6 +8,7 @@ from cecli.repo import ANY_GIT_ERROR
 class CommitCommand(BaseCommand):
     NORM_NAME = "commit"
     DESCRIPTION = "Commit edits to the repo made outside the chat (commit message optional)"
+    show_completion_notification = True
 
     @classmethod
     async def execute(cls, io, coder, args, **kwargs):

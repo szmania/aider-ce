@@ -2,7 +2,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from cecli.helpers.observations.manager import ObservationManager
+from cecli.helpers.observations.service import ObservationService
 
 
 @pytest.mark.asyncio
@@ -11,7 +11,7 @@ async def test_observation_manager_initialization():
     coder.uuid = "test-uuid"
     coder.context_compaction_max_tokens = 60000
 
-    manager = ObservationManager.get_instance(coder)
+    manager = ObservationService.get_instance(coder)
     assert manager.observation_threshold == 20000
     assert manager.reflection_threshold == 40000
     assert manager.observations == []
@@ -22,7 +22,7 @@ async def test_observation_manager_reset():
     coder = MagicMock()
     coder.uuid = "test-uuid-reset"
     coder.context_compaction_max_tokens = 60000
-    manager = ObservationManager.get_instance(coder)
+    manager = ObservationService.get_instance(coder)
 
     manager.observations = ["obs1"]
     manager._last_observed_index = 5
@@ -43,12 +43,12 @@ async def test_check_and_trigger_observation(monkeypatch):
     mock_manager.get_tag_messages.return_value = [{"role": "user", "content": "hello"}] * 100
 
     with patch(
-        "cecli.helpers.observations.manager.ConversationService.get_manager",
+        "cecli.helpers.conversation.service.ConversationService.get_manager",
         return_value=mock_manager,
     ):
         coder.summarizer.count_tokens.return_value = 25000
 
-        manager = ObservationManager.get_instance(coder)
+        manager = ObservationService.get_instance(coder)
 
         with patch.object(manager, "run_observation", new_callable=AsyncMock) as mock_run:
             await manager.check_and_trigger()
@@ -69,7 +69,7 @@ async def test_compact_context_with_observations():
     coder.io = MagicMock()
 
     # Mock observation manager with some observations
-    obs_manager = ObservationManager.get_instance(coder)
+    obs_manager = ObservationService.get_instance(coder)
     obs_manager.observations = ["Observation 1"]
 
     # Mock prompts
@@ -83,9 +83,7 @@ async def test_compact_context_with_observations():
     # 2. check_and_trigger: count_tokens(observations)
     # 3. compact_context_if_needed: done_tokens
     # 4. compact_context_if_needed: cur_tokens
-    # 5. compact_context_if_needed: diff_tokens
-    # 6. summarize_and_update: count_tokens inside
-    coder.summarizer.count_tokens.side_effect = [100, 100, 100, 1000, 0, 50]
+    coder.summarizer.count_tokens.side_effect = [100, 100, 1000, 0, 50]
     coder.summarizer.summarize_all_as_text = AsyncMock(return_value="Summary Text")
 
     # Mock manager
@@ -133,7 +131,7 @@ async def test_compact_context_with_observations_integration():
     coder.io = MagicMock()
 
     # Mock observation manager with some observations
-    obs_manager = ObservationManager.get_instance(coder)
+    obs_manager = ObservationService.get_instance(coder)
     obs_manager.observations = ["Observation 1"]
 
     # Mock prompts
@@ -146,9 +144,7 @@ async def test_compact_context_with_observations_integration():
     # 2. check_and_trigger: obs
     # 3. compact: done
     # 4. compact: cur
-    # 5. compact: diff
-    # 6. summarize_and_update: inner
-    coder.summarizer.count_tokens.side_effect = [100, 100, 100, 1000, 0, 50]
+    coder.summarizer.count_tokens.side_effect = [100, 100, 1000, 0, 50]
     coder.summarizer.summarize_all_as_text = AsyncMock(return_value="Summary Text")
 
     # Mock manager

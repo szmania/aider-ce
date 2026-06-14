@@ -28,7 +28,7 @@ class TestToolRegistry:
         assert len(tools) > 0, "Registry should have tools after initialization"
 
         # Check that essential tools are registered
-        essential_tools = {"contextmanager", "edittext", "finished"}
+        essential_tools = {"contextmanager", "edittext", "yield"}
         for tool in essential_tools:
             assert tool in tools, f"Essential tool {tool} should be registered"
 
@@ -54,7 +54,7 @@ class TestToolRegistry:
         # Essential tools should always be included
         assert "contextmanager" in registry, "Essential tool should be included"
         assert "edittext" in registry, "Essential tool should be included"
-        assert "finished" in registry, "Essential tool should be included"
+        assert "yield" in registry, "Essential tool should be included"
 
     def test_build_registry_with_includelist(self):
         """Test filtering with tools_includelist"""
@@ -65,7 +65,7 @@ class TestToolRegistry:
         assert len(registry) == 3, "Should include 2 from list + 1 essential"
         assert "contextmanager" in registry
         assert "edittext" in registry
-        assert "finished" in registry  # Essential
+        assert "yield" in registry  # Essential
         assert "command" not in registry, "Should not include tools not in includelist"
 
     def test_build_registry_with_excludelist(self):
@@ -86,7 +86,7 @@ class TestToolRegistry:
         # Essential tools should still be included despite excludelist
         assert "contextmanager" in registry, "Essential tool cannot be excluded"
         assert "edittext" in registry, "Essential tool cannot be excluded"
-        assert "finished" in registry, "Essential tool cannot be excluded"
+        assert "yield" in registry, "Essential tool cannot be excluded"
         assert "command" not in registry, "Non-essential tool should be excluded"
 
     def test_build_registry_combined_filters(self):
@@ -98,10 +98,10 @@ class TestToolRegistry:
         registry = ToolRegistry.build_registry(config)
 
         # Should respect all filters
-        assert len(registry) == 4, "Should include exactly 4 tools (3 from list + finished)"
+        assert len(registry) == 4, "Should include exactly 4 tools (3 from list + yield)"
         assert "contextmanager" in registry
         assert "edittext" in registry
-        assert "finished" in registry
+        assert "yield" in registry
         assert "command" in registry
         assert "commandinteractive" not in registry
 
@@ -117,7 +117,7 @@ class TestToolRegistry:
         assert len(tool_names) == 3
         assert "contextmanager" in tool_names
         assert "edittext" in tool_names
-        assert "finished" in tool_names  # Essential tool always included
+        assert "yield" in tool_names  # Essential tool always included
 
     def test_legacy_config_names(self):
         """Test backward compatibility with legacy config names (whitelist/blacklist)"""
@@ -148,7 +148,7 @@ class TestToolRegistry:
             "command" not in registry
         ), "Should not use tools_whitelist when tools_includelist present"
         assert "commandinteractive" not in registry, "Should use tools_excludelist"
-        assert "finished" in registry, "Essential tool cannot be excluded"
+        assert "yield" in registry, "Essential tool cannot be excluded"
 
     def test_registry_consistency(self):
         """Test that registry methods return consistent results"""

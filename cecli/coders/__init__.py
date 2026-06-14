@@ -12,6 +12,7 @@ from .editor_whole_coder import EditorWholeFileCoder
 from .hashline_coder import HashLineCoder
 from .help_coder import HelpCoder
 from .patch_coder import PatchCoder
+from .sub_agent_coder import SubAgentCoder
 from .udiff_coder import UnifiedDiffCoder
 from .udiff_simple import UnifiedDiffSimpleCoder
 from .wholefile_coder import WholeFileCoder
@@ -37,4 +38,5 @@ __all__ = [
     AgentCoder,
     CopyPasteCoder,
     HashLineCoder,
+    SubAgentCoder,
 ]

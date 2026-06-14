@@ -7,8 +7,8 @@ from cecli.dump import dump  # noqa
 # Standard tag identifier
 REASONING_TAG = "thinking-content-" + "7bbeb8e1441453ad999a0bbba8a46d4b"
 # Output formatting
-REASONING_START = "--------------\n► **THINKING**"
-REASONING_END = "------------\n► **ANSWER**"
+REASONING_START = "--------------\n"
+REASONING_END = "----------\n"
 
 
 def remove_reasoning_content(res, reasoning_tag):
@@ -22,6 +22,7 @@ def remove_reasoning_content(res, reasoning_tag):
     Returns:
         str: Text with reasoning content removed
     """
+    reasoning_tag = unwrap_tag(reasoning_tag)
     if not reasoning_tag:
         return res
 
@@ -52,6 +53,7 @@ def replace_reasoning_tags(text, tag_name):
     Returns:
         str: Text with reasoning tags replaced with standard format
     """
+    tag_name = unwrap_tag(tag_name)
     if not text:
         return text
 
@@ -75,8 +77,23 @@ def format_reasoning_content(reasoning_content, tag_name):
     Returns:
         str: Formatted reasoning content with tags
     """
+    tag_name = unwrap_tag(tag_name)
     if not reasoning_content:
         return ""
 
     formatted = f"<{tag_name}>\n\n{reasoning_content}\n\n</{tag_name}>"
     return formatted
+
+
+def unwrap_tag(text: str) -> str:
+    # Remove any leading/trailing whitespace just in case
+    if text:
+        clean_text = text.strip()
+
+        # Check if it has both the opening and closing brackets
+        if clean_text.startswith("<") and clean_text.endswith(">"):
+            # Slice off the first and last characters
+            return clean_text[1:-1]
+
+    # Return the original string (or stripped string) if it doesn't match
+    return text

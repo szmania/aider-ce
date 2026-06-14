@@ -7,6 +7,7 @@ from cecli.commands.utils.helpers import format_command_result
 class MultilineModeCommand(BaseCommand):
     NORM_NAME = "multiline-mode"
     DESCRIPTION = "Toggle multiline mode (swaps behavior of Enter and Meta+Enter)"
+    show_completion_notification = True
 
     @classmethod
     async def execute(cls, io, coder, args, **kwargs):

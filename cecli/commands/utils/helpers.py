@@ -2,6 +2,8 @@ import os
 from pathlib import Path
 from typing import List
 
+from cecli.helpers.file_system import FileSystemService
+
 
 class CommandError(Exception):
     """Custom exception for command-specific errors."""
@@ -136,6 +138,9 @@ def get_file_completions(
     This function provides unified file completion logic that can be used by
     multiple commands (add, read-only, read-only-stub, etc.).
 
+    Uses FileSystemService when available for efficient trie/trigram lookups,
+    with fallback to legacy behavior.
+
     Args:
         coder: Coder instance
         args: Command arguments to complete
@@ -153,6 +158,10 @@ def get_file_completions(
 
     root = Path(coder.root) if hasattr(coder, "root") else Path.cwd()
 
+    # Try using FileSystemService for efficient lookups
+    fs = FileSystemService.get_instance()
+    fs_available = fs.trie is not None or fs.ngram is not None
+
     if completion_type == "glob":
         # Handle glob pattern completion
         if not args.strip():
@@ -166,6 +175,7 @@ def get_file_completions(
 
     elif completion_type == "directory":
         # Handle directory-based prefix matching (like read-only commands)
+        # Fallback: iterate filesystem directory
         if "/" in args:
             # Has directory component
             dir_part, file_part = args.rsplit("/", 1)
@@ -199,12 +209,19 @@ def get_file_completions(
 
     else:  # "all" completion type
         # Get all available files
-        if filter_in_chat:
-            files = set(coder.get_all_relative_files())
-            files = files - set(coder.get_inchat_relative_files())
-            completions = list(files)
+        if fs_available and fs.trie:
+            all_files = fs.list_all()
+            if filter_in_chat:
+                inchat = set(coder.get_inchat_relative_files())
+                all_files = [f for f in all_files if f not in inchat]
+            completions = all_files
         else:
-            completions = coder.get_all_relative_files()
+            if filter_in_chat:
+                files = set(coder.get_all_relative_files())
+                files = files - set(coder.get_inchat_relative_files())
+                completions = list(files)
+            else:
+                completions = coder.get_all_relative_files()
 
     # Quote filenames with spaces
     completions = [quote_filename(fn) for fn in completions]
@@ -256,7 +273,7 @@ def format_command_result(
         io.tool_error(f"Error in {command_name}: {str(error)}")
         return f"Error: {str(error)}"
     else:
-        io.tool_output(f"✅ {success_message}")
+        io.tool_output(f"✓ {success_message}")
         return f"Successfully executed {command_name}."
 
 

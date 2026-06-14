@@ -1,12 +1,14 @@
 # Import necessary functions
-import json
+import fnmatch
 import os
 import platform
 
 from cecli.helpers.background_commands import BackgroundCommandManager
 from cecli.run_cmd import run_cmd_subprocess
 from cecli.tools.utils.base_tool import BaseTool
+from cecli.tools.utils.helpers import ToolError
 from cecli.tools.utils.output import color_markers, tool_footer, tool_header
+from cecli.tools.validations import ToolValidations
 
 
 class Tool(BaseTool):
@@ -140,6 +142,14 @@ class Tool(BaseTool):
         if coder.skip_cli_confirmations:
             return True
 
+        # Check if command matches any allowed_commands patterns
+        if hasattr(coder, "agent_config"):
+            allowed_commands = coder.agent_config.get("allowed_commands", [])
+            if allowed_commands:
+                for pattern in allowed_commands:
+                    if fnmatch.fnmatch(command_string, pattern):
+                        return True
+
         command_string = coder.format_command_with_prefix(command_string)
 
         if background:
@@ -160,7 +170,7 @@ class Tool(BaseTool):
         """
         Execute command in background.
         """
-        coder.io.tool_output(f"⚙️ Starting background command: {command_string}")
+        coder.io.tool_output(f"⛭ Starting background command: {command_string}", type="tool-result")
 
         # Use static manager to start background command
         command_key = BackgroundCommandManager.start_background_command(
@@ -192,7 +202,9 @@ class Tool(BaseTool):
 
         from cecli.helpers.background_commands import CircularBuffer
 
-        coder.io.tool_output(f"⚙️ Executing shell command with {timeout}s timeout.")
+        coder.io.tool_output(
+            f"⛭ Executing shell command with {timeout}s timeout.", type="tool-result"
+        )
 
         shell = os.environ.get("SHELL", "/bin/sh")
 
@@ -245,7 +257,9 @@ class Tool(BaseTool):
 
                 # Format output
                 output_content = output or ""
-                output_limit = coder.large_file_token_threshold
+                # Tokens are roughly 3-4 characters
+                output_limit = coder.large_file_token_threshold * 3.5
+
                 if coder.context_management_enabled and len(output_content) > output_limit * 1.25:
                     # Save full output to paginated files instead of truncating
                     folder_path, file_list, alias_paths = (
@@ -266,8 +280,8 @@ class Tool(BaseTool):
                         f"File Aliases (for use with ContextManager):\n{alias_list_str}\n"
                         "Use the `ContextManager` tool to view these files."
                         "Do not use standard cli tools to view these files."
-                        "Remove them from context after taking note of the relevant information "
-                        "in the output to prevent overfilling stale context."
+                        "Remove them from context after taking notes on the relevant information "
+                        "to prevent overfilling stale context."
                     )
 
                 # Remove from background tracking since it's done
@@ -275,7 +289,7 @@ class Tool(BaseTool):
 
                 # Output to TUI console if TUI exists (same logic as _execute_foreground)
                 if coder.tui and coder.tui():
-                    coder.io.tool_output(output_content)
+                    coder.io.tool_output(output_content, type="tool-result")
 
                 if exit_code == 0:
                     return (
@@ -293,7 +307,8 @@ class Tool(BaseTool):
             if elapsed >= timeout:
                 # Timeout elapsed, process continues in background
                 coder.io.tool_output(
-                    f"⏱️ Command exceeded {timeout}s timeout, continuing in background..."
+                    f"⏱️ Command exceeded {timeout}s timeout, continuing in background...",
+                    type="tool-result",
                 )
 
                 # Get any output captured so far
@@ -319,7 +334,7 @@ class Tool(BaseTool):
             tui = coder.tui()
             should_print = False
 
-        coder.io.tool_output("⚙️ Executing shell command.")
+        coder.io.tool_output("⛭ Executing shell command.", type="tool-result")
 
         # Use run_cmd_subprocess for non-interactive execution
         exit_status, combined_output = run_cmd_subprocess(
@@ -357,7 +372,7 @@ class Tool(BaseTool):
             )
 
         if tui:
-            coder.io.tool_output(output_content)
+            coder.io.tool_output(output_content, type="tool-result")
 
         if exit_status == 0:
             return f"Shell command executed successfully (exit code 0). Output:\n{output_content}"
@@ -390,14 +405,16 @@ class Tool(BaseTool):
         """Format output for Command tool."""
         color_start, color_end = color_markers(coder)
 
-        try:
-            params = json.loads(tool_response.function.arguments)
-        except json.JSONDecodeError:
-            coder.io.tool_error("Invalid Tool JSON")
-            return
-
         # Output header
         tool_header(coder=coder, mcp_server=mcp_server, tool_response=tool_response)
+
+        try:
+            params = ToolValidations.validate_params(
+                tool_response.function.arguments, cls.VALIDATIONS, cls.SCHEMA
+            )
+        except ToolError:
+            coder.io.tool_error("Invalid Tool JSON")
+            return
 
         command = params.get("command", "")
         background = params.get("background", False)
@@ -428,4 +445,4 @@ class Tool(BaseTool):
         coder.io.tool_output("")
 
         # Output footer
-        tool_footer(coder=coder, tool_response=tool_response)
+        tool_footer(coder=coder, tool_response=tool_response, params=params)

@@ -1,32 +1,37 @@
-import asyncio
 from typing import List
 
 import cecli.prompts.utils.system as prompts
 from cecli.commands.utils.base_command import BaseCommand
 from cecli.commands.utils.helpers import format_command_result
 from cecli.helpers.conversation import ConversationService, MessageTag
-from cecli.run_cmd import run_cmd
+from cecli.run_cmd import run_cmd_async
 
 
 class RunCommand(BaseCommand):
     NORM_NAME = "run"
     DESCRIPTION = "Run a shell command and optionally add the output to the chat (alias: !)"
+    show_completion_notification = True
 
     @classmethod
     async def execute(cls, io, coder, args, **kwargs):
         """Execute the run command with given parameters."""
+        suppress_add = kwargs.get("suppress_add", False)
+        background = kwargs.get("background", False)
         add_on_nonzero_exit = kwargs.get("add_on_nonzero_exit", False)
+
+        # Background mode: suspend the TUI and run interactively
+        if background:
+            return await cls._execute_background(io, coder, args)
 
         should_print = True
 
         if coder.args.tui:
             should_print = False
 
-        exit_status, combined_output = await asyncio.to_thread(
-            run_cmd,
+        exit_status, combined_output = await run_cmd_async(
             args,
+            coder.interrupt_event,
             verbose=coder.args.verbose if hasattr(coder.args, "verbose") else False,
-            error_print=io.tool_error,
             cwd=coder.root,
             should_print=should_print,
         )
@@ -46,7 +51,10 @@ class RunCommand(BaseCommand):
         token_count = coder.main_model.token_count(combined_output)
         k_tokens = token_count / 1000
 
-        if add_on_nonzero_exit:
+        # When suppress_add is True, skip the confirmation and never add
+        if suppress_add:
+            add = False
+        elif add_on_nonzero_exit:
             add = exit_status != 0
         else:
             add = await io.confirm_ask(f"Add {k_tokens:.1f}k tokens of command output to the chat?")
@@ -81,6 +89,35 @@ class RunCommand(BaseCommand):
 
         # Return None if output wasn't added or command succeeded
         return format_command_result(io, "run", "Command executed successfully")
+
+    @classmethod
+    async def _execute_background(cls, io, coder, args):
+        """
+        Execute a command in background/obstructive mode with the TUI suspended.
+
+        This allows running interactive commands (e.g., sudo) that require
+        direct terminal access for user input. The TUI is suspended while
+        the command runs and is resumed upon completion.
+        """
+        import subprocess
+
+        def _run_sync():
+            """Run the command synchronously with direct terminal access."""
+            subprocess.run(
+                args,
+                shell=True,
+                cwd=coder.root,
+            )
+
+        if coder.tui and coder.tui():
+            # Suspend the TUI and run the command with direct terminal access
+            coder.tui().run_obstructive(_run_sync)
+        else:
+            # Not in TUI mode, run directly
+            _run_sync()
+
+        io.tool_output(f"Background command completed: {args}")
+        return format_command_result(io, "run", "Command executed in background mode")
 
     @classmethod
     def get_completions(cls, io, coder, args) -> List[str]:

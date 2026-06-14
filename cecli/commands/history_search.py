@@ -9,6 +9,7 @@ from cecli.utils import run_fzf
 class HistorySearchCommand(BaseCommand):
     NORM_NAME = "history-search"
     DESCRIPTION = "Fuzzy search in history and paste it in the prompt"
+    show_completion_notification = True
 
     @classmethod
     async def execute(cls, io, coder, args, **kwargs):

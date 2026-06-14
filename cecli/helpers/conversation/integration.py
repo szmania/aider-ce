@@ -2,7 +2,6 @@ import json
 import random
 import weakref
 from typing import Any, Dict, List
-from uuid import UUID
 
 import xxhash
 
@@ -13,7 +12,8 @@ from .tags import DEFAULT_TAG_PRIORITY, MessageTag
 
 
 class ConversationChunks:
-    _instances: Dict[UUID, "ConversationChunks"] = {}
+    _instances = weakref.WeakKeyDictionary()  # coder -> ConversationChunks (ties lifetime)
+    _uuid_index = weakref.WeakValueDictionary()  # uuid -> ConversationChunks (secondary lookup)
 
     def __init__(self, coder):
         self.coder = weakref.ref(coder)
@@ -24,20 +24,38 @@ class ConversationChunks:
     @classmethod
     def get_instance(cls, coder) -> "ConversationChunks":
         """Get or create chunks instance for coder."""
-        if coder.uuid not in cls._instances:
-            cls._instances[coder.uuid] = cls(coder)
+        # Fast path: exact coder object already registered
+        if coder in cls._instances:
+            return cls._instances[coder]
 
-        # Update weakref for SwitchCoderSignal
-        if coder is not cls._instances[coder.uuid].get_coder():
-            cls._instances[coder.uuid].coder = weakref.ref(coder)
+        # Fallback: child coder inheriting parent's uuid
+        if coder.uuid in cls._uuid_index:
+            instance = cls._uuid_index[coder.uuid]
 
-        return cls._instances[coder.uuid]
+            if instance.get_coder() is not coder:
+                instance.coder = weakref.ref(coder)
+
+            cls._instances[coder] = instance
+
+            return instance
+
+        # New coder with a new uuid — create fresh
+        instance = cls(coder)
+        cls._instances[coder] = instance
+        cls._uuid_index[coder.uuid] = instance
+        return instance
 
     @classmethod
-    def destroy_instance(cls, coder_uuid: UUID):
+    def destroy_instance(cls, coder_uuid: str):
         """Explicit cleanup for sub-agents."""
-        if coder_uuid in cls._instances:
-            del cls._instances[coder_uuid]
+        if coder_uuid in cls._uuid_index:
+            instance = cls._uuid_index[coder_uuid]
+            # Remove from coder-keyed dict
+            for key, val in list(cls._instances.items()):
+                if val is instance:
+                    del cls._instances[key]
+                    break
+            del cls._uuid_index[coder_uuid]
 
     def get_coder(self):
         """Get strong reference to coder (or None if destroyed)."""
@@ -64,7 +82,6 @@ class ConversationChunks:
 
         system_prompt = coder.gpt_prompts.main_system
         if system_prompt:
-            # Apply system_prompt_prefix if set on the model
             if coder.main_model.system_prompt_prefix:
                 system_prompt = coder.main_model.system_prompt_prefix + "\n" + system_prompt
 
@@ -84,8 +101,11 @@ class ConversationChunks:
                 ConversationService.get_manager(coder).add_message(
                     message_dict=msg_copy,
                     tag=MessageTag.EXAMPLES,
-                    priority=75 + i,  # Slight offset for ordering within examples
+                    priority=75 + i,
                 )
+
+        if self._cancel_post_message_injections():
+            return
 
         # Add system reminder as a pre-prompt context block
         use_reminders = getattr(coder.args, "use_reminders", True)
@@ -108,10 +128,48 @@ class ConversationChunks:
                 mark_for_delete=0,
             )
 
+    def add_system_message(self, prompt: str) -> None:
+        """Add a custom system prompt as a system message.
+
+        Used by sub-agents to inject their specific system prompt into
+        the conversation instead of the default main system prompt.
+
+        Args:
+            prompt: The system prompt text to add.
+        """
+        coder = self.get_coder()
+        if not coder or not prompt:
+            return
+
+        ConversationService.get_manager(coder).add_message(
+            message_dict={"role": "system", "content": prompt},
+            tag=MessageTag.SYSTEM,
+            hash_key=("main", "subagent_prompt"),
+            force=True,
+        )
+
+        msg = dict(
+            role="user",
+            content=self._shuffle_reminders(
+                coder.fmt_system_prompt(coder.gpt_prompts.system_reminder)
+            ),
+        )
+
+        ConversationService.get_manager(coder).add_message(
+            message_dict=msg,
+            tag=MessageTag.REMINDER,
+            hash_key=("main", "subagent_reminder"),
+            force=True,
+            mark_for_delete=0,
+        )
+
     def add_randomized_cta(self) -> None:
         coder = self.get_coder()
         if not coder:
             return
+
+        # if self._cancel_post_message_injections():
+        #     return
 
         message = random.choice(
             [
@@ -127,7 +185,7 @@ class ConversationChunks:
                 ),
                 (
                     "Continue making progress. If you have reached the goal, summarize the results."
-                    " Otherwise, call the next necessary tool."
+                    " Otherwise, call the next necessary tools."
                 ),
                 (
                     "Please use the proper tools to fulfill the next steps of this task based on"
@@ -149,9 +207,19 @@ class ConversationChunks:
             ]
         )
 
+        user_fidelity = random.choice(
+            [
+                "Be mindful of any instructions given, prioritizing the latest.",
+                "Respect all established constraints.",
+                "Please stay on task and stick closely to my guidance.",
+                "Keep my explicit intent in mind.",
+                "Stay focused on our goals and the scope of our concerns.",
+            ]
+        )
+
         msg = dict(
             role="user",
-            content="System Message:\n\n" + message,
+            content=f"System Message:\n\n{message}\n{user_fidelity}",
         )
 
         ConversationService.get_manager(coder).add_message(
@@ -216,7 +284,11 @@ class ConversationChunks:
 
         self._last_clear_count += 1
 
-        if should_clear and self._last_clear_count >= 20:
+        if (
+            should_clear
+            and self._last_clear_count >= 20
+            and diff_tokens + other_tokens > coder.context_compaction_max_tokens * 0.5
+        ):
             self._last_clear_count = 0
 
             # Clear all diff messages
@@ -280,6 +352,9 @@ class ConversationChunks:
         """
         coder = self.get_coder()
         if not coder:
+            return
+
+        if self._cancel_post_message_injections():
             return
 
         # Get relative paths for display
@@ -780,7 +855,7 @@ class ConversationChunks:
 
             user_msg = {
                 "role": "user",
-                "content": f"Hash-Prefixed Context For:\n{rel_fname}\n\n{context_content}",
+                "content": f"ID-Prefixed Context For:\n{rel_fname}\n\n{context_content}",
             }
 
             assistant_msg = {
@@ -839,6 +914,10 @@ class ConversationChunks:
                 block = coder.get_cached_context_block("directory_structure")
                 if block:
                     message_blocks["directory_structure"] = block
+            if "sub_agents" in coder.allowed_context_blocks:
+                block = coder._generate_context_block("sub_agents")
+                if block:
+                    message_blocks["sub_agents"] = block
             if "skills" in coder.allowed_context_blocks:
                 block = coder._generate_context_block("skills")
                 if block:
@@ -910,6 +989,9 @@ class ConversationChunks:
         if not hasattr(coder, "use_enhanced_context") or not coder.use_enhanced_context:
             return
 
+        if self._cancel_post_message_injections():
+            return
+
         # Add post-message blocks as dict with block type as key
         message_blocks = {}
 
@@ -957,11 +1039,52 @@ class ConversationChunks:
                 force=True,
             )
 
+    def add_sub_agent_states(self) -> None:
+        """
+        Add sub-agent states context block to conversation (priority 250).
+
+        Sub-agent states include: name, UUID, and status (CREATED, RUNNING,
+        FINISHED, ERROR) of each active child sub-agent.
+        """
+        coder = self.get_coder()
+        if not coder:
+            return
+
+        if not hasattr(coder, "use_enhanced_context") or not coder.use_enhanced_context:
+            return
+
+        if not hasattr(coder, "get_child_agent_states"):
+            return
+
+        block = coder.get_child_agent_states()
+        if not block:
+            return
+
+        ConversationService.get_manager(coder).add_message(
+            message_dict={"role": "user", "content": block},
+            tag=MessageTag.STATIC,
+            priority=DEFAULT_TAG_PRIORITY[MessageTag.REMINDER] + 25,  # After post_message blocks
+            mark_for_delete=0,
+            hash_key=("sub_agent_states",),
+            force=True,
+        )
+
     def defer_removal(self, file_path: str):
         self._deferred_removals.add(file_path)
 
     def flush_removals(self):
         self._deferred_removals.clear()
+
+    def _cancel_post_message_injections(self):
+        coder = self.get_coder()
+        if not coder:
+            return False
+
+        # Add system reminder as a pre-prompt context block
+        if coder.edit_format in ("agent", "subagent") and coder.turn_count % 5 != 0:
+            return True
+
+        return False
 
     def _shuffle_reminders(self, content: str) -> str:
         """

@@ -8,6 +8,7 @@ from cecli.commands.utils.registry import CommandRegistry
 class HelpCommand(BaseCommand):
     NORM_NAME = "help"
     DESCRIPTION = "Ask questions about cecli"
+    show_completion_notification = True
 
     @classmethod
     async def execute(cls, io, coder, args, **kwargs):

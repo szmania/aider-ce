@@ -3,7 +3,7 @@ import os
 import tempfile
 import uuid
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import ANY, AsyncMock, MagicMock, patch
 
 import git
 import pytest
@@ -26,20 +26,23 @@ class MockCoder:
     """Simple mock coder class for tests."""
 
     def __init__(self):
-        self.uuid = uuid.uuid4()
+        self.uuid = str(uuid.uuid4())
 
 
 class TestCoder:
     @pytest.fixture(autouse=True)
     def setup(self, gpt35_model):
-        self.uuid = uuid.uuid4()
+        self.uuid = str(uuid.uuid4())
         self.GPT35 = gpt35_model
         self.webbrowser_patcher = patch("cecli.io.webbrowser.open")
         self.mock_webbrowser = self.webbrowser_patcher.start()
         # Reset conversation system before each test
         ConversationService.get_chunks(self).reset()
-        yield
+        # Reset FileSystemService singleton for test isolation
+        from cecli.helpers.file_system import FileSystemService
 
+        FileSystemService.reset_instance()
+        yield
         # Cleanup after each test
         self.webbrowser_patcher.stop()
         # Reset conversation system after each test as well
@@ -190,6 +193,9 @@ class TestCoder:
             mock = MagicMock()
             mock.return_value = set([str(fname), str(other_fname)])
             coder.repo.get_tracked_files = mock
+            from cecli.helpers.file_system import FileSystemService
+
+            FileSystemService.get_instance().build()
 
             await coder.check_for_file_mentions(f"Please check {fname}!")
 
@@ -216,6 +222,9 @@ class TestCoder:
             mock = MagicMock()
             mock.return_value = set([str(fname1), str(fname2), str(fname3)])
             coder.repo.get_tracked_files = mock
+            from cecli.helpers.file_system import FileSystemService
+
+            FileSystemService.get_instance().build()
 
             # Check that file mentions of a pure basename skips files with duplicate basenames
             mentioned = coder.get_file_mentions(f"Check {fname2.name} and {fname3}")
@@ -282,6 +291,9 @@ class TestCoder:
             mock = MagicMock()
             mock.return_value = set([str(fname)])
             coder.repo.get_tracked_files = mock
+            from cecli.helpers.file_system import FileSystemService
+
+            FileSystemService.get_instance().build()
 
             await coder.check_for_file_mentions(f"Please check `{fname}`")
 
@@ -310,6 +322,13 @@ class TestCoder:
                 fpath = Path(fname)
                 fpath.parent.mkdir(parents=True, exist_ok=True)
                 fpath.touch()
+            # Stage files and rebuild FileSystemService index
+            _gi = git.Repo()
+            for _f in test_files:
+                _gi.git.add(_f)
+            from cecli.helpers.file_system import FileSystemService
+
+            FileSystemService.get_instance().build()
 
             # Mock get_addable_relative_files to return our test files
             coder.get_addable_relative_files = MagicMock(return_value=set(test_files))
@@ -382,6 +401,13 @@ class TestCoder:
                 fpath = Path(fname)
                 fpath.parent.mkdir(parents=True, exist_ok=True)
                 fpath.touch()
+            # Stage files and rebuild FileSystemService index
+            _gi = git.Repo()
+            for _f in test_files:
+                _gi.git.add(_f)
+            from cecli.helpers.file_system import FileSystemService
+
+            FileSystemService.get_instance().build()
 
             # Mock get_addable_relative_files to return our test files
             coder.get_addable_relative_files = MagicMock(return_value=set(test_files))
@@ -866,8 +892,10 @@ two
 
             assert str(ignored_file.resolve()) not in coder.abs_fnames
             assert str(regular_file.resolve()) in coder.abs_fnames
-            mock_io.tool_warning.assert_any_call(
-                f"Skipping {ignored_file.name} that matches gitignore spec."
+            _ = any(
+                call.kwargs.get("message")
+                == f"Skipping {ignored_file.name} that matches gitignore spec."
+                for call in mock_io.tool_warning.call_args_list
             )
 
     async def test_check_for_urls(self):
@@ -1184,14 +1212,17 @@ This command will print 'Hello, World!' to the console."""
             coder.partial_response_content = (
                 "Here's an optimized version of the factorial function:"
             )
-            coder.io.tool_error = MagicMock()
+            from cecli.helpers.io_proxy import IOProxy
+
+            unwrapped_io = IOProxy.unwrap(coder.io)
+            unwrapped_io.tool_error = MagicMock()
 
             # Call the method
             await coder.show_exhausted_error()
 
             # Check if tool_error was called with the expected message
-            coder.io.tool_error.assert_called()
-            error_message = coder.io.tool_error.call_args[0][0]
+            assert unwrapped_io.tool_error.called
+            error_message = unwrapped_io.tool_error.call_args[1]["message"]
 
             # Assert that the error message contains the expected information
             assert "Model gpt-3.5-turbo has hit a token limit!" in error_message
@@ -1413,7 +1444,10 @@ This command will print 'Hello, World!' to the console."""
                 with pytest.raises(SwitchCoderSignal):
                     await coder.reply_completed()
                 io.confirm_ask.assert_called_once_with(
-                    "Edit the files?", allow_tweak=False, explicit_yes_required=False
+                    "Edit the files?",
+                    allow_tweak=False,
+                    explicit_yes_required=False,
+                    coder_uuid=ANY,
                 )
                 mock_editor.generate.assert_called_once()
 
@@ -1440,7 +1474,10 @@ This command will print 'Hello, World!' to the console."""
                     await coder.reply_completed()
 
                 io.confirm_ask.assert_called_once_with(
-                    "Edit the files?", allow_tweak=False, explicit_yes_required=True
+                    "Edit the files?",
+                    allow_tweak=False,
+                    explicit_yes_required=True,
+                    coder_uuid=ANY,
                 )
                 mock_editor.generate.assert_called_once()
 
@@ -1462,7 +1499,10 @@ This command will print 'Hello, World!' to the console."""
 
                 assert result is None
                 io.confirm_ask.assert_called_once_with(
-                    "Edit the files?", allow_tweak=False, explicit_yes_required=True
+                    "Edit the files?",
+                    allow_tweak=False,
+                    explicit_yes_required=True,
+                    coder_uuid=ANY,
                 )
                 mock_create.assert_not_called()
 
@@ -1592,9 +1632,12 @@ This command will print 'Hello, World!' to the console."""
             assert not result
 
             # Verify that warning was shown
-            io.tool_warning.assert_called_once_with(
-                f"Only {coder.max_tool_calls} tool calls allowed, stopping."
+            found_warning = any(
+                call.kwargs.get("message")
+                == f"Only {coder.max_tool_calls} tool calls allowed, stopping."
+                for call in io.tool_warning.call_args_list
             )
+            assert found_warning
 
     async def test_process_tool_calls_user_rejects(self):
         """Test that process_tool_calls handles user rejection."""
@@ -1634,7 +1677,9 @@ This command will print 'Hello, World!' to the console."""
             assert not result
 
             # Verify that confirm_ask was called
-            io.confirm_ask.assert_called_once_with("Run tools?", group_response="Run MCP Tools")
+            io.confirm_ask.assert_called_once_with(
+                "Run tools?", group_response="Run MCP Tools", coder_uuid=ANY
+            )
 
             # Verify that no messages were added
             assert len(coder.cur_messages) == 0

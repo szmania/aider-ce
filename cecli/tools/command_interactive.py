@@ -1,5 +1,6 @@
 # Import necessary functions
 import asyncio
+import fnmatch
 
 from cecli.run_cmd import run_cmd
 from cecli.tools.utils.base_tool import BaseTool
@@ -30,6 +31,17 @@ class Tool(BaseTool):
         },
     }
 
+    @staticmethod
+    def _is_command_allowed(coder, command_string):
+        """Check if command matches any allowed_commands patterns."""
+        if hasattr(coder, "agent_config"):
+            allowed_commands = coder.agent_config.get("allowed_commands", [])
+            for pattern in allowed_commands:
+                if fnmatch.fnmatch(command_string, pattern):
+                    return True
+
+        return False
+
     @classmethod
     async def execute(cls, coder, command_string, **kwargs):
         """
@@ -40,7 +52,7 @@ class Tool(BaseTool):
 
             confirmed = (
                 True
-                if coder.skip_cli_confirmations
+                if coder.skip_cli_confirmations or cls._is_command_allowed(coder, command_string)
                 else await coder.io.confirm_ask(
                     "Allow execution of this command?",
                     subject=command_string,
@@ -53,10 +65,14 @@ class Tool(BaseTool):
             if not confirmed:
                 # This happens if the user explicitly says 'no' this time.
                 # If 'Always' was chosen previously, confirm_ask returns True directly.
-                coder.io.tool_output(f"Skipped execution of shell command: {command_string}")
+                coder.io.tool_output(
+                    f"Skipped execution of shell command: {command_string}", type="tool-result"
+                )
                 return "Shell command execution skipped by user."
 
-            coder.io.tool_output(f"⚙️ Starting interactive shell command: {command_string}")
+            coder.io.tool_output(
+                f"⛭ Starting interactive shell command: {command_string}", type="tool-result"
+            )
 
             tui = coder.tui() if coder.tui else None
 
@@ -71,19 +87,23 @@ class Tool(BaseTool):
 
             if tui:
                 # Notify user and suspend TUI for interactive command
-                coder.io.tool_output(">>> Suspending TUI for interactive command <<<")
+                coder.io.tool_output(
+                    ">>> Suspending TUI for interactive command <<<", type="tool-result"
+                )
                 exit_status, combined_output = tui.run_obstructive(_run_interactive)
             else:
-                coder.io.tool_output(">>> You may need to interact with the command below <<<")
+                coder.io.tool_output(
+                    ">>> You may need to interact with the command below <<<", type="tool-result"
+                )
                 coder.io.tool_output(" \n")
                 await coder.io.stop_input_task()
                 await asyncio.sleep(1)
                 exit_status, combined_output = _run_interactive()
                 await asyncio.sleep(1)
-                coder.io.tool_output(" \n")
-                coder.io.tool_output(" \n")
+                coder.io.tool_output(" \n", type="tool-result")
+                coder.io.tool_output(" \n", type="tool-result")
 
-            coder.io.tool_output(">>> Interactive command finished <<<")
+            coder.io.tool_output(">>> Interactive command finished <<<", type="tool-result")
 
             # Format the output for the result message, include more content
             output_content = combined_output or ""

@@ -86,8 +86,10 @@ go_ahead_tip: ""
 compaction_prompt: |
   ---
   # Instruction: Context Compaction & State Preservation
-  The current conversation is exceeding the context limit. Transform this history into a "Mission Intent" summary that allows a new LLM instance to resume with zero loss of technical momentum.
-  
+  The current conversation is exceeding the context limit. 
+  Transform this history into a "Mission Intent" summary that allows a new session to resume with zero loss of technical momentum.
+  Do not call any tools in your response. Just generate your summary.
+
   ## Required Output Format:
 
   ### 1. Core Objective
@@ -111,12 +113,13 @@ observation_prompt: |
   Use a bulleted list of concise, factual statements.
   Document the sequence of **outcomes and milestones** reached. 
   Do not describe tool syntax; describe what was learned or changed in one sentence per bullet.
+  Do not call any tools in your response. Just generate your summary.
 
 reflection_prompt: |
   ---
-  Condense this observation log into a consolidated set of 
-  key historical facts. Additionally, explicitly state the 
-  CURRENT GOALS and NEXT STEPS based on the history.
+  Condense this observation log into a consolidated set of key historical facts. 
+  Additionally, explicitly state the CURRENT GOALS and NEXT STEPS based on the history.
+  Do not call any tools in your response. Just generate your summary.
 
   Format as:
   OBSERVATIONS:

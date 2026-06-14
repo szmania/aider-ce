@@ -7,6 +7,7 @@ from cecli.commands.utils.helpers import format_command_result
 class ReportCommand(BaseCommand):
     NORM_NAME = "report"
     DESCRIPTION = "Report a problem by opening a GitHub Issue"
+    show_completion_notification = True
 
     @classmethod
     async def execute(cls, io, coder, args, **kwargs):

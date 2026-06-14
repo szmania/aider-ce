@@ -8,6 +8,7 @@ from cecli.commands.utils.helpers import format_command_result
 class GitCommand(BaseCommand):
     NORM_NAME = "git"
     DESCRIPTION = "Run a git command (output excluded from chat)"
+    show_completion_notification = True
 
     @classmethod
     async def execute(cls, io, coder, args, **kwargs):

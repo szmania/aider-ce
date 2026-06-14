@@ -30,7 +30,7 @@ class Tool(BaseTool):
             return "Error: Skill name is required."
 
         # Check if we're in agent mode
-        if not hasattr(coder, "edit_format") or coder.edit_format != "agent":
+        if not hasattr(coder, "edit_format") or coder.edit_format not in ("agent", "subagent"):
             return "Error: Skill removal is only available in agent mode."
 
         # Check if skills_manager is available

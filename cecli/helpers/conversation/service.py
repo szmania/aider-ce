@@ -1,5 +1,4 @@
 from typing import TYPE_CHECKING
-from uuid import UUID
 
 if TYPE_CHECKING:
     from .files import ConversationFiles
@@ -29,7 +28,7 @@ class ConversationService:
         return ConversationFiles.get_instance(coder)
 
     @staticmethod
-    def destroy_instances(coder_uuid: UUID):
+    def destroy_instances(coder_uuid: str):
         """Explicit cleanup for sub-agents."""
         from .files import ConversationFiles
         from .integration import ConversationChunks

@@ -49,10 +49,9 @@ class CoderWorker:
 
         try:
             self.loop.run_until_complete(self._async_run())
-        except asyncio.CancelledError:
-            pass
-        except RuntimeError:
-            # Event loop stopped - this is expected during shutdown
+        except BaseException:
+            # Catch anything that could bring down the thread, and just let it exit.
+            # This includes KeyboardInterrupt, SystemExit, etc.
             pass
         finally:
             self._cleanup_loop()
@@ -79,6 +78,8 @@ class CoderWorker:
                         )
                     except RuntimeError:
                         pass  # Loop already stopped
+                    except KeyboardInterrupt:
+                        pass  # Loop already stopped
 
                 self.loop.close()
         except Exception:
@@ -92,6 +93,8 @@ class CoderWorker:
                 break  # Normal exit
             except asyncio.CancelledError:
                 break
+            except KeyboardInterrupt:
+                continue
             except SwitchCoderSignal as switch:
                 # Handle chat mode switches (e.g., /chat-mode architect)
                 try:
@@ -134,14 +137,34 @@ class CoderWorker:
                 break
 
     def interrupt(self):
-        """Cancel the current output task on the coder instance."""
-        if self.coder and hasattr(self.coder, "io") and self.coder.io:
+        """Cancel the current output task on the active (foreground) coder.
+
+        Resolves the foreground coder via AgentService so that the interrupt
+        targets whichever agent (primary or sub-agent) is currently active.
+        """
+        # Determine the active coder — could be a sub-agent in the foreground
+        target_coder = self.coder
+        try:
+            from cecli.helpers.agents.service import AgentService
+
+            agent_service = AgentService.get_instance(self.coder)
+            foreground = agent_service.foreground_coder
+            if foreground is not None:
+                target_coder = foreground
+        except Exception:
+            pass
+
+        if target_coder and hasattr(target_coder, "io") and target_coder.io:
             # Cancel the output task if it exists
-            if hasattr(self.coder.io, "output_task") and self.coder.io.output_task:
-                self.coder.io.output_task.cancel()
+            if hasattr(target_coder.io, "output_task") and target_coder.io.output_task:
+                target_coder.io.output_task.cancel()
                 # Also set output_running to False to stop the output_task loop
-                if hasattr(self.coder, "output_running"):
-                    self.coder.output_running = False
+                if hasattr(target_coder, "output_running"):
+                    target_coder.output_running = False
+
+            # Cancel any tracked generate task on the coder directly
+            if hasattr(target_coder, "interrupt_event") and target_coder.interrupt_event:
+                target_coder.interrupt_event.set()
 
     def stop(self):
         """Stop the worker thread gracefully."""
@@ -159,7 +182,11 @@ class CoderWorker:
             except RuntimeError:
                 # Loop may already be closed
                 pass
-
+            except KeyboardInterrupt:
+                # An interrupt was not caught within the async run loop.
+                # We'll just pass to allow the thread to exit gracefully
+                # without a scary traceback.
+                pass
         self.interrupt()
 
         # Wait for thread to finish

@@ -8,7 +8,17 @@ description: Create and use custom commands to extend cecli's functionality.
 
 Hooks allow you to extend `cecli` by defining custom actions that trigger at specific points in the agent's workflow. You can use hooks to automate tasks, integrate with external systems, or add custom validation logic.
 
-## Getting Started
+## Per-Agent Architecture
+
+Hooks in `cecli` use a **per-agent** architecture. Each coder instance (primary agent and sub-agents) has its own isolated `HookManager` with its own set of registered hooks and enabled/disabled states.
+
+Key design points:
+
+- **Isolated hook state**: Each agent gets its own `HookManager`. Enabling or disabling a hook on one agent does not affect others.
+- **No inheritance**: Sub-agents do **not** inherit hooks from their parent. Each sub-agent defines its own hooks (if any) in its definition file.
+- **Independent lifecycle**: Hooks are created when their owning coder is created and cleaned up when the coder is destroyed.
+- **Global configuration**: The `--hooks` CLI flag and `.cecli.conf.yml` hooks configuration only affect the **primary agent**.
+- **Per-agent hooks**: Sub-agents can define their own hooks via the `hooks` field in their YAML front matter definition.
 
 Hooks are configured in your `.cecli.conf.yml` file under the `hooks` section. You can define two types of hooks:
 1. **Command Hooks**: Execute shell commands or scripts.

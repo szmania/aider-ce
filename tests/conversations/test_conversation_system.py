@@ -14,7 +14,7 @@ class MockCoder:
     """Simple mock coder class for conversation system tests."""
 
     def __init__(self, io=None):
-        self.uuid = uuid.uuid4()
+        self.uuid = str(uuid.uuid4())
         self.abs_fnames = set()
         self.abs_read_only_fnames = set()
         self.edit_format = None

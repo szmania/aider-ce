@@ -13,7 +13,8 @@ cogapp
 semver
 codespell
 uv
-memray
+memray; sys_platform != 'win32'
 objgraph
 pympler
 guppy3
+psutil

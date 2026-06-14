@@ -67,6 +67,7 @@ configargparse==1.7.1
 cryptography==46.0.3
     # via
     #   -c requirements/common-constraints.txt
+    #   -r requirements/requirements.in
     #   pyjwt
 diff-match-patch==20241021
     # via
@@ -160,6 +161,10 @@ jiter==0.12.0
     # via
     #   -c requirements/common-constraints.txt
     #   openai
+json-repair==0.60.1
+    # via
+    #   -c requirements/common-constraints.txt
+    #   -r requirements/requirements.in
 json5==0.12.1
     # via
     #   -c requirements/common-constraints.txt
@@ -179,6 +184,10 @@ linkify-it-py==2.0.3
     #   -c requirements/common-constraints.txt
     #   markdown-it-py
 litellm==1.81.11
+    # via
+    #   -c requirements/common-constraints.txt
+    #   -r requirements/requirements.in
+marisa-trie==1.4.1
     # via
     #   -c requirements/common-constraints.txt
     #   -r requirements/requirements.in
@@ -217,6 +226,10 @@ multidict==6.7.0
     #   -c requirements/common-constraints.txt
     #   aiohttp
     #   yarl
+ngram==4.0.3
+    # via
+    #   -c requirements/common-constraints.txt
+    #   -r requirements/requirements.in
 numpy==2.3.5
     # via
     #   -c requirements/common-constraints.txt
@@ -335,6 +348,10 @@ pyyaml==6.0.3
     #   -c requirements/common-constraints.txt
     #   -r requirements/requirements.in
     #   huggingface-hub
+rapidfuzz==3.14.5
+    # via
+    #   -c requirements/common-constraints.txt
+    #   -r requirements/requirements.in
 referencing==0.37.0
     # via
     #   -c requirements/common-constraints.txt

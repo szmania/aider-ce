@@ -8,6 +8,7 @@ from .input_container import InputContainer
 from .key_hints import KeyHints
 from .output import OutputContainer
 from .status_bar import StatusBar
+from .subagent_pills import SubAgentPills
 
 __all__ = [
     "MainFooter",
@@ -18,4 +19,5 @@ __all__ = [
     "OutputContainer",
     "StatusBar",
     "FileList",
+    "SubAgentPills",
 ]

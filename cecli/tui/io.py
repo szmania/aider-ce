@@ -1,6 +1,7 @@
 """TextualInputOutput - IO adapter for Textual TUI."""
 
 import asyncio
+import queue
 import time
 
 from rich.console import Console
@@ -9,6 +10,22 @@ from cecli.io import InputOutput, get_rel_fname
 
 
 class TextualInputOutput(InputOutput):
+
+    # Per-coder input queue registry
+    # Each IOProxy registers its own queue here so the TUI
+    # can push input directly to the correct coder.
+    _per_coder_queues: dict[str, "queue.Queue"] = {}
+
+    @classmethod
+    def register_coder_queue(cls, coder_uuid: str, q: "queue.Queue") -> None:
+        """Register a per-coder input queue."""
+        cls._per_coder_queues[coder_uuid] = q
+
+    @classmethod
+    def unregister_coder_queue(cls, coder_uuid: str) -> None:
+        """Unregister a per-coder input queue."""
+        cls._per_coder_queues.pop(coder_uuid, None)
+
     """InputOutput subclass that communicates with Textual TUI via queues."""
 
     def __init__(self, output_queue, input_queue, **kwargs):
@@ -33,7 +50,9 @@ class TextualInputOutput(InputOutput):
         self.current_task_id = None
 
         # LLM response streaming state
-        self._streaming_response = False
+        # LLM response streaming state — per-coder tracking
+        # Dict keyed by coder_uuid to support simultaneous multi-coder streaming
+        self._streaming_response: dict[str, bool] = {}
 
         # Disable fallback spinner so it doesn't clutter terminal output
         self.fallback_spinner_enabled = False
@@ -77,22 +96,25 @@ class TextualInputOutput(InputOutput):
 
         return False, None, None
 
-    def start_task(self, title, task_type="general"):
+    def start_task(self, title, task_type="general", **kwargs):
         """Start a new output task.
 
         Args:
             title: Task title
             task_type: Type of task
+            coder_uuid: Optional uuid string to include in the message
         """
+        coder_uuid = kwargs.get("coder_uuid", None)
         self.current_task_id = f"task_{time.time()}"
-        self.output_queue.put(
-            {
-                "type": "start_task",
-                "task_id": self.current_task_id,
-                "title": title,
-                "task_type": task_type,
-            }
-        )
+        msg = {
+            "type": "start_task",
+            "task_id": self.current_task_id,
+            "title": title,
+            "task_type": task_type,
+        }
+        if coder_uuid:
+            msg["coder_uuid"] = coder_uuid
+        self.output_queue.put(msg)
 
     def _get_tui_console(self):
         """Get or create console for TUI rendering."""
@@ -110,6 +132,10 @@ class TextualInputOutput(InputOutput):
             *messages: Messages to print
             **kwargs: Additional arguments for console.print
         """
+        # Pop coder_uuid from kwargs before passing to console
+        coder_uuid = kwargs.pop("coder_uuid", None)
+        coder_uuid = kwargs.pop("type", None)
+
         # Capture Rich rendering with forced ANSI output
         console = self._get_tui_console()
         with console.capture() as capture:
@@ -117,15 +143,16 @@ class TextualInputOutput(InputOutput):
         text = capture.get()
 
         # Send to TUI via queue
-        self.output_queue.put(
-            {
-                "type": "output",
-                "text": text,
-                "task_id": self.current_task_id,
-            }
-        )
+        msg = {
+            "type": "output",
+            "text": text,
+            "task_id": self.current_task_id,
+        }
+        if coder_uuid:
+            msg["coder_uuid"] = coder_uuid
+        self.output_queue.put(msg)
 
-    def stream_output(self, text, final=False):
+    def stream_output(self, text, final=False, **kwargs):
         """Override stream_output to send streaming text to TUI.
 
         Uses Textual's RichLog for efficient rendering.
@@ -133,33 +160,64 @@ class TextualInputOutput(InputOutput):
         Args:
             text: Text to stream
             final: Whether this is the final chunk
+            coder_uuid: Optional uuid string to include in the message
         """
+        coder_uuid = kwargs.get("coder_uuid", None)
+
         # Start response on first chunk
-        if not self._streaming_response and text:
-            self._streaming_response = True
-            self.output_queue.put({"type": "start_response"})
+        # Start response on first chunk — per-coder tracking
+        if coder_uuid and coder_uuid not in self._streaming_response and text:
+            self._streaming_response[coder_uuid] = True
+            msg = {"type": "start_response", "coder_uuid": coder_uuid}
+            self.output_queue.put(msg)
 
         # Stream the chunk
         if text:
-            self.output_queue.put(
-                {
-                    "type": "stream_chunk",
-                    "text": text,
-                }
-            )
+            msg = {
+                "type": "stream_chunk",
+                "text": text,
+            }
+            if coder_uuid:
+                msg["coder_uuid"] = coder_uuid
+            self.output_queue.put(msg)
 
         # End response on final chunk
-        if final and self._streaming_response:
-            self._streaming_response = False
-            self.output_queue.put({"type": "end_response"})
+        # End response on final chunk — per-coder tracking
+        if final and coder_uuid and coder_uuid in self._streaming_response:
+            del self._streaming_response[coder_uuid]
+            msg = {"type": "end_response", "coder_uuid": coder_uuid}
+            self.output_queue.put(msg)
 
-    def reset_streaming_response(self):
-        """Reset streaming state between responses."""
-        if self._streaming_response:
-            self._streaming_response = False
-            self.output_queue.put({"type": "end_response"})
+    def reset_streaming_response(self, **kwargs):
+        """Reset streaming state between responses.
 
-    def assistant_output(self, message, pretty=None):
+        Args:
+            coder_uuid: Optional uuid of the coder to reset.
+                         If None, resets all streaming states.
+        """
+        coder_uuid = kwargs.get("coder_uuid", None)
+
+        if coder_uuid:
+            if coder_uuid in self._streaming_response:
+                del self._streaming_response[coder_uuid]
+                self.output_queue.put(
+                    {
+                        "type": "end_response",
+                        "coder_uuid": coder_uuid,
+                    }
+                )
+        else:
+            # Reset all remaining streams
+            for uuid in list(self._streaming_response.keys()):
+                self.output_queue.put(
+                    {
+                        "type": "end_response",
+                        "coder_uuid": uuid,
+                    }
+                )
+            self._streaming_response.clear()
+
+    def assistant_output(self, message, pretty=None, **kwargs):
         """Override assistant_output to send LLM response through streaming path.
 
         This ensures non-streaming mode output gets the same markdown rendering
@@ -168,14 +226,28 @@ class TextualInputOutput(InputOutput):
         Args:
             message: The assistant's response message
             pretty: Whether to use pretty formatting (unused in TUI, kept for compatibility)
+            coder_uuid: Optional uuid string to include in the message
         """
+        coder_uuid = kwargs.get("coder_uuid", None)
+
         if not message:
             message = "(empty response)"
 
         # Use the streaming path so markdown rendering is applied
-        self.output_queue.put({"type": "start_response"})
-        self.output_queue.put({"type": "stream_chunk", "text": message})
-        self.output_queue.put({"type": "end_response"})
+        start_msg = {"type": "start_response"}
+        if coder_uuid:
+            start_msg["coder_uuid"] = coder_uuid
+        self.output_queue.put(start_msg)
+
+        chunk_msg = {"type": "stream_chunk", "text": message}
+        if coder_uuid:
+            chunk_msg["coder_uuid"] = coder_uuid
+        self.output_queue.put(chunk_msg)
+
+        end_msg = {"type": "end_response"}
+        if coder_uuid:
+            end_msg["coder_uuid"] = coder_uuid
+        self.output_queue.put(end_msg)
 
     def tool_output(self, *messages, **kwargs):
         """Override tool_output to detect task boundaries and queue output.
@@ -184,6 +256,9 @@ class TextualInputOutput(InputOutput):
             *messages: Messages to output
             **kwargs: Additional arguments
         """
+        # Pop coder_uuid from kwargs for routing
+        coder_uuid = kwargs.get("coder_uuid", None)
+
         if messages:
             text = " ".join(str(m) for m in messages)
             msg_type = kwargs.get("type", None)
@@ -197,7 +272,7 @@ class TextualInputOutput(InputOutput):
                     title = msg_type
 
                 if should_start:
-                    self.start_task(title, task_type)
+                    self.start_task(title, task_type, coder_uuid=coder_uuid)
             else:
                 return
 
@@ -206,6 +281,8 @@ class TextualInputOutput(InputOutput):
 
     def _reroute_output(self, text, msg_type, **kwargs):
         # Handle tool call buffering for styled panel rendering
+        coder_uuid = kwargs.get("coder_uuid", None)
+
         if msg_type == "Tool Call":
             # Start buffering a new tool call
             self._in_tool_call = True
@@ -216,12 +293,13 @@ class TextualInputOutput(InputOutput):
         elif msg_type == "tool-footer":
             # End of tool call - flush buffer as styled panel
             if self._in_tool_call and self._tool_call_buffer:
-                self.output_queue.put(
-                    {
-                        "type": "tool_call",
-                        "lines": self._tool_call_buffer,
-                    }
-                )
+                msg = {
+                    "type": "tool_call",
+                    "lines": self._tool_call_buffer,
+                }
+                if coder_uuid:
+                    msg["coder_uuid"] = coder_uuid
+                self.output_queue.put(msg)
                 # Expect a tool result next
                 self._expect_tool_result = True
             self._in_tool_call = False
@@ -237,26 +315,30 @@ class TextualInputOutput(InputOutput):
 
         # Check if this is a tool result (comes right after tool call)
         if self._expect_tool_result and text.strip():
-            self._expect_tool_result = False
-            self.output_queue.put(
-                {
-                    "type": "tool_result",
-                    "text": text,
-                }
-            )
+            if msg_type != "tool-result":
+                self._expect_tool_result = False
+            msg = {
+                "type": "tool_result",
+                "text": text,
+            }
+            if coder_uuid:
+                msg["coder_uuid"] = coder_uuid
+            self.output_queue.put(msg)
             # Log to history
             self.append_chat_history(text, linebreak=True, blockquote=True)
             return True
 
         return False
 
-    def start_spinner(self, text, update_last_text=True):
+    def start_spinner(self, text, update_last_text=True, **kwargs):
         """Override start_spinner to send spinner state to TUI.
 
         Args:
             text: Spinner text
             update_last_text: Whether to update last_spinner_text
+            coder_uuid: Optional uuid string to include in the message
         """
+        coder_uuid = kwargs.get("coder_uuid", None)
         # Call parent to maintain state
         super().start_spinner(text, update_last_text)
 
@@ -266,23 +348,27 @@ class TextualInputOutput(InputOutput):
                 "type": "spinner",
                 "action": "start",
                 "text": text,
+                "coder_uuid": coder_uuid,
             }
         )
 
         self.output_queue.put(
             {
                 "type": "spinner",
+                "coder_uuid": coder_uuid,
                 "action": "update_suffix",
                 "text": "",
             }
         )
 
-    def update_spinner(self, text):
+    def update_spinner(self, text, **kwargs):
         """Override update_spinner to send updates to TUI.
 
         Args:
             text: New spinner text
+            coder_uuid: Optional uuid string to include in the message
         """
+        coder_uuid = kwargs.get("coder_uuid", None)
         # Call parent
         super().update_spinner(text)
 
@@ -292,15 +378,18 @@ class TextualInputOutput(InputOutput):
                 "type": "spinner",
                 "action": "update",
                 "text": text,
+                "coder_uuid": coder_uuid,
             }
         )
 
-    def update_spinner_suffix(self, text=None):
+    def update_spinner_suffix(self, text=None, **kwargs):
         """Override update_spinner_suffix to send updates to TUI.
 
         Args:
             text: New spinner suffix text
+            coder_uuid: Optional uuid string to include in the message
         """
+        coder_uuid = kwargs.get("coder_uuid", None)
         # Call parent
         super().update_spinner_suffix(text)
 
@@ -310,21 +399,18 @@ class TextualInputOutput(InputOutput):
                 "type": "spinner",
                 "action": "update_suffix",
                 "text": text,
+                "coder_uuid": coder_uuid,
             }
         )
 
-    def stop_spinner(self):
+    def stop_spinner(self, **kwargs):
         """Override stop_spinner to send stop state to TUI."""
+        coder_uuid = kwargs.get("coder_uuid", None)
         # Call parent
         super().stop_spinner()
 
         # Send to TUI
-        self.output_queue.put(
-            {
-                "type": "spinner",
-                "action": "stop",
-            }
-        )
+        self.output_queue.put({"type": "spinner", "action": "stop", "coder_uuid": coder_uuid})
 
     def interrupt_input(self):
         self.interrupted = True
@@ -351,9 +437,13 @@ class TextualInputOutput(InputOutput):
             edit_format: Edit format string
 
         Returns:
-            User input string
+            tuple[str, str | None]: (user_input, coder_uuid) tuple.
+            The IOProxy wrapper uses coder_uuid for routing.
         """
         self.interrupted = False
+
+        if commands.last_command_show_notification:
+            self.notify_user_input_required()
 
         # Signal TUI that we're ready for input
         command_names = commands.get_commands() if commands else []
@@ -398,15 +488,29 @@ class TextualInputOutput(InputOutput):
                 # Non-blocking get with timeout
                 import queue
 
+                # Check all per-coder queues first (non-blocking)
+                for _uuid, _q in list(self._per_coder_queues.items()):
+                    try:
+                        result = _q.get_nowait()
+                        if "text" in result:
+                            user_input = result["text"]
+                            target_uuid = result.get("coder_uuid", _uuid)
+                            self.user_input(user_input)
+                            return user_input, target_uuid
+                    except queue.Empty:
+                        continue
+
+                # Fall back to shared queue (blocking with timeout)
                 result = self.input_queue.get(timeout=0.1)
 
                 if "text" in result:
                     user_input = result["text"]
+                    target_uuid = result.get("coder_uuid")
 
                     # Log the input (same as parent)
                     self.user_input(user_input)
 
-                    return user_input
+                    return user_input, target_uuid
             except queue.Empty:
                 # No input yet, yield control
                 await asyncio.sleep(0.1)
@@ -422,6 +526,7 @@ class TextualInputOutput(InputOutput):
         allow_never=False,
         allow_tweak=False,
         acknowledge=False,
+        coder_uuid=None,
     ):
         """Override confirm_ask to show modal instead of inline prompt.
 
@@ -479,6 +584,9 @@ class TextualInputOutput(InputOutput):
                 res = group.preference
                 self.user_input(f"{question} - {res}", log_only=False)
             else:
+                # Ring the bell to notify user
+                self.notify_user_input_required()
+
                 # Send confirmation request to TUI with full options
                 self.output_queue.put(
                     {
@@ -495,6 +603,7 @@ class TextualInputOutput(InputOutput):
                             "acknowledge": acknowledge,
                             "valid_responses": valid_responses,
                         },
+                        "coder_uuid": coder_uuid,
                     }
                 )
 
@@ -503,32 +612,35 @@ class TextualInputOutput(InputOutput):
                 try:
                     import queue
 
-                    result = self.input_queue.get(timeout=0.1)
+                    # Check all per-coder queues first (non-blocking)
+                    for _uuid, _q in list(self._per_coder_queues.items()):
+                        try:
+                            result = _q.get_nowait()
+                            if "confirmed" in result:
+                                response = result["confirmed"]
 
-                    if "confirmed" in result:
-                        response = result["confirmed"]
-
-                        # Handle special responses
-                        if response == "never":
-                            self.never_prompts.add(question_id)
-                            return False
-                        elif response == "tweak":
-                            return "tweak"
-                        elif response == "all":
-                            if group:
-                                group.preference = "all"
-                            if group_response:
-                                self.group_responses[group_response] = True
-                            return True
-                        elif response == "skip":
-                            if group:
-                                group.preference = "skip"
-                            if group_response:
-                                self.group_responses[group_response] = False
-                            return False
-                        else:
-                            # Regular boolean response
-                            return bool(response)
+                                # Handle special responses
+                                if response == "never":
+                                    self.never_prompts.add(question_id)
+                                    return False
+                                elif response == "tweak":
+                                    return "tweak"
+                                elif response == "all":
+                                    if group:
+                                        group.preference = "all"
+                                    if group_response:
+                                        self.group_responses[group_response] = True
+                                    return True
+                                elif response == "skip":
+                                    if group:
+                                        group.preference = "skip"
+                                    if group_response:
+                                        self.group_responses[group_response] = False
+                                    return False
+                                else:
+                                    return bool(response)
+                        except queue.Empty:
+                            continue
                 except queue.Empty:
                     await asyncio.sleep(0.1)
         except asyncio.CancelledError:

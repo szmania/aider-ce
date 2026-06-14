@@ -16,6 +16,7 @@ from cecli.utils import run_fzf
 class RulesCommand(BaseCommand):
     NORM_NAME = "rules"
     DESCRIPTION = "Add rule files to the chat for reference"
+    show_completion_notification = True
 
     @classmethod
     async def execute(cls, io, coder, args, **kwargs):

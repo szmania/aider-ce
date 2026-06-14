@@ -10,7 +10,7 @@ from cecli.helpers.conversation import ConversationService, MessageTag
 
 class MockCoder:
     def __init__(self):
-        self.uuid = uuid.uuid4()
+        self.uuid = str(uuid.uuid4())
 
 
 class TestConversationIntegration(unittest.TestCase):

@@ -9,6 +9,7 @@ class ArchitectCommand(BaseCommand):
         "Enter architect/editor mode using 2 different models. If no prompt provided, switches to"
         " architect/editor mode."
     )
+    show_completion_notification = True
 
     @classmethod
     async def execute(cls, io, coder, args, **kwargs):

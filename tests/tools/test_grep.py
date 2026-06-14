@@ -41,7 +41,7 @@ def test_dash_prefixed_pattern_is_searched_literally(search_term, tmp_path, monk
         searches=[
             {
                 "pattern": search_term,
-                "file_pattern": "*.txt",
+                "file_glob": "*.txt",
                 "directory": ".",
                 "use_regex": False,
                 "case_insensitive": False,

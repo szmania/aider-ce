@@ -1,11 +1,12 @@
-import json
 import os
 import re
 import time
 
+from cecli.helpers.background_commands import BackgroundCommandManager
 from cecli.tools.utils.base_tool import BaseTool
 from cecli.tools.utils.helpers import ToolError, parse_arg_as_list
 from cecli.tools.utils.output import color_markers, tool_footer, tool_header
+from cecli.tools.validations import ToolValidations
 
 
 class Tool(BaseTool):
@@ -45,6 +46,11 @@ class Tool(BaseTool):
                         "items": {"type": "string"},
                         "description": "List of file paths to remove from context.",
                     },
+                    "stop": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "List of command keys to stop background commands for.",
+                    },
                 },
                 "additionalProperties": False,
                 "required": [],
@@ -53,7 +59,9 @@ class Tool(BaseTool):
     }
 
     @classmethod
-    def execute(cls, coder, remove=None, add=None, read_only=None, create=None, **kwargs):
+    def execute(
+        cls, coder, remove=None, add=None, read_only=None, create=None, stop=None, **kwargs
+    ):
         """Perform batch operations on the coder's context.
 
         Parameters
@@ -73,11 +81,20 @@ class Tool(BaseTool):
         editable_files = sorted(parse_arg_as_list(add), key=cls._natural_sort_key)
         view_files = sorted(parse_arg_as_list(read_only), key=cls._natural_sort_key)
         create_files = sorted(parse_arg_as_list(create), key=cls._natural_sort_key)
+        stop_keys = sorted(parse_arg_as_list(stop), key=cls._natural_sort_key)
 
-        if not remove_files and not editable_files and not view_files and not create_files:
-            raise ToolError("You must specify at least one of: remove, editable, view, or create")
+        if (
+            not remove_files
+            and not editable_files
+            and not view_files
+            and not create_files
+            and not stop_keys
+        ):
+            raise ToolError(
+                "You must specify at least one of: remove, editable, view, create, or stop"
+            )
 
-        coder.io.tool_output("⚙️ Modifying Context.")
+        coder.io.tool_output("⛭ Modifying Context", type="tool-result")
         messages = []
 
         for f in create_files:
@@ -88,6 +105,8 @@ class Tool(BaseTool):
             messages.append(cls._view(coder, f))
         for f in editable_files:
             messages.append(cls._editable(coder, f))
+        for key in stop_keys:
+            messages.append(cls._stop_command(coder, key))
 
         if coder.tui and coder.tui():
             coder.tui().refresh()
@@ -102,13 +121,16 @@ class Tool(BaseTool):
         """Format output for ContextManager tool."""
         color_start, color_end = color_markers(coder)
 
+        # Output header
+        tool_header(coder=coder, mcp_server=mcp_server, tool_response=tool_response)
+
         try:
-            params = json.loads(tool_response.function.arguments)
-        except json.JSONDecodeError:
+            params = ToolValidations.validate_params(
+                tool_response.function.arguments, cls.VALIDATIONS, cls.SCHEMA
+            )
+        except ToolError:
             coder.io.tool_error("Invalid Tool JSON")
             return
-
-        tool_header(coder=coder, mcp_server=mcp_server, tool_response=tool_response)
 
         # Define action display names
         action_names = {
@@ -116,6 +138,7 @@ class Tool(BaseTool):
             "remove": "remove",
             "view": "view",
             "editable": "editable",
+            "stop": "stop",
         }
 
         # Output each action with comma-separated file list
@@ -125,7 +148,7 @@ class Tool(BaseTool):
                 file_list = ", ".join(files)
                 coder.io.tool_output(f"{color_start}{display_name}:{color_end} {file_list}")
 
-        tool_footer(coder=coder, tool_response=tool_response)
+        tool_footer(coder=coder, tool_response=tool_response, params=params)
 
     @classmethod
     def _remove(cls, coder, file_path):
@@ -146,7 +169,7 @@ class Tool(BaseTool):
                 removed = True
 
             if not removed:
-                coder.io.tool_output(f"⚠️ File '{file_path}' not in context")
+                coder.io.tool_output(f"⚠ File '{file_path}' not in context", type="tool-result")
                 return f"File not in context: {file_path}"
 
             coder.recently_removed[rel_path] = {"removed_at": time.time()}
@@ -155,11 +178,40 @@ class Tool(BaseTool):
                 ConversationService.get_chunks(coder).defer_removal(abs_path)
                 ConversationService.get_chunks(coder).defer_removal(rel_path)
 
-            coder.io.tool_output(f"🗑️ Removed '{file_path}' from context")
-            return f"Removed: {file_path}"
+            coder.io.tool_output(f"✗ Removed '{file_path}' from context", type="tool-result")
+            return (
+                f"Removed: {file_path}\n"
+                "Old file contents may remain visible. This is an acceptable system behavior."
+            )
         except Exception as e:
             coder.io.tool_error(f"Error removing file '{file_path}': {str(e)}")
             return f"Error removing {file_path}: {e}"
+
+    @classmethod
+    def _stop_command(cls, coder, command_key):
+        """Stop a background command by its command key."""
+        try:
+            success, output, exit_code = BackgroundCommandManager.stop_background_command(
+                command_key
+            )
+            if success:
+                coder.io.tool_output(
+                    f"✗ Stopped background command '{command_key}'", type="tool-result"
+                )
+                return (
+                    f"Background command stopped: {command_key}\n"
+                    f"Exit code: {exit_code}\n"
+                    f"Final output:\n{output}"
+                )
+            else:
+                coder.io.tool_output(
+                    f"⚠ Background command '{command_key}' not found or not running",
+                    type="tool-result",
+                )
+                return f"Command not found or not running: {command_key}"
+        except Exception as e:
+            coder.io.tool_error(f"Error stopping command '{command_key}': {str(e)}")
+            return f"Error stopping {command_key}: {e}"
 
     @classmethod
     def _editable(cls, coder, file_path):
@@ -167,10 +219,12 @@ class Tool(BaseTool):
         try:
             abs_path = cls._resolve_file_path(coder, file_path)
             if abs_path in coder.abs_fnames:
-                coder.io.tool_output(f"📝 File '{file_path}' is already editable")
+                coder.io.tool_output(
+                    f"🗀 File '{file_path}' is already editable", type="tool-result"
+                )
                 return f"Already editable: {file_path}"
             if not os.path.isfile(abs_path):
-                coder.io.tool_output(f"⚠️ File '{file_path}' not found on disk")
+                coder.io.tool_output(f"⚠ File '{file_path}' not found on disk", type="tool-result")
                 return f"File not found: {file_path}"
             was_read_only = False
             if abs_path in coder.abs_read_only_fnames:
@@ -178,10 +232,14 @@ class Tool(BaseTool):
                 was_read_only = True
             coder.abs_fnames.add(abs_path)
             if was_read_only:
-                coder.io.tool_output(f"📝 Moved '{file_path}' from read-only to editable")
+                coder.io.tool_output(
+                    f"🗀 Moved '{file_path}' from read-only to editable", type="tool-result"
+                )
                 return f"Made editable (moved): {file_path}"
             else:
-                coder.io.tool_output(f"📝 Added '{file_path}' directly to editable context")
+                coder.io.tool_output(
+                    f"🗀 Added '{file_path}' directly to editable context", type="tool-result"
+                )
                 return f"Made editable (added): {file_path}"
         except Exception as e:
             coder.io.tool_error(f"Error making editable '{file_path}': {str(e)}")
@@ -205,7 +263,7 @@ class Tool(BaseTool):
 
             # Check if file already exists
             if os.path.exists(abs_path):
-                coder.io.tool_output(f"⚠️ File '{file_path}' already exists")
+                coder.io.tool_output(f"⚠ File '{file_path}' already exists", type="tool-result")
                 return f"File already exists: {file_path}"
 
             # Create parent directories if they don't exist
@@ -218,7 +276,9 @@ class Tool(BaseTool):
             # Add the file to editable context
             coder.abs_fnames.add(abs_path)
 
-            coder.io.tool_output(f"📝 Created '{file_path}' and made it editable")
+            coder.io.tool_output(
+                f"🗀 Created '{file_path}' and made it editable", type="tool-result"
+            )
             return f"Created and made editable: {file_path}"
 
         except Exception as e:

@@ -55,7 +55,7 @@ from cecli.helpers.conversation import ConversationService, MessageTag
 from cecli.helpers.copypaste import ClipboardWatcher
 from cecli.helpers.file_searcher import generate_search_path_list
 from cecli.history import ChatSummary
-from cecli.hooks import HookRegistry
+from cecli.hooks import HookService
 from cecli.io import InputOutput
 from cecli.llm import litellm
 from cecli.mcp import McpServerManager, load_mcp_servers
@@ -584,7 +584,7 @@ async def main_async(argv=None, input=None, output=None, force_git_root=None, re
     if not args.verify_ssl:
         import httpx
 
-        os.environ["SSL_VERIFY"] = ""
+        os.environ["LITELLM_LOCAL_MODEL_COST"] = "true"
         litellm._load_litellm()
         litellm._lazy_module.client_session = httpx.Client(verify=False)
         litellm._lazy_module.aclient_session = httpx.AsyncClient(verify=False)
@@ -719,6 +719,19 @@ async def main_async(argv=None, input=None, output=None, force_git_root=None, re
         for fname in loaded_dotenvs:
             io.tool_output(f"Loaded {fname}")
     all_files = args.files + (args.file or [])
+
+    # Check for arguments starting with '--' that are likely
+    # unrecognized or misspelled parameters, not file arguments
+    filtered_files = []
+    for f in all_files:
+        if f.startswith("--"):
+            # Extract the parameter name: everything between '--' and '=' or end
+            param = f[2:].split("=")[0].split()[0]
+            io.tool_warning(f"The parameter --{param} does not exist.")
+        else:
+            filtered_files.append(f)
+
+    all_files = filtered_files
     all_files = utils.expand_glob_patterns(all_files)
     fnames = [str(Path(fn).resolve()) for fn in all_files]
     read_patterns = args.read or []
@@ -1002,16 +1015,6 @@ async def main_async(argv=None, input=None, output=None, force_git_root=None, re
             args.mcp_servers, args.mcp_servers_files, io, args.verbose, args.mcp_transport
         )
         mcp_manager = await McpServerManager.from_servers(mcp_servers, io, args.verbose)
-        # Load hooks if specified
-        if args.hooks:
-            hook_registry = HookRegistry()
-            loaded_hooks = hook_registry.load_hooks_from_json(args.hooks)
-
-            if args.verbose and loaded_hooks:
-                io.tool_output(
-                    f"Loaded {len(loaded_hooks)} hooks from --hooks config:"
-                    f" {', '.join(loaded_hooks)}"
-                )
 
         coder = await Coder.create(
             main_model=main_model,
@@ -1058,6 +1061,19 @@ async def main_async(argv=None, input=None, output=None, force_git_root=None, re
             linear_output=args.linear_output,
             security_config=args.security_config,
         )
+
+        # Load hooks if specified (after coder creation so they register
+        # on the primary agent's per-coder HookManager)
+        if args.hooks:
+            hook_registry = HookService.get_registry(coder)
+            loaded_hooks = hook_registry.load_hooks_from_json(args.hooks)
+
+            if args.verbose and loaded_hooks:
+                io.tool_output(
+                    f"Loaded {len(loaded_hooks)} hooks from --hooks config:"
+                    f" {', '.join(loaded_hooks)}"
+                )
+
         if args.show_model_warnings and not suppress_pre_init:
             problem = await models.sanity_check_models(pre_init_io, main_model)
             if problem:
@@ -1239,16 +1255,15 @@ async def main_async(argv=None, input=None, output=None, force_git_root=None, re
             kwargs["num_cache_warming_pings"] = 0
             kwargs["args"] = coder.args
 
-            if kwargs["edit_format"] != AgentCoder.edit_format and (
-                coder := kwargs.get("from_coder")
-            ):
-                if coder.mcp_manager.get_server("Local"):
-                    await coder.mcp_manager.disconnect_server("Local")
-
             for tag in [MessageTag.SYSTEM, MessageTag.EXAMPLES, MessageTag.STATIC]:
                 ConversationService.get_manager(coder).clear_tag(tag)
 
+            old_coder = coder
             coder = await Coder.create(**kwargs)
+
+            if isinstance(old_coder, AgentCoder) and not isinstance(coder, AgentCoder):
+                if coder.mcp_manager and coder.mcp_manager.get_server("Local"):
+                    await coder.mcp_manager.disconnect_server("Local")
 
             if switch.kwargs.get("show_announcements") is False:
                 coder.suppress_announcements_for_next_prompt = True

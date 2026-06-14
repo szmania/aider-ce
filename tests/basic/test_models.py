@@ -381,9 +381,11 @@ class TestModels:
             temperature=0,
             num_ctx=expected_ctx,
             timeout=600,
+            keep_alive=-1,
             drop_params=True,
             headers={"Connection": "close", "User-Agent": ANY},
             cache_control_injection_points=ANY,
+            allowed_openai_params=["tools", "tool_choice"],
         )
 
     @patch("cecli.models.litellm.acompletion")
@@ -426,9 +428,11 @@ class TestModels:
             temperature=0,
             num_ctx=4096,
             timeout=600,
+            keep_alive=-1,
             drop_params=True,
             headers={"Connection": "close", "User-Agent": ANY},
             cache_control_injection_points=ANY,
+            allowed_openai_params=["tools", "tool_choice"],
         )
 
     @patch("cecli.models.litellm.acompletion")
@@ -446,6 +450,7 @@ class TestModels:
             drop_params=True,
             headers={"Connection": "close", "User-Agent": ANY},
             cache_control_injection_points=ANY,
+            allowed_openai_params=["tools", "tool_choice"],
         )
         assert "num_ctx" not in mock_completion.call_args.kwargs
 
@@ -479,6 +484,7 @@ class TestModels:
             drop_params=True,
             headers={"Connection": "close", "User-Agent": ANY},
             cache_control_injection_points=ANY,
+            allowed_openai_params=["tools", "tool_choice"],
         )
 
     @patch("cecli.models.litellm.acompletion")
@@ -497,6 +503,7 @@ class TestModels:
             drop_params=True,
             headers={"Connection": "close", "User-Agent": ANY},
             cache_control_injection_points=ANY,
+            allowed_openai_params=["tools", "tool_choice"],
         )
 
     @patch("cecli.models.litellm.acompletion")
@@ -515,6 +522,7 @@ class TestModels:
             drop_params=True,
             headers={"Connection": "close", "User-Agent": ANY},
             cache_control_injection_points=ANY,
+            allowed_openai_params=["tools", "tool_choice"],
         )
 
         # Test use_temperature=False doesn't send temperature
@@ -538,6 +546,7 @@ class TestModels:
             drop_params=True,
             headers={"Connection": "close", "User-Agent": ANY},
             cache_control_injection_points=ANY,
+            allowed_openai_params=["tools", "tool_choice"],
         )
 
     def test_model_override_kwargs(self):

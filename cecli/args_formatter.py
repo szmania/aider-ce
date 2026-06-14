@@ -132,6 +132,16 @@ class YamlHelpFormatter(argparse.HelpFormatter):
                 break
         switch = switch.lstrip("-")
 
+        if switch == "retries":
+            parts.append(f"## {action.help}")
+            parts.append("#retries:")
+            parts.append("#  retry-timeout: 60")
+            parts.append("#  retry-backoff-factor: 2.0")
+            parts.append("#  retry-on-unavailable: true")
+            parts.append("#  retry-on-empty: false")
+            parts.append("")
+            return "\n".join(parts)
+
         if isinstance(action, argparse._StoreTrueAction):
             default = False
         elif isinstance(action, argparse._StoreConstAction):

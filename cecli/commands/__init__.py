@@ -44,6 +44,7 @@ from .load_skill import LoadSkillCommand
 from .ls import LsCommand
 from .map import MapCommand
 from .map_refresh import MapRefreshCommand
+from .merge import MergeCommand
 from .model import ModelCommand
 from .models import ModelsCommand
 from .multiline_mode import MultilineModeCommand
@@ -51,6 +52,7 @@ from .paste import PasteCommand
 from .quit import QuitCommand
 from .read_only import ReadOnlyCommand
 from .read_only_stub import ReadOnlyStubCommand
+from .reap_agent import ReapAgentCommand
 from .reasoning_effort import ReasoningEffortCommand
 from .remove_hook import RemoveHookCommand
 from .remove_mcp import RemoveMcpCommand
@@ -62,6 +64,8 @@ from .run import RunCommand
 from .save import SaveCommand
 from .save_session import SaveSessionCommand
 from .settings import SettingsCommand
+from .spawn_agent import SpawnAgentCommand
+from .switch_agent import SwitchAgentCommand
 from .terminal_setup import TerminalSetupCommand
 from .test import TestCommand
 from .think_tokens import ThinkTokensCommand
@@ -112,6 +116,9 @@ CommandRegistry.register(HashlineCommand)
 CommandRegistry.register(HelpCommand)
 CommandRegistry.register(HistorySearchCommand)
 CommandRegistry.register(HooksCommand)
+CommandRegistry.register(ReapAgentCommand)
+CommandRegistry.register(SpawnAgentCommand)
+CommandRegistry.register(SwitchAgentCommand)
 CommandRegistry.register(IncludeSkillCommand)
 CommandRegistry.register(LintCommand)
 CommandRegistry.register(ListSessionsCommand)
@@ -124,6 +131,7 @@ CommandRegistry.register(LoadSkillCommand)
 CommandRegistry.register(LsCommand)
 CommandRegistry.register(MapCommand)
 CommandRegistry.register(MapRefreshCommand)
+CommandRegistry.register(MergeCommand)
 CommandRegistry.register(ModelCommand)
 CommandRegistry.register(ModelsCommand)
 CommandRegistry.register(MultilineModeCommand)
@@ -188,8 +196,11 @@ __all__ = [
     "HashlineCommand",
     "HelpCommand",
     "HistorySearchCommand",
-    "HookCommand",
+    "HooksCommand",
     "IncludeSkillCommand",
+    "ReapAgentCommand",
+    "SpawnAgentCommand",
+    "SwitchAgentCommand",
     "LintCommand",
     "ListSessionsCommand",
     "ListSkillsCommand",
@@ -201,6 +212,7 @@ __all__ = [
     "LsCommand",
     "MapCommand",
     "MapRefreshCommand",
+    "MergeCommand",
     "ModelCommand",
     "ModelsCommand",
     "MultilineModeCommand",

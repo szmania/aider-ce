@@ -69,7 +69,9 @@ class Tool(BaseTool):
                 )  # Track that the file was modified by the undo
 
                 change_type = change_info["type"]
-                coder.io.tool_output(f"✅ Undid {change_type} change '{change_id}' in {file_path}")
+                coder.io.tool_output(
+                    f"✓ Undid {change_type} change '{change_id}' in {file_path}", type="tool-result"
+                )
                 return f"Successfully undid {change_type} change '{change_id}'."
             else:
                 # This case should ideally not be reached if tracker returns success

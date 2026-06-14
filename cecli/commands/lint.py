@@ -8,6 +8,7 @@ from cecli.utils import expand_glob_patterns
 class LintCommand(BaseCommand):
     NORM_NAME = "lint"
     DESCRIPTION = "Lint and fix in-chat files or all dirty files if none in chat"
+    show_completion_notification = True
 
     @classmethod
     async def execute(cls, io, coder, args, **kwargs):
@@ -43,7 +44,7 @@ class LintCommand(BaseCommand):
         lint_coder = None
         for fname in fnames:
             try:
-                errors = coder.linter.lint(fname)
+                errors = await coder.linter.lint(fname)
             except FileNotFoundError as err:
                 io.tool_error(f"Unable to lint {fname}")
                 io.tool_output(str(err))

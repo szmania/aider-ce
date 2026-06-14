@@ -121,7 +121,7 @@ def test_mutually_exclusive_parameters_raise(coder_with_file):
     )
 
     assert result.startswith("Error in EditText:")
-    assert "Invalid Edit - Edit Results In Same Content" in result
+    assert "Invalid Edit - Update content ID bounds" in result
     assert file_path.read_text().startswith("first line")
     coder.io.tool_error.assert_called()
 

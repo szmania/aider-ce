@@ -9,6 +9,7 @@ from cecli.scrape import Scraper, install_playwright
 class WebCommand(BaseCommand):
     NORM_NAME = "web"
     DESCRIPTION = "Scrape a webpage, convert to markdown and send in a message"
+    show_completion_notification = True
 
     @classmethod
     async def execute(cls, io, coder, args, **kwargs):

@@ -9,6 +9,7 @@ from cecli.helpers.conversation import ConversationService
 class AgentModelCommand(BaseCommand):
     NORM_NAME = "agent-model"
     DESCRIPTION = "Switch the Agent Model to a new LLM"
+    show_completion_notification = True
 
     @classmethod
     async def execute(cls, io, coder, args, **kwargs):
@@ -107,7 +108,7 @@ class AgentModelCommand(BaseCommand):
     @classmethod
     def get_completions(cls, io, coder, args) -> List[str]:
         """Get completion options for agent-model command."""
-        return models.get_chat_model_names()
+        return models.get_chat_model_names(query=args)
 
     @classmethod
     def get_help(cls) -> str:

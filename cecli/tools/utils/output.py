@@ -2,7 +2,7 @@ import json
 import re
 
 
-def print_tool_response(coder, mcp_server, tool_response):
+def print_tool_response(coder, mcp_server, tool_response, params=None):
     """
     Format the output for display.
     Prints a Header to identify the tool, a body for the relevant information
@@ -13,12 +13,12 @@ def print_tool_response(coder, mcp_server, tool_response):
         mcp_server: An mcp server instance
         tool_response: a tool_response dictionary
     """
-    tool_header(coder=coder, mcp_server=mcp_server, tool_response=tool_response)
-    tool_body(coder=coder, tool_response=tool_response)
-    tool_footer(coder=coder, tool_response=tool_response)
+    tool_header(coder=coder, mcp_server=mcp_server, tool_response=tool_response, params=params)
+    tool_body(coder=coder, tool_response=tool_response, params=params)
+    tool_footer(coder=coder, tool_response=tool_response, params=params)
 
 
-def tool_header(coder, mcp_server, tool_response):
+def tool_header(coder, mcp_server, tool_response, params=None):
     """
     Prints the header for the tool call output
 
@@ -35,7 +35,7 @@ def tool_header(coder, mcp_server, tool_response):
     )
 
 
-def tool_body(coder, tool_response):
+def tool_body(coder, tool_response, params=None):
     """
     Prints the output body of a tool call as the raw json returned from the model
 
@@ -52,7 +52,7 @@ def tool_body(coder, tool_response):
         coder.io.tool_output(f"{color_start}Arguments:{color_end} {raw_args}")
 
 
-def tool_body_unwrapped(coder, tool_response):
+def tool_body_unwrapped(coder, tool_response, params=None):
     """
     Prints the output body of a tool call with the argument
     and content sections separated
@@ -65,7 +65,7 @@ def tool_body_unwrapped(coder, tool_response):
     color_start, color_end = color_markers(coder)
 
     try:
-        args_dict = json.loads(tool_response.function.arguments)
+        args_dict = params if params else json.loads(tool_response.function.arguments)
         first_key = True
         for key, value in args_dict.items():
             # Convert explicit \\n sequences to actual newlines using regex
@@ -90,7 +90,7 @@ def tool_body_unwrapped(coder, tool_response):
         coder.io.tool_output(f"{color_start}Arguments:{color_end} {raw_args}")
 
 
-def tool_footer(coder, tool_response):
+def tool_footer(coder, tool_response, params=None):
     """
     Prints the output footer of a tool call, generally a new line
     But can include id's if ran in verbose mode

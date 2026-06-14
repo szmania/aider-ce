@@ -7,6 +7,7 @@ from cecli.commands.utils.helpers import format_command_result
 class TestCommand(BaseCommand):
     NORM_NAME = "test"
     DESCRIPTION = "Run a shell command and add the output to the chat on non-zero exit code"
+    show_completion_notification = True
 
     @classmethod
     async def execute(cls, io, coder, args, **kwargs):
