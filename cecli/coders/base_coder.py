@@ -419,6 +419,8 @@ class Coder(metaclass=UsageMeta):
         uuid: str = "",
         parent_uuid: str = "",
     ):
+        from cecli.helpers.agents.service import AgentService
+
         # initialize from args.map_cache_dir
         self.coroutines = coroutines
         # Per-instance tool and server filtering dictionaries
@@ -544,8 +546,10 @@ class Coder(metaclass=UsageMeta):
 
         self.show_diffs = show_diffs
 
-        # Initialize conversation system if enabled
+        # Initialize all registry sub systems
+        AgentService.get_instance(self)
         ConversationService.get_chunks(self).initialize_conversation_system()
+        ObservationService.get_instance(self)
 
         self.commands = commands or Commands(self.io, self, args=args)
         self.commands.coder = self
@@ -3675,10 +3679,11 @@ class Coder(metaclass=UsageMeta):
         func_err = None
         content_err = None
 
-        last_chunk = self.partial_response_chunks[len(self.partial_response_chunks) - 1]
-        if last_chunk:
-            if getattr(last_chunk, "usage", None):
-                response.usage = last_chunk.usage
+        if len(self.partial_response_chunks):
+            last_chunk = self.partial_response_chunks[len(self.partial_response_chunks) - 1]
+            if last_chunk:
+                if getattr(last_chunk, "usage", None):
+                    response.usage = last_chunk.usage
 
         # Collect provider-specific fields from chunks to preserve them
         # We need to track both by ID (primary) and index (fallback) since
@@ -4487,7 +4492,7 @@ class Coder(metaclass=UsageMeta):
             if output:
                 accumulated_output += f"Output from {command}\n{output}\n"
 
-        print(accumulated_output)
+        self.io.tool_output(accumulated_output)
 
         if accumulated_output.strip() and await self.io.confirm_ask(
             "Add command output to the chat?", allow_never=True

@@ -571,11 +571,13 @@ class AgentService:
         Returns:
             The ``asyncio.Task`` wrapping ``generate()``.
         """
+        from cecli.commands import SwitchCoderSignal
 
         async def _run_generate():
             info.status = SubAgentStatus.RUNNING
             try:
                 await info.coder.generate(user_message=user_message, preproc=True)
+
                 if info.status == SubAgentStatus.RUNNING:
                     info.status = SubAgentStatus.FINISHED
                     info.summary = info.summary or DEFAULT_SUMMARY_COMPLETED
@@ -597,6 +599,8 @@ class AgentService:
                 )
                 await self._inject_sub_agent_result(info)
                 raise
+            except SwitchCoderSignal:
+                raise
 
         # Cancel any previous generate task to prevent duplicate concurrent generates
         if info.generate_task is not None and not info.generate_task.done():
@@ -604,8 +608,15 @@ class AgentService:
 
         task = asyncio.create_task(_run_generate())
         info.generate_task = task
+
+        def _raise_if_signal(exc):
+            if isinstance(exc, SwitchCoderSignal):
+                raise exc
+
         # Suppress "Task exception was never retrieved" for fire-and-forget tasks
-        task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
+        task.add_done_callback(
+            lambda t: _raise_if_signal(t.exception()) if not t.cancelled() else None
+        )
         return task
 
     async def _inject_sub_agent_result(self, info: SubAgentInfo) -> None:

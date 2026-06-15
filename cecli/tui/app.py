@@ -1167,8 +1167,16 @@ class TUI(App):
 
     def create_sub_agent_container(self, uuid: str, name: str) -> None:
         """Create an OutputContainer for a sub-agent."""
+        from cecli.helpers.agents.service import AgentService
+
         if uuid in self._sub_agent_containers:
+            agent_service = AgentService.get_instance(self.worker.coder)
+            sub_agent_info = agent_service.sub_agents.get(uuid)
+            if sub_agent_info:
+                sub_agent_info.coder.show_announcements()
+
             return
+
         container = OutputContainer(id=f"output-{uuid}", classes="subagent-output")
         container.display = False  # Hidden initially
         self._sub_agent_containers[uuid] = container
@@ -1184,8 +1192,6 @@ class TUI(App):
 
         # Show announcements from the sub-agent's coder
         try:
-            from cecli.helpers.agents.service import AgentService
-
             agent_service = AgentService.get_instance(self.worker.coder)
             sub_agent_info = agent_service.sub_agents.get(uuid)
             if sub_agent_info:

@@ -134,7 +134,7 @@ class TextualInputOutput(InputOutput):
         """
         # Pop coder_uuid from kwargs before passing to console
         coder_uuid = kwargs.pop("coder_uuid", None)
-        coder_uuid = kwargs.pop("type", None)
+        kwargs.pop("type", None)
 
         # Capture Rich rendering with forced ANSI output
         console = self._get_tui_console()

@@ -43,6 +43,8 @@ class Tool(BaseTool):
                 "Use content ID ranges with the start_line and end_line parameters with format "
                 "`content_id::` (the content id with the :: demarcator). For empty files, use `@000` as the "
                 "content ID references. "
+                "Start and end values are inclusive: start and end content IDs both count as "
+                "part of the range to replace, insert at, or delete. "
                 "Edits within a file must not be adjacent or overlapping."
             ),
             "parameters": {
@@ -63,7 +65,7 @@ class Tool(BaseTool):
                                     "description": (
                                         "The type of operation: 'replace' (replace range with"
                                         " text), 'delete' (remove range), or 'insert' (insert text"
-                                        " after start_line). Defaults to 'replace'."
+                                        " at start_line, replacing the start line)."
                                     ),
                                 },
                                 "start_line": {
@@ -250,6 +252,7 @@ class Tool(BaseTool):
                         new_content, successful_ops, failed_ops = apply_hashline_operations(
                             original_content=original_content,
                             operations=operations,
+                            file_path=file_path_key,
                         )
 
                         if new_content != original_content:

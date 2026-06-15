@@ -460,7 +460,7 @@ class Tool(BaseTool):
                             )
                             if cls._special_marker_count[abs_path] > 1:
                                 coder.abs_fnames.add(abs_path)
-                                preview = f"Full contents of {rel_path} added to cotext."
+                                preview = f"Full contents of {rel_path} will be added to context in future message."
                                 if abs_path in coder.abs_read_only_fnames:
                                     coder.abs_read_only_fnames.remove(abs_path)
 

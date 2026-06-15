@@ -37,7 +37,7 @@ class RunCommand(BaseCommand):
         )
 
         if coder.args.tui:
-            print(combined_output)
+            coder.io.tool_warning(combined_output)
         else:
             # This print statement, for whatever reason,
             # allows the thread to properly yield control of the terminal

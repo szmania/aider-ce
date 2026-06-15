@@ -10,6 +10,7 @@ from cecli.coders import Coder
 from cecli.commands import SwitchCoderSignal
 from cecli.helpers.conversation import ConversationService, MessageTag
 
+logger = logging.getLogger(__name__)
 # Suppress asyncio task destroyed warnings during shutdown
 logging.getLogger("asyncio").setLevel(logging.CRITICAL)
 
@@ -46,6 +47,7 @@ class CoderWorker:
         """Thread entry point - creates event loop and runs coder."""
         self.loop = asyncio.new_event_loop()
         asyncio.set_event_loop(self.loop)
+        self.loop.set_exception_handler(self.worker_loop_exception_handler)
 
         try:
             self.loop.run_until_complete(self._async_run())
@@ -96,45 +98,94 @@ class CoderWorker:
             except KeyboardInterrupt:
                 continue
             except SwitchCoderSignal as switch:
-                # Handle chat mode switches (e.g., /chat-mode architect)
-                try:
-                    await self.coder.auto_save_session(force=True)
-                    kwargs = dict(io=self.coder.io, from_coder=self.coder)
-                    kwargs.update(switch.kwargs)
-                    if "show_announcements" in kwargs:
-                        del kwargs["show_announcements"]
-                    kwargs["num_cache_warming_pings"] = 0
-                    kwargs["args"] = self.coder.args
-                    # Skip summarization to avoid blocking LLM calls during mode switch
-                    kwargs["summarize_from_coder"] = False
-
-                    new_coder = await Coder.create(**kwargs)
-                    new_coder.args = self.coder.args
-
-                    for tag in [MessageTag.SYSTEM, MessageTag.EXAMPLES, MessageTag.STATIC]:
-                        ConversationService.get_manager(new_coder).clear_tag(tag)
-
-                    if switch.kwargs.get("show_announcements") is False:
-                        new_coder.suppress_announcements_for_next_prompt = True
-
-                    # Notify TUI of mode change
-                    self.coder = new_coder
-                    edit_format = getattr(self.coder, "edit_format", "code") or "code"
-                    self.output_queue.put(
-                        {
-                            "type": "mode_change",
-                            "mode": edit_format,
-                        }
-                    )
-                except Exception as e:
-                    self.output_queue.put(
-                        {"type": "error", "message": f"Failed to switch mode: {e}"}
-                    )
-                    break
+                await self._handle_switch_coder_signal(switch)
                 # Continue the loop with the new coder
             except Exception as e:
-                self.output_queue.put({"type": "error", "message": str(e)})
+                self.output_queue.put(
+                    {
+                        "type": "error",
+                        "message": str(e),
+                        "coder_uuid": self.coder.uuid,
+                    }
+                )
                 break
+
+    async def _handle_switch_coder_signal(self, switch):
+        """Handle a SwitchCoderSignal, creating a new coder and notifying the TUI."""
+        try:
+            from cecli.helpers.agents.service import AgentService
+
+            # Determine the active coder — could be a sub-agent in the foreground
+            target_coder = self.coder
+            try:
+                agent_service = AgentService.get_instance(target_coder)
+                foreground = agent_service.foreground_coder
+                if foreground is not None:
+                    target_coder = foreground
+            except Exception:
+                pass
+
+            await target_coder.auto_save_session(force=True)
+            kwargs = dict(io=target_coder.io, from_coder=target_coder)
+            kwargs.update(switch.kwargs)
+            if "show_announcements" in kwargs:
+                del kwargs["show_announcements"]
+            kwargs["num_cache_warming_pings"] = 0
+            kwargs["args"] = target_coder.args
+            # Skip summarization to avoid blocking LLM calls during mode switch
+            kwargs["summarize_from_coder"] = False
+
+            new_coder = await Coder.create(**kwargs)
+            new_coder.args = target_coder.args
+
+            for tag in [MessageTag.SYSTEM, MessageTag.EXAMPLES, MessageTag.STATIC]:
+                ConversationService.get_manager(new_coder).clear_tag(tag)
+
+            if switch.kwargs.get("show_announcements") is False:
+                new_coder.suppress_announcements_for_next_prompt = True
+
+            # Notify TUI of mode change
+            if target_coder == self.coder:
+                self.coder = new_coder
+            else:
+                new_coder.show_announcements()
+
+            edit_format = getattr(target_coder, "edit_format", "code") or "code"
+            self.output_queue.put(
+                {
+                    "type": "mode_change",
+                    "mode": edit_format,
+                    "coder_uuid": new_coder.uuid,
+                }
+            )
+        except Exception as e:
+            self.output_queue.put(
+                {
+                    "type": "error",
+                    "message": f"Failed to switch mode: {e}",
+                    "coder_uuid": target_coder,
+                }
+            )
+
+    def worker_loop_exception_handler(self, loop, context):
+        """
+        This runs directly on the worker thread whenever an unhandled
+        exception occurs in a task or callback.
+
+        Catches SwitchCoderSignal from fire-and-forget tasks and dispatches
+        them to the dedicated handler so mode switches work even when the
+        signal is raised outside the main coder.run() loop.
+        """
+        exception = context.get("exception")
+
+        if isinstance(exception, SwitchCoderSignal):
+            logger.info("Worker thread caught SwitchCoderSignal in global handler.")
+            # Schedule a coroutine to handle the switch logic on the loop
+            loop.create_task(self._handle_switch_coder_signal(exception))
+        else:
+            # Always fall back to the default handler so you don't swallow
+            # normal bugs, tracebacks, or connection errors.
+            loop.default_exception_handler(context)
 
     def interrupt(self):
         """Cancel the current output task on the active (foreground) coder.
