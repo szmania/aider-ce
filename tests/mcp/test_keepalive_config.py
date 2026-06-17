@@ -1,6 +1,7 @@
 """Configuration validation tests for MCP keepalive mechanism."""
 
-from unittest.mock import MagicMock
+import asyncio
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -85,11 +86,14 @@ class TestKeepaliveConfigurationValidation:
         validated = mock_manager._validate_server_config(config)
         assert "keepalive_interval" not in validated or validated.get("keepalive_interval") is None
 
-    def test_auth_header_included_in_keepalive_request(self, mock_manager, mock_mcp_server):
+    @pytest.mark.asyncio
+    async def test_auth_header_included_in_keepalive_request(
+        self, mock_manager, running_mock_server
+    ):
         """Authentication headers from server config are included in OPTIONS requests."""
         config = {
             "name": "test-server",
-            "url": f"http://{mock_mcp_server.host}:{mock_mcp_server.port}",
+            "url": f"http://{running_mock_server.host}:{running_mock_server.port}",
             "type": "streamable_http",
             "keepalive_interval": 1,
             "headers": {"Authorization": "Bearer test-token"},
@@ -98,27 +102,40 @@ class TestKeepaliveConfigurationValidation:
 
         server = HttpStreamingServer(config, io=MagicMock())
 
-        async def fake_transport(*args, **kwargs):
-            return (MagicMock(), MagicMock(), MagicMock())
+        with (
+            patch("cecli.mcp.server.ClientSession") as MockSession,
+            patch("cecli.mcp.server.streamable_http_client") as mock_transport,
+            patch("httpx.AsyncClient") as MockAsyncClient,
+        ):
+            # Setup mock HTTP client to capture constructor args
+            mock_http_client = AsyncMock()
+            MockAsyncClient.return_value = mock_http_client
 
-        server._create_transport = lambda *args, **kwargs: fake_transport()
+            # Setup mock session
+            mock_session = AsyncMock()
+            mock_session.initialize = AsyncMock()
+            MockSession.return_value = mock_session
 
-        async def fake_session(*args, **kwargs):
-            return MagicMock()
-
-        with pytest.MonkeyPatch.context() as m:
-
-            async def fake_init(*args, **kwargs):
-                pass
-
-            m.setattr(
-                "cecli.mcp.server.ClientSession",
-                lambda *a, **kw: type("CS", (), {"initialize": fake_init})(),
-            )
+            # Setup mock transport
+            mock_read = AsyncMock()
+            mock_write = AsyncMock()
+            mock_transport.return_value = (mock_read, mock_write, None)
 
             await server.connect()
-            await asyncio.sleep(0.1)
+            await asyncio.sleep(0.2)  # Allow keepalive to run
 
-        # Verify keepalive task is running and sending requests with auth headers
-        inspector = ServerStateInspector()
-        assert inspector.is_keepalive_running(server)
+            # Verify keepalive task is running
+            inspector = ServerStateInspector()
+            assert inspector.is_keepalive_running(server)
+
+            # Verify httpx.AsyncClient was created with auth headers
+            MockAsyncClient.assert_called_once()
+            call_kwargs = MockAsyncClient.call_args.kwargs
+            assert (
+                "headers" in call_kwargs
+            ), f"Expected 'headers' in AsyncClient kwargs, got: {list(call_kwargs.keys())}"
+            assert call_kwargs["headers"] == {
+                "Authorization": "Bearer test-token"
+            }, f"Expected auth header, got: {call_kwargs['headers']}"
+
+            await server.disconnect()

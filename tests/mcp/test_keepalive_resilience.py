@@ -65,24 +65,34 @@ class TestKeepaliveResilience:
     @pytest.mark.asyncio
     async def test_keepalive_jitter_prevents_timing_analysis(self, http_based_server):
         """Verify keepalive intervals incorporate jitter."""
-        # Since we can't easily mock the internal timing without modifying the server,
-        # we'll verify that the jitter logic exists in the implementation by checking
-        # that random module is imported and used in the keepalive loop
-
-        # This test validates that the implementation includes jitter by examining the source
-        # In a real scenario, we might inject a mock random or time function
-        # For now, we'll verify the constant and logic exist conceptually
-
         server = http_based_server
-        config = server.config
+        sleep_durations = []
+        original_sleep = asyncio.sleep
 
-        # Verify configuration has keepalive interval set
-        assert config.get("keepalive_interval") == 1
+        async def mock_sleep(duration):
+            sleep_durations.append(duration)
+            # Don't actually sleep to speed up test
 
-        # The actual jitter verification would require mocking internal methods,
-        # which is beyond the scope of this test without modifying production code
-        # We trust that the implementation follows the plan
-        assert True  # Placeholder - jitter is implemented in _keepalive_loop
+        await server.connect()
+
+        with patch("asyncio.sleep", side_effect=mock_sleep):
+            # Let keepalive loop run a few iterations
+            await asyncio.sleep(3.5)
+
+        await server.disconnect()
+
+        # Verify we captured sleep durations
+        assert len(sleep_durations) >= 2, f"Expected >= 2 sleep calls, got {len(sleep_durations)}"
+
+        # Verify jitter exists - durations should not all be identical
+        assert len(set(sleep_durations)) > 1, "Sleep durations should vary due to jitter"
+
+        # Verify durations fall within +/-10% of configured interval
+        interval = server.config.get("keepalive_interval", 1)
+        for duration in sleep_durations:
+            assert (
+                0.9 * interval <= duration <= 1.1 * interval
+            ), f"Duration {duration} outside +/-10% jitter range"
 
     @pytest.mark.asyncio
     async def test_reconnection_after_persistent_failure(
@@ -91,6 +101,7 @@ class TestKeepaliveResilience:
         """Verify exponential backoff reconnection after persistent failure."""
         inspector = ServerStateInspector()
         server = http_based_server
+        server.config["keepalive_interval"] = 1
 
         await server.connect()
         await asyncio.sleep(0.1)
@@ -98,12 +109,35 @@ class TestKeepaliveResilience:
         # Make server consistently fail to trigger reconnection logic
         running_mock_server.set_status(500)
 
-        # Wait for multiple failed pings and potential reconnection attempts
-        await asyncio.sleep(8.0)  # Allow time for several pings and backoff
+        reconnect_delays = []
 
-        # Should have attempted reconnection (exact timing depends on implementation)
-        # The key is that the server is still trying to recover
-        task = inspector.get_keepalive_task(server)
-        assert task is not None and not task.done()
+        async def mock_sleep(duration):
+            reconnect_delays.append(duration)
+            if duration > 0.5:
+                return  # Skip actual sleep for reconnection delays
+
+        with patch("asyncio.sleep", side_effect=mock_sleep):
+            # Allow enough virtual time for multiple backoff attempts
+            await asyncio.sleep(40)
+
+        await server.disconnect()
+
+        # Filter for reconnection delay calls (values between 0.5 and 301 seconds)
+        delays = [d for d in reconnect_delays if 0.5 < d < 301]
+
+        assert len(delays) >= 2, f"Expected >= 2 reconnection attempts, got {len(delays)}"
+
+        # Verify delays follow exponential backoff pattern:
+        # initial=1s, multiplier=2 -> ~1s, ~2s, ~4s, ~8s, ~16s, ~32s...
+        expected_bases = [1, 2, 4, 8, 16, 32]
+        for i, delay in enumerate(delays):
+            base = expected_bases[min(i, len(expected_bases) - 1)]
+            assert (
+                base * 0.8 <= delay <= base * 1.2
+            ), f"Delay {delay} not within +/-20% of expected {base}"
+
+        # Verify delays are capped at max_delay (300s)
+        for delay in delays:
+            assert delay <= 300, f"Delay {delay} exceeds max_delay of 300"
 
         await server.disconnect()
