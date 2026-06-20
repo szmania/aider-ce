@@ -3,8 +3,6 @@
 import asyncio
 import logging
 
-from tests.mcp.conftest import ServerStateInspector
-
 
 class TestKeepaliveLogging:
     """Test logging and metrics for keepalive mechanism."""
