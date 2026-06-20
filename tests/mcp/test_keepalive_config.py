@@ -8,7 +8,6 @@ import pytest
 from cecli.mcp.manager import McpServerManager
 from cecli.mcp.server import HttpStreamingServer
 from tests.mcp.conftest import ServerStateInspector
-from tests.mcp.mock_server import MockMcpServer
 
 
 class TestKeepaliveConfigurationValidation:

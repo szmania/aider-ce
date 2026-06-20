@@ -1,11 +1,10 @@
 """Integration tests for MCP keepalive mechanism with mock server."""
 
 import asyncio
-from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from cecli.mcp.server import ConnectionState, HttpBasedMcpServer, HttpStreamingServer
+from cecli.mcp.server import ConnectionState
 from tests.mcp.conftest import ServerStateInspector
 
 

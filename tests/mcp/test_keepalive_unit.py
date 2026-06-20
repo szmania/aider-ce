@@ -1,12 +1,8 @@
 """Unit tests for MCP keepalive state transitions and reconnection logic."""
 
-import asyncio
-import random
-from unittest.mock import AsyncMock, MagicMock, patch
-
 import pytest
 
-from cecli.mcp.server import ConnectionState, HttpBasedMcpServer
+from cecli.mcp.server import ConnectionState
 from tests.mcp.conftest import ServerStateInspector
 
 

@@ -1,7 +1,6 @@
 """Concurrency tests for MCP keepalive task lifecycle."""
 
 import asyncio
-from unittest.mock import MagicMock
 
 import pytest
 

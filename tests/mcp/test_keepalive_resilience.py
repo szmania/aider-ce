@@ -1,14 +1,12 @@
 """Resilience tests for MCP keepalive mechanism."""
 
 import asyncio
-import random
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
-from cecli.mcp.server import ConnectionState, HttpBasedMcpServer, HttpStreamingServer
+from cecli.mcp.server import ConnectionState
 from tests.mcp.conftest import ServerStateInspector
-from tests.mcp.mock_server import MockMcpServer
 
 
 class TestKeepaliveResilience:
