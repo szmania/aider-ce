@@ -19,7 +19,7 @@ for more information.
 For HTTP-based servers, you can enable a keepalive mechanism to prevent connections from dropping during long idle periods. This is done by adding the `keepalive_interval` property to your server configuration.
 
 - `keepalive_interval`: (Optional) An integer specifying the interval in seconds for sending a heartbeat (an `OPTIONS` request) to the server.
-  - If not provided, the keepalive mechanism is disabled.
+  - If not provided, it defaults to **300** seconds.
   - The value must be between **5** and **300** seconds.
 
 Example with keepalive enabled:

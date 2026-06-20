@@ -279,9 +279,7 @@ class HttpBasedMcpServer(McpServer):
 
     async def start_keepalive(self):
         """Start the background keepalive loop if configured."""
-        interval = self.config.get("keepalive_interval")
-        if interval is None:
-            return
+        interval = self.config.get("keepalive_interval", 300)
 
         try:
             interval = int(interval)
