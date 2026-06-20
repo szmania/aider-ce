@@ -51,6 +51,7 @@ class AgentCoder(Coder):
         if kwargs.get("uuid", None):
             self.uuid = kwargs.get("uuid")
 
+        self.start_up_errors = []
         self.recently_removed = {}
         self.tool_usage_history = []
         self.loaded_custom_tools = []
@@ -109,19 +110,26 @@ class AgentCoder(Coder):
 
     def post_init(self):
         super().post_init()
-        # Populate per-instance tool and server filters from config
-        self.registered_tools["included"] = set(
-            map(str.lower, self.agent_config.get("tools_includelist", []))
-        )
-        self.registered_tools["excluded"] = set(
-            map(str.lower, self.agent_config.get("tools_excludelist", []))
-        )
-        self.registered_servers["included"] = set(
-            map(str.lower, self.agent_config.get("servers_includelist", []))
-        )
-        self.registered_servers["excluded"] = set(
-            map(str.lower, self.agent_config.get("servers_excludelist", []))
-        )
+
+        if not self._inherited_tools:
+            # Populate per-instance tool and server filters from config
+            self.registered_tools["included"] = set(
+                map(str.lower, self.agent_config.get("tools_includelist", []))
+            )
+            self.registered_tools["excluded"] = set(
+                map(str.lower, self.agent_config.get("tools_excludelist", []))
+            )
+            self.registered_servers["included"] = set(
+                map(str.lower, self.agent_config.get("servers_includelist", []))
+            )
+            self.registered_servers["excluded"] = set(
+                map(str.lower, self.agent_config.get("servers_excludelist", []))
+            )
+
+        for err in self.start_up_errors:
+            self.io.tool_warning(err)
+
+        self.start_up_errors = []
 
     def _setup_agent(self):
         os.makedirs(".cecli/temp", exist_ok=True)
@@ -143,7 +151,7 @@ class AgentCoder(Coder):
             try:
                 config = json.loads(self.args.agent_config)
             except (json.JSONDecodeError, TypeError) as e:
-                self.io.tool_warning(f"Failed to parse agent-config JSON: {e}")
+                self.start_up_errors.append(f"Failed to parse agent-config JSON: {e}")
                 return {}
 
         config["large_file_token_threshold"] = nested.getter(
@@ -1531,15 +1539,20 @@ Todo list does not exist. Please update it with the `UpdateTodoList` tool.</cont
         try:
             service = AgentService.get_instance(self)
             children = service.get_children(self)
-
             if not children:
+                return None
+
+            # Filter to non-independent children only
+            dependent_children = [info for info in children if not info.independent]
+
+            if not dependent_children:
                 return None
 
             result = '<context name="sub_agent_states" from="agent">\n'
             result += "## Active Sub-Agent States\n\n"
-            result += f"Found {len(children)} active child sub-agent(s):\n\n"
+            result += f"Found {len(dependent_children)} active child sub-agent(s):\n\n"
 
-            for info in children:
+            for info in dependent_children:
                 result += f"**{info.name}**:\n"
                 result += f"  - UUID: `{info.coder.uuid}`\n"
                 result += f"  - Status: {info.status.value}\n"

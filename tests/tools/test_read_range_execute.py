@@ -41,6 +41,12 @@ def mock_coder():
     coder.io.tool_output = MagicMock()
     coder.io.tool_error = MagicMock()
     coder.io.tool_warning = MagicMock()
+    coder.edit_allowed = True
+    coder.abs_fnames = set()
+    coder.abs_read_only_fnames = set()
+    coder.large_file_token_threshold = 25000
+    coder.main_model = MagicMock()
+    coder.main_model.token_count.side_effect = lambda x: len(x) // 4
     return coder
 
 
@@ -162,7 +168,7 @@ class TestReadRangeExecute:
         try:
             show = [{"file_path": self.test_file, "range_start": "5", "range_end": "10"}]
             result = self.Tool.execute(self.coder, show)
-            assert "File range too large" in result
+            assert "Snapshot" in result
             assert "line5" in result
             assert "line10" in result
         finally:
@@ -456,7 +462,8 @@ class TestReadRangeExecute:
         cs_patch = patch("cecli.helpers.conversation.ConversationService", mock_cs)
         cs_patch.start()
 
-        mock_coder.io.read_text.side_effect = [content1, content1, content2, content2]
+        content_map = {test_file1: content1, test_file2: content2}
+        mock_coder.io.read_text.side_effect = lambda path: content_map.get(path, "")
 
         try:
             from cecli.tools.read_range import Tool

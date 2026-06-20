@@ -7,7 +7,7 @@ import warnings
 from typing import Optional
 
 from cecli.coders import Coder
-from cecli.commands import SwitchCoderSignal
+from cecli.commands import ReloadProgramSignal, SwitchCoderSignal
 from cecli.helpers.conversation import ConversationService, MessageTag
 
 logger = logging.getLogger(__name__)
@@ -97,6 +97,12 @@ class CoderWorker:
                 break
             except KeyboardInterrupt:
                 continue
+            except ReloadProgramSignal:
+                # Store the signal and tell the TUI to exit so the
+                # full program reload can propagate to main()
+                self._reload_signal = True
+                self.output_queue.put({"type": "exit"})
+                break
             except SwitchCoderSignal as switch:
                 await self._handle_switch_coder_signal(switch)
                 # Continue the loop with the new coder

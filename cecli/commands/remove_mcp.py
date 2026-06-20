@@ -1,7 +1,11 @@
 from typing import List
 
 from cecli.commands.utils.base_command import BaseCommand
-from cecli.commands.utils.helpers import format_command_result
+from cecli.commands.utils.helpers import (
+    format_command_result,
+    is_server_globally_excluded,
+    update_server_registration,
+)
 
 
 class RemoveMcpCommand(BaseCommand):
@@ -44,22 +48,37 @@ class RemoveMcpCommand(BaseCommand):
         for item in servers_to_disconnect:
             server_name = item.name if hasattr(item, "name") else item
 
-            coder.interrupt_event.clear()
-
-            was_disconnected, interrupted = await coder.coroutines.interruptible(
-                coder.mcp_manager.disconnect_server(server_name),
-                coder.interrupt_event,
-            )
-
-            if interrupted:
-                io.tool_warning(f"MCP disconnection interrupted: {server_name}")
-                results.append(f"Interrupted: {server_name}")
+            # Never remove the "local" server
+            if server_name == "Local":
+                results.append("Cannot remove 'Local' server")
                 continue
 
-            if was_disconnected:
-                results.append(f"Removed server: {server_name}")
+            # Force-exclude on the primary (active) coder
+            update_server_registration(coder, server_name, "exclude", force=True)
+            # Check if all coders in the hierarchy have this server excluded
+            all_excluded = is_server_globally_excluded(coder, server_name)
+
+            if all_excluded:
+                was_disconnected, interrupted = await coder.coroutines.interruptible(
+                    coder.mcp_manager.disconnect_server(server_name),
+                    coder.interrupt_event,
+                )
+
+                if interrupted:
+                    io.tool_warning(f"MCP disconnection interrupted: {server_name}")
+                    results.append(f"Interrupted: {server_name}")
+                    continue
+
+                if was_disconnected:
+                    results.append(f"Removed server: {server_name}")
+                else:
+                    results.append(f"Unable to remove server: {server_name}")
             else:
-                results.append(f"Unable to remove server: {server_name}")
+                io.tool_output(
+                    f"Server '{server_name}' still in use by other coders, "
+                    f"keeping connection active."
+                )
+                results.append(f"Removed from active coder, still active for others: {server_name}")
 
         io.tool_output("\n".join(results))
 

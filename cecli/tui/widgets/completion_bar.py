@@ -16,6 +16,7 @@ class CompletionBar(Widget, can_focus=False):
 
     DEFAULT_CSS = """
     CompletionBar {
+        dock: top;
         height: 1;
         background: $surface;
         margin: 0 0;

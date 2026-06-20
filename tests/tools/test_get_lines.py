@@ -30,6 +30,16 @@ class DummyCoder:
         self.uuid = str(uuid.uuid4())  # Generate unique UUID for each instance
 
         self.turn_count = 0
+        self.edit_allowed = True
+        self.abs_fnames = set()
+        self.abs_read_only_fnames = set()
+        self.large_file_token_threshold = 25000
+
+        from unittest.mock import MagicMock
+
+        self.main_model = MagicMock()
+        self.main_model.token_count.side_effect = lambda x: len(x) // 4
+        self.turn_count = 0
 
     def abs_root_path(self, file_path):
         path = Path(file_path)

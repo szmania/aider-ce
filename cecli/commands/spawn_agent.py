@@ -27,7 +27,9 @@ class SpawnAgentCommand(BaseCommand):
 
         try:
             agent_service = AgentService.get_instance(coder)
-            new_coder, info = await agent_service.spawn(name, prompt, parent=coder, auto_reap=False)
+            new_coder, info = await agent_service.spawn(
+                name, prompt, parent=coder, auto_reap=False, independent=True
+            )
 
             # Set the newly spawned agent as the foreground agent
             agent_service.foreground_uuid = info.coder.uuid

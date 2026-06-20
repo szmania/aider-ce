@@ -3,6 +3,7 @@
 from cecli.helpers.hashline import (
     _apply_closure_safeguard,
     _fix_duplicate_content_boundaries,
+    _merge_replace_operations,
     _would_create_duplicate_content,
 )
 
@@ -421,3 +422,223 @@ def test_closure_safeguard_heals_broken_dict():
     assert (
         not tree.root_node.has_error
     ), f"Healed source still has tree-sitter errors: {new_source!r}"
+
+
+# =============================================================================
+# Tests for _merge_replace_operations
+# =============================================================================
+
+
+def _make_merge_op(operation, text, start_idx, end_idx, index=0):
+    """Helper to create a resolved operation dict for merge tests."""
+    return {
+        "index": index,
+        "start_idx": start_idx,
+        "end_idx": end_idx,
+        "op": {
+            "operation": operation,
+            "text": text,
+        },
+    }
+
+
+def test_merge_non_adjacent_ops():
+    """Non-adjacent operations with a gap should NOT be merged."""
+    ops = [
+        _make_merge_op("replace", "first block", 0, 1, index=0),
+        _make_merge_op("replace", "second block", 3, 4, index=1),
+    ]
+    result = _merge_replace_operations(ops)
+    # Should remain separate (2 items)
+    assert len(result) == 2
+    assert result[0]["op"]["text"] == "first block"
+    assert result[1]["op"]["text"] == "second block"
+
+
+def test_merge_overlapping_with_text_overlap():
+    """Overlapping ops with overlapping text should merge and deduplicate."""
+    ops = [
+        _make_merge_op("replace", "a\nb\nc", 0, 2, index=0),
+        _make_merge_op("replace", "c\nd\ne", 2, 4, index=1),
+    ]
+    result = _merge_replace_operations(ops)
+    assert len(result) == 1
+    # The overlapping line "c" should appear only once
+    assert result[0]["op"]["text"] == "a\nb\nc\nd\ne"
+    # Range should cover both
+    assert result[0]["start_idx"] == 0
+    assert result[0]["end_idx"] == 4
+
+
+def test_merge_adjacent_no_overlap_with_trailing_newline():
+    """
+    Adjacent ops where prev_text ends with \\n.
+    This should merge correctly without needing an extra newline.
+    """
+    ops = [
+        _make_merge_op("replace", "def foo():\n    pass\n", 0, 1, index=0),
+        _make_merge_op("replace", "def bar():\n    pass", 2, 3, index=1),
+    ]
+    result = _merge_replace_operations(ops)
+    assert len(result) == 1
+    merged_text = result[0]["op"]["text"]
+    assert "def foo():" in merged_text
+    assert "def bar():" in merged_text
+    # The trailing \n on prev_text provides the necessary separator
+    assert "    pass\ndef bar():" in merged_text or "pass\ndef bar():" in merged_text
+
+
+def test_merge_adjacent_no_overlap_leading_newline_in_curr():
+    """
+    Adjacent ops where curr_text starts with \\n.
+    This should merge correctly without needing an extra newline.
+    """
+    ops = [
+        _make_merge_op("replace", "def foo():\n    pass", 0, 1, index=0),
+        _make_merge_op("replace", "\ndef bar():\n    pass", 2, 3, index=1),
+    ]
+    result = _merge_replace_operations(ops)
+    assert len(result) == 1
+    merged_text = result[0]["op"]["text"]
+    assert "def foo():" in merged_text
+    assert "def bar():" in merged_text
+
+
+def test_merge_adjacent_no_overlap_missing_newline_separator():
+    """
+    ADJACENT ops where NEITHER text provides the newline separator.
+    This is the bug case: "    pass" + "def bar():" should have a newline between them.
+    Expected: "def foo():\n    pass\ndef bar():\n    pass"
+    """
+    ops = [
+        _make_merge_op("replace", "def foo():\n    pass", 0, 1, index=0),
+        _make_merge_op("replace", "def bar():\n    pass", 2, 3, index=1),
+    ]
+    result = _merge_replace_operations(ops)
+    assert len(result) == 1
+    merged_text = result[0]["op"]["text"]
+    # Expect content to be on separate lines
+    expected = "def foo():\n    pass\ndef bar():\n    pass"
+    assert merged_text == expected, (
+        f"Expected lines to be separated by newline.\n"
+        f"  Expected: {expected!r}\n"
+        f"  Got:      {merged_text!r}\n"
+        f"  Problem:  'pass' and 'def bar()' are smushed together"
+    )
+
+
+def test_merge_adjacent_single_line_texts_no_newline_separator():
+    """
+    Adjacent ops with single-line texts and no newline separator.
+    If one op replaces line 1 with 'line_a' and another replaces line 2 with 'line_b',
+    the merged result should be 'line_a\nline_b'.
+    """
+    ops = [
+        _make_merge_op("replace", "line_a", 0, 0, index=0),
+        _make_merge_op("replace", "line_b", 1, 1, index=1),
+    ]
+    result = _merge_replace_operations(ops)
+    assert len(result) == 1
+    merged_text = result[0]["op"]["text"]
+    expected = "line_a\nline_b"
+    assert merged_text == expected, (
+        f"Expected single-line texts to be separated by newline.\n"
+        f"  Expected: {expected!r}\n"
+        f"  Got:      {merged_text!r}\n"
+    )
+
+
+def test_merge_adjacent_multi_line_without_separator():
+    """
+    Adjacent ops, each with multi-line text, where neither provides the
+    newline separator between the two blocks.
+    """
+    ops = [
+        _make_merge_op("replace", "line1\nline2", 0, 1, index=0),
+        _make_merge_op("replace", "line3\nline4", 2, 3, index=1),
+    ]
+    result = _merge_replace_operations(ops)
+    assert len(result) == 1
+    merged_text = result[0]["op"]["text"]
+    expected = "line1\nline2\nline3\nline4"
+    assert merged_text == expected, (
+        f"Expected all 4 lines to be on separate lines.\n"
+        f"  Expected: {expected!r}\n"
+        f"  Got:      {merged_text!r}\n"
+        f"  Problem:  'line2' and 'line3' are likely on the same line"
+    )
+
+
+def test_merge_adjacent_complete_lines_with_separator():
+    """
+    Adjacent ops where both texts end with \\n (complete lines).
+    This should already work correctly.
+    """
+    ops = [
+        _make_merge_op("replace", "line1\nline2\n", 0, 1, index=0),
+        _make_merge_op("replace", "line3\nline4\n", 2, 3, index=1),
+    ]
+    result = _merge_replace_operations(ops)
+    assert len(result) == 1
+    merged_text = result[0]["op"]["text"]
+    expected = "line1\nline2\nline3\nline4\n"
+    assert merged_text == expected
+
+
+def test_merge_three_adjacent_ops_no_separator():
+    """
+    Three adjacent ops where none provides the newline separator between blocks.
+    """
+    ops = [
+        _make_merge_op("replace", "block1", 0, 0, index=0),
+        _make_merge_op("replace", "block2", 1, 1, index=1),
+        _make_merge_op("replace", "block3", 2, 2, index=2),
+    ]
+    result = _merge_replace_operations(ops)
+    assert len(result) == 1
+    merged_text = result[0]["op"]["text"]
+    expected = "block1\nblock2\nblock3"
+    assert merged_text == expected, (
+        f"Expected 3 blocks on separate lines.\n"
+        f"  Expected: {expected!r}\n"
+        f"  Got:      {merged_text!r}"
+    )
+
+
+def test_merge_overlapping_no_text_overlap():
+    """
+    Overlapping ops (same or overlapping line ranges) but with no
+    overlapping text. This shouldn't normally happen, but the function
+    should handle it gracefully.
+    """
+    ops = [
+        _make_merge_op("replace", "aaa\nbbb", 0, 1, index=0),
+        _make_merge_op("replace", "ccc\nddd", 1, 2, index=1),
+    ]
+    result = _merge_replace_operations(ops)
+    assert len(result) == 1
+    merged_text = result[0]["op"]["text"]
+    # No overlap in text, so they get concatenated
+    # Since they overlap on line 1, we need a newline
+    assert "aaa\nbbb" in merged_text
+    assert "ccc\nddd" in merged_text
+
+
+def test_merge_different_op_types_not_merged():
+    """
+    Adjacent ops of different types (replace vs insert) should NOT be merged.
+    """
+    ops = [
+        _make_merge_op("replace", "replacement", 0, 0, index=0),
+        _make_merge_op("insert", "insertion", 1, 1, index=1),
+    ]
+    result = _merge_replace_operations(ops)
+    assert len(result) == 2
+
+
+def test_merge_single_op_returns_as_is():
+    """A single operation should be returned unchanged."""
+    ops = [_make_merge_op("replace", "text", 0, 0, index=0)]
+    result = _merge_replace_operations(ops)
+    assert len(result) == 1
+    assert result[0]["op"]["text"] == "text"

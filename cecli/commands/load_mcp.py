@@ -1,7 +1,11 @@
 from typing import List
 
 from cecli.commands.utils.base_command import BaseCommand
-from cecli.commands.utils.helpers import format_command_result
+from cecli.commands.utils.helpers import (
+    format_command_result,
+    iter_all_coders,
+    update_server_registration,
+)
 
 
 class LoadMcpCommand(BaseCommand):
@@ -51,6 +55,20 @@ class LoadMcpCommand(BaseCommand):
         if not servers_to_load and results:
             return format_command_result(io, cls.NORM_NAME, "", "\n".join(results))
 
+        # Before connecting any new server, convert coders with empty included sets
+        # to explicit include lists of all currently connected MCP servers.
+        # This moves them from "implicitly include all" to explicit state-machine
+        # management, preventing the new server from being implicitly available
+        # to all coders.
+        connected_names = {s.name for s in coder.mcp_manager.connected_servers}
+        if connected_names:
+            for c in iter_all_coders(coder):
+                if not c.registered_servers["included"]:
+                    included = set(connected_names) - c.registered_servers["excluded"]
+                    if c.edit_format in ("agent", "subagent"):
+                        included.add("Local")  # "local" is always available
+                    c.registered_servers["included"] = included
+
         # Process connections with interrupt support
         for server in servers_to_load:
             server_name = server.name
@@ -67,6 +85,14 @@ class LoadMcpCommand(BaseCommand):
                 continue
 
             if did_connect:
+                # Force-include on the primary (active) coder
+                update_server_registration(coder, server_name, "include", force=True)
+
+                # Safe-exclude on all other coders (respects existing inclusions)
+                for other_coder in iter_all_coders(coder):
+                    if other_coder is coder:
+                        continue
+                    update_server_registration(other_coder, server_name, "exclude", force=False)
                 results.append(f"Loaded server: {server_name}")
             else:
                 results.append(f"Unable to load server: {server_name}")

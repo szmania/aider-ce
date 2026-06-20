@@ -73,7 +73,7 @@ class InputArea(TextArea):
 
         self.files = []
         self.commands = []
-        self.completion_active = False
+        self._completion_active = False
 
         self._cycling = False
         self._completion_prefix = ""
@@ -124,6 +124,20 @@ class InputArea(TextArea):
             row = max(0, len(lines) - 1)
             col = len(lines[row])
             self.cursor_location = (row, col)
+
+    @property
+    def completion_active(self) -> bool:
+        """Whether completion suggestions are currently active."""
+        return self._completion_active
+
+    @completion_active.setter
+    def completion_active(self, value: bool) -> None:
+        """Set completion active state and update CSS class."""
+        self._completion_active = value
+        if value:
+            self.add_class("completion-active")
+        else:
+            self.remove_class("completion-active")
 
     def _ensure_history_loaded(self) -> list[str]:
         """Lazily load history on first access.
@@ -236,7 +250,7 @@ class InputArea(TextArea):
             self.completion_active = False
             self.post_message(self.CompletionDismiss())
 
-        if self.app.is_key_for("cancel", event.key):
+        if self.app.is_key_for("cancel", event.key) and not self.selected_text:
             event.stop()
             event.prevent_default()
             if self.text.strip():

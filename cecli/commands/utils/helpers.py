@@ -304,6 +304,92 @@ def expand_subdir(file_path: Path) -> List[Path]:
         for file in file_path.rglob("*"):
             if file.is_file():
                 files.append(file)
-        return files
 
     return []
+
+
+def iter_all_coders(root_coder):
+    """
+    Recursively iterate over all coders in the agent/sub-agent hierarchy.
+
+    Yields the root coder first, then all sub-agents (and their sub-agents)
+    at every nesting level.
+
+    Args:
+        root_coder: The top-level coder instance to start from.
+
+    Yields:
+        Coder instances from the entire hierarchy.
+    """
+
+    try:
+        from cecli.helpers.agents.service import AgentService
+
+        for coder in AgentService.get_all_agents():
+            yield coder
+    except Exception:
+        pass
+
+
+def update_server_registration(coder, server_name, operation, force=False):
+    """
+    Unify include/exclude server registration with optional force.
+
+    When *force* is True, the operation always succeeds and the
+    opposing set is cleaned up to be non-conflicting.  When *force*
+    is False (safe mode), the operation is a no-op if the server
+    is already present in the opposing set.
+
+    Args:
+        coder: A coder instance with ``registered_servers`` attribute.
+        server_name: Name of the server to register.
+        operation: ``"include"`` or ``"exclude"``.
+        force: When True, always perform the operation.
+               When False, respect the opposing set (excluded wins
+               for include, included wins for exclude).
+    """
+    name = server_name
+    included = coder.registered_servers["included"]
+    excluded = coder.registered_servers["excluded"]
+
+    if operation == "include":
+        if force or name not in excluded:
+            included.add(name)
+            excluded.discard(name)
+    elif operation == "exclude":
+        if force or name not in included:
+            excluded.add(name)
+            included.discard(name)
+
+
+def is_server_globally_excluded(coder, server_name):
+    """
+    Check whether *server_name* is excluded from *all* coders in the hierarchy.
+
+    A server is considered "globally excluded" when every coder in the tree
+    either:
+      - has it in ``registered_servers["excluded"]``, or
+      - does **not** have it in ``registered_servers["included"]``
+        (empty included means "include all", so the server would be available).
+
+    Args:
+        coder: Any coder in the hierarchy (used to discover the full tree).
+        server_name: Name of the MCP server to check.
+
+    Returns:
+        True if the server is excluded from every coder.
+    """
+    name = server_name
+    for other in iter_all_coders(coder):
+        incl = other.registered_servers["included"]
+        excl = other.registered_servers["excluded"]
+
+        # Empty included => implicitly includes all servers
+        if not incl:
+            if name not in excl:
+                return False
+        else:
+            if name in incl:
+                return False
+            # Non-empty included means it's an allowlist: not in included => excluded
+    return True

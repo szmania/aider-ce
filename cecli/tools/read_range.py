@@ -445,14 +445,22 @@ class Tool(BaseTool):
                 # For structured searches (line numbers, special markers) or mixed searches
                 # (one special marker, one text pattern), cap large ranges with preview
                 # Text pattern searches are not subject to capping
-                if both_structured or (mixed_special_search and (e_idx - s_idx > 200)):
+                sliced_contents = "\n".join(content.splitlines()[s_idx:e_idx])
+                token_count = coder.main_model.token_count(content)
+                sliced_token_count = coder.main_model.token_count(sliced_contents)
+                is_small_file = token_count <= min(coder.large_file_token_threshold / 4, 2048)
+                is_small_range = sliced_token_count <= min(
+                    coder.large_file_token_threshold / 8, 1024
+                )
+                if (
+                    both_structured or (mixed_special_search and is_small_file)
+                ) and not is_small_range:
 
                     preview, has_stub = cls._get_range_preview(
                         coder, abs_path, start_idx=s_idx, end_idx=e_idx, line_numbers=True
                     )
 
-                    if has_stub and abs_path not in coder.abs_fnames:
-                        token_count = coder.main_model.token_count(content)
+                    if abs_path not in coder.abs_fnames:
                         # Track special marker usage for auto-editable detection
                         if token_count <= coder.large_file_token_threshold:
                             cls._special_marker_count[abs_path] = (

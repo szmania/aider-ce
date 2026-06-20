@@ -48,7 +48,7 @@ from cecli import __version__, models, urls, utils
 from cecli.args import get_parser
 from cecli.coders import AgentCoder, Coder
 from cecli.coders.base_coder import UnknownEditFormat
-from cecli.commands import Commands, SwitchCoderSignal
+from cecli.commands import Commands, ReloadProgramSignal, SwitchCoderSignal
 from cecli.deprecated_args import handle_deprecated_model_args
 from cecli.format_settings import format_settings, scrub_sensitive_info
 from cecli.helpers.conversation import ConversationService, MessageTag
@@ -471,16 +471,54 @@ def custom_tracer(frame, event, arg):
 
 
 def main(argv=None, input=None, output=None, force_git_root=None, return_coder=False):
-    if sys.platform == "win32":
-        if sys.version_info >= (3, 12) and hasattr(asyncio, "SelectorEventLoop"):
+    # Tracks the coder instance from a ReloadProgramSignal so the new
+    # main_async() can pass it as from_coder to Coder.create(), preserving
+    # UUID, edit_format, and other state across the reload cycle.
+    reload_from_coder = None
+
+    while True:
+        try:
+            if sys.platform == "win32":
+                if sys.version_info >= (3, 12) and hasattr(asyncio, "SelectorEventLoop"):
+                    return asyncio.run(
+                        main_async(
+                            argv,
+                            input,
+                            output,
+                            force_git_root,
+                            return_coder,
+                            from_coder=reload_from_coder,
+                        ),
+                        loop_factory=asyncio.SelectorEventLoop,
+                    )
             return asyncio.run(
-                main_async(argv, input, output, force_git_root, return_coder),
-                loop_factory=asyncio.SelectorEventLoop,
+                main_async(
+                    argv,
+                    input,
+                    output,
+                    force_git_root,
+                    return_coder,
+                    from_coder=reload_from_coder,
+                )
             )
-    return asyncio.run(main_async(argv, input, output, force_git_root, return_coder))
+        except ReloadProgramSignal as sig:
+            reload_from_coder = sig.kwargs.get("from_coder")
+            # Clear hook registries to prevent 'already exists' warnings on reload.
+            # The old HookManager and HookRegistry instances are cached by UUID and
+            # would be reused by the new coder, causing hook registration failures.
+            if reload_from_coder:
+                HookService.destroy_instances(reload_from_coder.uuid)
+            continue
 
 
-async def main_async(argv=None, input=None, output=None, force_git_root=None, return_coder=False):
+async def main_async(
+    argv=None,
+    input=None,
+    output=None,
+    force_git_root=None,
+    return_coder=False,
+    from_coder=None,
+):
     report_uncaught_exceptions()
     if argv is None:
         argv = sys.argv[1:]
@@ -1016,7 +1054,12 @@ async def main_async(argv=None, input=None, output=None, force_git_root=None, re
         )
         mcp_manager = await McpServerManager.from_servers(mcp_servers, io, args.verbose)
 
+        if from_coder:
+            from_coder.tui = None
+            from_coder.io = None
+
         coder = await Coder.create(
+            from_coder=from_coder,
             main_model=main_model,
             edit_format=args.edit_format,
             io=io,
@@ -1233,8 +1276,23 @@ async def main_async(argv=None, input=None, output=None, force_git_root=None, re
         from cecli.tui import launch_tui
 
         del pre_init_io
-        print("Starting cecli TUI...", flush=True)
-        return_code = await launch_tui(coder, output_queue, input_queue, args)
+        try:
+            return_code = await launch_tui(coder, output_queue, input_queue, args)
+        except ReloadProgramSignal:
+            # Clean up before full program reload (mirrors while True loop below)
+            sys.settrace(None)
+            await coder.auto_save_session(force=True)
+            if coder.mcp_manager and coder.mcp_manager.is_connected:
+                await coder.mcp_manager.disconnect_all()
+
+            # Clean up stale TUI per-coder queues from previous sessions
+            # to prevent stale queue entries from accumulating across
+            # reload cycles.
+            from cecli.tui.io import TextualInputOutput as _TuiIO
+
+            _TuiIO._per_coder_queues.clear()
+
+            raise
         return await graceful_exit(coder, return_code)
     while True:
         try:
@@ -1275,6 +1333,13 @@ async def main_async(argv=None, input=None, output=None, force_git_root=None, re
             sys.settrace(None)
             await coder.auto_save_session(force=True)
             return await graceful_exit(coder)
+        except ReloadProgramSignal:
+            # Clean up before full program reload
+            sys.settrace(None)
+            await coder.auto_save_session(force=True)
+            if coder.mcp_manager and coder.mcp_manager.is_connected:
+                await coder.mcp_manager.disconnect_all()
+            raise
 
 
 def is_first_run_of_new_version(io, verbose=False):

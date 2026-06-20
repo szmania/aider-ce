@@ -20,7 +20,7 @@ from .context_blocks import ContextBlocksCommand
 from .context_management import ContextManagementCommand
 from .copy import CopyCommand
 from .copy_context import CopyContextCommand
-from .core import Commands, SwitchCoderSignal
+from .core import Commands, ReloadProgramSignal, SwitchCoderSignal
 from .diff import DiffCommand
 from .drop import DropCommand
 from .editor import EditCommand, EditorCommand
@@ -32,6 +32,7 @@ from .hashline import HashlineCommand
 from .help import HelpCommand
 from .history_search import HistorySearchCommand
 from .hooks import HooksCommand
+from .hot_reload import HotReloadCommand
 from .include_skill import IncludeSkillCommand
 from .lint import LintCommand
 from .list_sessions import ListSessionsCommand
@@ -116,6 +117,7 @@ CommandRegistry.register(HashlineCommand)
 CommandRegistry.register(HelpCommand)
 CommandRegistry.register(HistorySearchCommand)
 CommandRegistry.register(HooksCommand)
+CommandRegistry.register(HotReloadCommand)
 CommandRegistry.register(ReapAgentCommand)
 CommandRegistry.register(SpawnAgentCommand)
 CommandRegistry.register(SwitchAgentCommand)
@@ -197,6 +199,7 @@ __all__ = [
     "HelpCommand",
     "HistorySearchCommand",
     "HooksCommand",
+    "HotReloadCommand",
     "IncludeSkillCommand",
     "ReapAgentCommand",
     "SpawnAgentCommand",
@@ -223,6 +226,7 @@ __all__ = [
     "ReadOnlyCommand",
     "ReadOnlyStubCommand",
     "ReasoningEffortCommand",
+    "ReloadProgramSignal",
     "RemoveHookCommand",
     "RemoveMcpCommand",
     "RemoveSkillCommand",

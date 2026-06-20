@@ -7,6 +7,8 @@ using the Textual framework. Launch with: cecli --tui
 import queue
 import weakref
 
+from cecli.commands import ReloadProgramSignal
+
 from .app import TUI
 from .io import TextualInputOutput
 from .worker import CoderWorker
@@ -71,6 +73,8 @@ async def launch_tui(coder, output_queue, input_queue, args):
     Returns:
         Exit code from TUI
     """
+    worker = None
+    return_code = 0
     try:
         worker = CoderWorker(coder, output_queue, input_queue)
         app = TUI(worker, output_queue, input_queue, args)
@@ -79,8 +83,16 @@ async def launch_tui(coder, output_queue, input_queue, args):
         coder.tui = weakref.ref(app)
 
         return_code = await app.run_async()
-
-        return return_code if return_code else 0
+        return_code = return_code if return_code else 0
     finally:
         if worker:
             worker.stop()
+
+    # After clean shutdown, check if a reload was signaled
+    # by the worker thread (ReloadProgramSignal caught in _async_run)
+    if worker and getattr(worker, "_reload_signal", False):
+        raise ReloadProgramSignal(
+            "Reloading program configuration after TUI exit", from_coder=worker.coder
+        )
+
+    return return_code

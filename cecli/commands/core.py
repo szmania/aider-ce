@@ -33,6 +33,25 @@ class SwitchCoderSignal(BaseException):
         super().__init__()
 
 
+class ReloadProgramSignal(BaseException):
+    """
+    Signal to reload the entire program configuration.
+
+    This is NOT an error - it's a control flow signal used to trigger
+    a full program reload, re-parsing config files and re-initializing
+    all components. Useful for hot-reloading when configuration files
+    change.
+
+    Note: Inherits from BaseException (like KeyboardInterrupt and SystemExit)
+    to avoid being caught by generic `except Exception` handlers.
+    """
+
+    def __init__(self, message="Reloading program configuration...", **kwargs):
+        self.kwargs = kwargs
+        self.message = message
+        super().__init__(self.message)
+
+
 class Commands:
     scraper = None
 

@@ -37,14 +37,14 @@ class Tool(BaseTool):
             "name": "EditText",
             "description": (
                 "Edit text in one or more files using content ID markers. "
-                "Supports replace, delete, and insert operations in a single call. "
+                "Supports replace and delete operations in a single call. "
                 "Can handle an array of edits across multiple files. "
                 "Each edit must include its own file_path and operation type. "
                 "Use content ID ranges with the start_line and end_line parameters with format "
                 "`content_id::` (the content id with the :: demarcator). For empty files, use `@000` as the "
                 "content ID references. "
                 "Start and end values are inclusive: start and end content IDs both count as "
-                "part of the range to replace, insert at, or delete. "
+                "part of the range to replace or delete. "
                 "Edits within a file must not be adjacent or overlapping."
             ),
             "parameters": {
@@ -61,11 +61,10 @@ class Tool(BaseTool):
                                 },
                                 "operation": {
                                     "type": "string",
-                                    "enum": ["replace", "delete", "insert"],
+                                    "enum": ["replace", "delete"],
                                     "description": (
                                         "The type of operation: 'replace' (replace range with"
-                                        " text), 'delete' (remove range), or 'insert' (insert text"
-                                        " at start_line, replacing the start line)."
+                                        " text) or 'delete' (remove range)."
                                     ),
                                 },
                                 "start_line": {
@@ -178,7 +177,7 @@ class Tool(BaseTool):
                             if operation not in VALID_OPERATIONS:
                                 raise ToolError(
                                     f"Edit {edit_index + 1}: Invalid operation '{operation}'. "
-                                    "Must be 'replace', 'delete', or 'insert'"
+                                    "Must be 'replace' or 'delete'"
                                 )
 
                             edit_text_raw = edit.get("text")

@@ -1056,17 +1056,54 @@ def _merge_replace_operations(resolved_ops):
                 curr_lines = curr_text.splitlines(keepends=True)
 
                 # Find longest overlap between suffix of prev and prefix of current
+                # Normalize trailing newlines for comparison so that
+                # e.g. ["c"] matches ["c\n"] when the last line of prev
+                # doesn't have a trailing newline but the first line of curr does.
                 max_check = min(len(prev_lines), len(curr_lines))
                 overlap_len = 0
                 for i in range(1, max_check + 1):
-                    if prev_lines[-i:] == curr_lines[:i]:
+                    prev_suffix = [line.rstrip("\n") for line in prev_lines[-i:]]
+                    curr_prefix = [line.rstrip("\n") for line in curr_lines[:i]]
+                    if prev_suffix == curr_prefix:
                         overlap_len = i
 
                 if overlap_len > 0:
-                    new_text = "".join(prev_lines) + "".join(curr_lines[overlap_len:])
+                    # Build merged result:
+                    # Take all of prev's lines, then curr's remaining lines.
+                    # Ensure the last line of prev and first line of curr
+                    # are properly separated by a newline.
+                    result_lines = list(prev_lines)
+                    remaining = list(curr_lines[overlap_len:])
+                    if remaining:
+                        # Ensure proper newline separation between the overlapping
+                        # content and the remaining lines from curr.
+                        # If the last overlapping line in prev doesn't end with \n
+                        # and the first remaining line doesn't start with \n,
+                        # add a newline to keep them on separate lines.
+                        if (
+                            result_lines
+                            and not result_lines[-1].endswith("\n")
+                            and not remaining[0].startswith("\n")
+                        ):
+                            result_lines[-1] = result_lines[-1] + "\n"
+                    result_lines.extend(remaining)
+                    new_text = "".join(result_lines)
                 else:
-                    # No overlap, just concatenate
-                    new_text = prev_text + curr_text
+                    # No overlap, concatenate with newline separator if needed
+                    # Adjacent operations that replace consecutive line ranges
+                    # must keep their content on separate lines.
+                    is_adjacent = prev["end_idx"] + 1 == current["start_idx"]
+                    needs_newline = (
+                        is_adjacent
+                        and prev_text
+                        and curr_text
+                        and not prev_text.endswith("\n")
+                        and not curr_text.startswith("\n")
+                    )
+                    if needs_newline:
+                        new_text = prev_text + "\n" + curr_text
+                    else:
+                        new_text = prev_text + curr_text
 
                 # Update prev
                 prev["end_idx"] = max(prev["end_idx"], current["end_idx"])

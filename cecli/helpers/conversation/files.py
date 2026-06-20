@@ -107,7 +107,7 @@ class ConversationFiles:
                 # Use coder.io.read_text() - coder should always be available
                 coder = self.get_coder()
                 try:
-                    content = coder.io.read_text(abs_fname)
+                    content = coder.io.read_text(abs_fname, silent=True)
                     if coder.hashlines:
                         content = hashline(content)
                 except Exception:
@@ -224,7 +224,7 @@ class ConversationFiles:
         coder = self.get_coder()
         rel_fname = coder.get_rel_fname(fname)
         try:
-            current_content = coder.io.read_text(abs_fname)
+            current_content = coder.io.read_text(abs_fname, silent=True)
             if coder.hashlines:
                 current_content = hashline(current_content)
         except Exception:
@@ -525,7 +525,7 @@ class ConversationFiles:
 
         # Read file content
         try:
-            content = coder.io.read_text(abs_fname)
+            content = coder.io.read_text(abs_fname, silent=True)
             if not content:
                 return ""
         except Exception:

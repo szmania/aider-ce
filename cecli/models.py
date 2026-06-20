@@ -1227,6 +1227,7 @@ class Model(ModelSettings):
                 pass
 
             kwargs["tools"] = sorted_tools
+            kwargs["tool_choice"] = "auto"
 
         if functions and len(functions) == 1:
             function = functions[0]
@@ -1234,6 +1235,7 @@ class Model(ModelSettings):
                 tool_name = function.get("name")
                 if tool_name:
                     kwargs["tool_choice"] = {"type": "function", "function": {"name": tool_name}}
+
         if self.extra_params:
             kwargs.update(self.extra_params)
         if max_tokens:
@@ -1265,13 +1267,6 @@ class Model(ModelSettings):
                 {"location": "message", "index": -1},
                 {"location": "message", "index": -2},
             ]
-
-        if "GITHUB_COPILOT_TOKEN" in os.environ or self.name.startswith("github_copilot/"):
-            if "extra_headers" not in kwargs:
-                kwargs["extra_headers"] = {
-                    "Editor-Version": f"cecli/{__version__}",
-                    "Copilot-Integration-Id": "vscode-chat",
-                }
 
         if kwargs.get("headers", None):
             kwargs["headers"].update(

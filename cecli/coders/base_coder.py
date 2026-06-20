@@ -2,6 +2,7 @@
 
 import asyncio
 import base64
+import copy
 import hashlib
 import json
 import locale
@@ -314,6 +315,8 @@ class Coder(metaclass=UsageMeta):
                 ignore_mentions=from_coder.ignore_mentions,
                 file_watcher=from_coder.file_watcher,
                 mcp_manager=from_coder.mcp_manager,
+                registered_tools=copy.deepcopy(from_coder.registered_tools),
+                registered_servers=copy.deepcopy(from_coder.registered_servers),
                 uuid=from_coder.uuid,
                 parent_uuid=from_coder.parent_uuid,
                 repo=from_coder.repo,
@@ -416,6 +419,8 @@ class Coder(metaclass=UsageMeta):
         repomap_in_memory=False,
         linear_output=False,
         security_config=None,
+        registered_tools=None,
+        registered_servers=None,
         uuid: str = "",
         parent_uuid: str = "",
     ):
@@ -427,6 +432,13 @@ class Coder(metaclass=UsageMeta):
         # Each contains "included" and "excluded" sets that filter from the global singletons
         self.registered_tools = {"included": set(), "excluded": set()}
         self.registered_servers = {"included": set(), "excluded": set()}
+        self._inherited_tools = False
+
+        if registered_tools is not None or registered_servers is not None:
+            self.registered_tools = registered_tools
+            self.registered_servers = registered_servers
+            self._inherited_tools = True
+
         self.interrupt_event = ThreadSafeEvent()
         self.uuid = str(generate_unique_id())
         self.reflected_message = None
