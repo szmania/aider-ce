@@ -88,7 +88,13 @@ class Tool(BaseTool):
                                     ),
                                 },
                             },
-                            "required": ["file_path"],
+                            "required": [
+                                "file_path",
+                                "operation",
+                                "start_line",
+                                "end_line",
+                                "text",
+                            ],
                         },
                         "description": "Array of edits to apply.",
                     },
@@ -181,11 +187,17 @@ class Tool(BaseTool):
                                 )
 
                             edit_text_raw = edit.get("text")
-                            edit_text = (
-                                strip_hashline(edit_text_raw) if edit_text_raw is not None else None
-                            )
+                            edit_text = edit.get("text")
                             edit_start_line = edit.get("start_line")
                             edit_end_line = edit.get("end_line")
+
+                            if edit_text_raw is not None:
+                                edit_text_raw = strip_hashline(edit_text_raw)
+                                while edit_text_raw != edit_text:
+                                    edit_text_raw = strip_hashline(edit_text_raw)
+                                    edit_text = strip_hashline(edit_text)
+
+                                edit_text = edit_text_raw
 
                             # Try to resolve line content values to content IDs
                             # This handles cases where LLMs pass actual line content
@@ -437,7 +449,7 @@ class Tool(BaseTool):
                 start_line = edit.get("start_line")
                 end_line = edit.get("end_line")
                 # Show output based on operation type
-                if operation == "replace":
+                if operation in ("replace", "delete"):
                     # Show diff for replace operations
                     diff_output = ""
 
@@ -451,7 +463,7 @@ class Tool(BaseTool):
                                     original_content=strip_hashline(original_content),
                                     start_line_hash=start_line,
                                     end_line_hash=end_line,
-                                    operation="replace",
+                                    operation=operation,
                                     text=strip_hashline(text),
                                 )
                         except ContentHashError as e:
@@ -468,15 +480,5 @@ class Tool(BaseTool):
                     if text:
                         coder.io.tool_output(text)
                         coder.io.tool_output("")
-
-                elif operation == "delete":
-                    # Show deletion summary
-                    range_info = (
-                        f"Deleted {start_line} - {end_line}"
-                        if start_line and end_line
-                        else "specified range"
-                    )
-                    coder.io.tool_output(range_info)
-                    coder.io.tool_output("")
 
         tool_footer(coder=coder, tool_response=tool_response, params=params)

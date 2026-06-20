@@ -41,7 +41,7 @@ def strip_hashline(text: str) -> str:
 
 def normalize_hashline(hashline_str: str) -> str:
     """
-    Normalize a hashline string to the 4-character hash fragment.
+    Normalize a hashline string to the content id hash fragment.
     """
     if hashline_str in ("@000", "000@"):
         return hashline_str
@@ -479,8 +479,8 @@ def get_hashline_diff(
 
     # Strip line endings for difflib comparison but keep them in the actual lines
     diff = difflib.unified_diff(
-        [line.rstrip("\r\n") for line in find_lines],
-        [line.rstrip("\r\n") for line in replace_lines],
+        [strip_hashline(line.rstrip("\r\n")) for line in find_lines],
+        [strip_hashline(line.rstrip("\r\n")) for line in replace_lines],
         lineterm="",
         n=1,
     )
@@ -1463,7 +1463,6 @@ def _apply_closure_safeguard(
         return resolved_ops
 
     source_lines = original_content.splitlines()
-    MAX_STEPS = 3  # Maximum expansion steps
 
     for resolved in resolved_ops:
         op = resolved["op"]
@@ -1489,45 +1488,33 @@ def _apply_closure_safeguard(
         llm_end = min(llm_end, len(source_lines) - 1)
 
         # --- THE HEALING LOOP ---
-        # Try original bounds first (distance 0), then progressively expand
-        # outward in rounds. At each round d>=1, test exactly 4 candidates:
-        #   1. Both indices down by d lines (range shifts down)
-        #   2. Both indices up by d lines (range shifts up)
-        #   3. Start index down by d lines, end unchanged (partial expansion)
-        #   4. End index down by d lines, start unchanged (partial expansion)
-        #
-        # If multiple candidates are valid at a round, select using:
-        #   1. Longest resulting source code (preserve more code)
-        #   2. Partial expansions over full range shifts
-        #   3. Downward changes over upward changes
+        # Generate all combinations of offsets in {-2, -1, 0, 1, 2} for both
+        # start and end, then filter to syntactically valid edits and rank
+        # by cumulative movement (abs(start_shift) + abs(end_shift)) as a
+        # primary criterion to bias toward minimal range perturbation.
 
-        found_valid = False
-        EFFECTIVE_STEPS = MAX_STEPS
-
-        if llm_start == llm_end:
-            EFFECTIVE_STEPS = 1
-
-        for distance in range(EFFECTIVE_STEPS + 1):
-            if distance == 0:
-                round_candidates = [(0, 0)]
-            else:
-                round_candidates = [
-                    (-distance, 0),  # Start down only (partial)
-                    (+distance, 0),  # Start up only (partial)
-                    (0, +distance),  # End down only (partial)
-                    (0, -distance),  # End up only (partial)
-                    (-distance, +distance),  # Both indices down
-                    (+distance, -distance),  # Both indices up
-                    (+distance, +distance),  # Expand outward (start up, end down)
-                    (-distance, -distance),  # Contract inward (start down, end up)
-                ]
-
-            valid_at_round = []
-            for start_shift, end_shift in round_candidates:
+        offsets = [0, 1, -1, 2, -2]
+        all_candidates = []
+        for start_shift in offsets:
+            for end_shift in offsets:
                 candidate_start = max(0, llm_start - start_shift)
                 candidate_end = min(len(source_lines) - 1, llm_end + end_shift)
 
                 if candidate_end < candidate_start:
+                    continue
+
+                # Skip candidates that overlap with other operations' ranges
+                overlaps = False
+                for other_op in resolved_ops:
+                    if other_op is resolved:
+                        continue
+                    other_start = other_op["start_idx"]
+                    other_end = other_op["end_idx"]
+                    if candidate_start <= other_end and candidate_end >= other_start:
+                        overlaps = True
+                        break
+
+                if overlaps:
                     continue
 
                 # Skip candidates that would create duplicate adjacent content at edit boundaries
@@ -1549,6 +1536,9 @@ def _apply_closure_safeguard(
                     is_downward = start_shift <= 0  # Negative/zero shift = moving down
                     is_both = start_shift == end_shift  # Whole range expansion/contraction
                     closures = count_closures(test_source)
+                    start_line_match = source_lines[candidate_start] == source_lines[llm_start]
+                    end_line_match = source_lines[candidate_end] == source_lines[llm_end]
+                    cumulative_movement = abs(start_shift) + abs(end_shift)
 
                     # --- INDENTATION SCORING ---
                     indent_score = 0
@@ -1575,45 +1565,48 @@ def _apply_closure_safeguard(
                             ) == get_indentation(source_end_line):
                                 indent_score += 1
 
-                    valid_at_round.append(
+                    all_candidates.append(
                         {
                             "start_idx": candidate_start,
                             "end_idx": candidate_end,
+                            "start_line_match": start_line_match,
+                            "end_line_match": end_line_match,
                             "source_len": len(test_source),
                             "is_partial": is_partial,
                             "is_downward": is_downward,
                             "is_both": is_both,
                             "closure_count": closures,
                             "indent_score": indent_score,
+                            "cumulative_movement": cumulative_movement,
+                            "offsets": (start_shift, end_shift),
                         }
                     )
 
-            if valid_at_round:
-                # Sort using the new hierarchy:
-                # 1. Fewest total closures (minimize structural pollution)
-                # 2. Indentation Score (Descending: 2 is better than 0)
-                # 3. Longest source (preserve more file content)
-                # 4. Partial expansions over full range shifts
-                # 5. Downward changes over upward changes
-                valid_at_round.sort(
-                    key=lambda r: (
-                        -r["indent_score"],  # Descending: larger score is better (2 > 1 > 0)
-                        -r["source_len"],  # Descending: larger is better
-                        r["closure_count"],  # Ascending: smaller is better
-                        not r["is_partial"],  # Booleans: False comes before True
-                        not r["is_downward"],  # Booleans: False comes before True
-                        r["is_both"],  # Booleans: False comes before True
-                    )
+        if all_candidates:
+            # Sort using the new hierarchy:
+            # 1. Cumulative movement (ascending — less movement is better)
+            # 2. Fewest total closures (minimize structural pollution)
+            # 3. Indentation Score (Descending: 2 is better than 0)
+            # 4. Longest source (preserve more file content)
+            # 5. Partial expansions over full range shifts
+            # 6. Downward changes over upward changes
+            all_candidates.sort(
+                key=lambda r: (
+                    not r["start_line_match"],  # Descending: True first
+                    not r["end_line_match"],  # Descending: True first
+                    r["cumulative_movement"],  # Ascending: smaller is better
+                    -r["indent_score"],  # Descending: larger score is better (2 > 1 > 0)
+                    -r["source_len"],  # Descending: larger is better
+                    r["closure_count"],  # Ascending: smaller is better
+                    not r["is_partial"],  # Booleans: False comes before True
+                    not r["is_downward"],  # Booleans: False comes before True
+                    r["is_both"],  # Booleans: False comes before True
                 )
+            )
 
-                best = valid_at_round[0]
-                resolved["start_idx"] = best["start_idx"]
-                resolved["end_idx"] = best["end_idx"]
-                found_valid = True
-                break
-
-        if not found_valid:
-            pass
+            best = all_candidates[0]
+            resolved["start_idx"] = best["start_idx"]
+            resolved["end_idx"] = best["end_idx"]
 
     return resolved_ops
 
@@ -1758,6 +1751,12 @@ def apply_hashline_operations(
     resolved_ops = _merged_contained_ranges(resolved_ops)
     # Merge contiguous replace operations
     resolved_ops = _merge_replace_operations(resolved_ops)
+
+    # Sort by start_idx descending to apply from bottom to top
+    # When operations have same start_idx, apply in order: insert, replace, delete
+    # This ensures correct behavior when multiple operations target the same line
+    resolved_ops.sort(key=sort_ranges)
+
     if file_path:
         # Apply tree-sitter based closure safeguard to snap boundaries to AST nodes
         resolved_ops = _apply_closure_safeguard(original_content, resolved_ops, file_path)
@@ -1765,11 +1764,6 @@ def apply_hashline_operations(
         # Fix edit boundaries where replacement content duplicates adjacent lines
         source_lines = original_content.splitlines()
         resolved_ops = _fix_duplicate_content_boundaries(source_lines, resolved_ops)
-
-    # Sort by start_idx descending to apply from bottom to top
-    # When operations have same start_idx, apply in order: insert, replace, delete
-    # This ensures correct behavior when multiple operations target the same line
-    resolved_ops.sort(key=sort_ranges)
 
     successful_ops = []
     # Loop to apply operations in sorted order (bottom-to-top)

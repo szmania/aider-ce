@@ -4,37 +4,67 @@ import xxhash
 
 
 class HashPos:
-    B64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789~_"
-    # Regex pattern for HashPos format: {4-char-hash}::
-    HASH_PREFIX_RE = re.compile(r"^([0-9a-zA-Z\~_@]{4})::")
-    # Regex for normalization: 4 hash chars optionally followed by '::'
-    NORMALIZE_RE = re.compile(r"^([0-9a-zA-Z\~_@]{4})(?:)?::")
-    # Regex for a raw 4-character fragment
-    FRAGMENT_RE = re.compile(r"^[0-9a-zA-Z\~_@]{4}$")
+    B256 = (
+        "ABCDEFGHIJKLMNOP"
+        "QRSTUVWXYZabcdef"
+        "ghijklmnopqrstuv"
+        "wxyz0123456789~_"
+        "áéíóúñüöäßåøæçèà"
+        "ùîôûбгджзийлпфцч"
+        "шщъыьэюя的是不了人我在有"
+        "他这为之大来以个中上们到说国和学"
+        "あいうえおかきくけこさしすせそた"
+        "ちつてとアイウエオカキクケコサシ"
+        "スセソタチツテトαβγδεζηθ"
+        "ικλμνξπ要会出就道也时年得"
+        "生自下而过能可对行没发用天作方成"
+        "者多日都三小机把理实心看起样好当"
+        "点本民事其然想经去种动全意面前所"
+        "业定现将法新明问度但最美月手走信"
+    )
+
+    # We use a regex-safe character class string for compiling patterns
+    _B256_REGEX_SET = (
+        "A-Za-z0-9~_"
+        "áéíóúñüöäßåøæçèà"
+        "ùîôûбгджзийлпфцч"
+        "шщъыьэюя的是不了人我在有"
+        "他这为之大来以个中上们到说国和学"
+        "あいうえおかきくけこさしすせそた"
+        "ちつてとアイウエオカキクケコサシ"
+        "スセソタチツテトαβγδεζηθ"
+        "ικλμνξπ要会出就道也时年得"
+        "生自下而过能可对行没发用天作方成"
+        "者多日都三小机把理实心看起样好当"
+        "点本民事其然想经去种动全意面前所"
+        "业定现将法新明问度但最美月手走信"
+    )
+
+    # Regex pattern for HashPos format: {3-char-hash}::
+    HASH_PREFIX_RE = re.compile(rf"^([{_B256_REGEX_SET}]{{3}})::")
+    # Regex for normalization: 3 hash chars optionally followed by '::'
+    NORMALIZE_RE = re.compile(rf"^([{_B256_REGEX_SET}]{{3}})(?:)?::")
+    # Regex for a raw 3-character fragment
+    FRAGMENT_RE = re.compile(rf"^[{_B256_REGEX_SET}]{{3}}$")
 
     def __init__(self, source_text: str = ""):
         self.lines = source_text.splitlines()
         self.total = len(self.lines)
 
-    def _get_region_bits(self, line_idx: int) -> tuple[int, int]:
+    def _get_region_val(self, line_idx: int) -> int:
         """
-        Uses line_idx modulo 16 (4 bits) to get two 2-bit flags (b1, b2).
-        This guarantees up to 16 consecutive repeating lines get unique spatial anchors.
+        Uses line_idx modulo 16 (4 bits).
+        Guarantees up to 16 consecutive repeating lines get unique spatial anchors.
         """
-        mod_val = line_idx % 16
-
-        # Split the 4-bit modulo value into two separate 2-bit flags
-        b1 = (mod_val >> 2) & 3  # Top 2 bits (mask with 0b11)
-        b2 = mod_val & 3  # Bottom 2 bits
-        return b1, b2
+        return line_idx % 16
 
     def _get_neighborhood_hash(self, line_idx: int) -> int:
         """
         Creates a 20-bit digest using the current line and the 3 lines
         before and after it.
         """
-        start = max(0, line_idx - 3)
-        end = min(self.total, line_idx + 4)
+        start = max(0, line_idx - 2)
+        end = min(self.total, line_idx + 3)
 
         context_window = "\n".join(self.lines[start:end])
         full_hash = xxhash.xxh3_64_intdigest(context_window.encode("utf-8"))
@@ -51,22 +81,20 @@ class HashPos:
 
     def generate_public_id(self, text: str, line_idx: int) -> str:
         """
-        Generates a 4-char Base64 ID combining modulo buckets and context hash.
-        Layout: [2-bit b1] [2-bit b2] [10-bit Hash A] [10-bit Hash B]
+        Generates a 3-char Base256 ID combining a 4-bit modulo bucket and a 20-bit context hash.
+        Layout: [4-bit Region] [20-bit Neighborhood Hash] = 24 bits total.
+        Each Base256 char holds 8 bits (3 chars * 8 = 24 bits).
         """
-        b1, b2 = self._get_region_bits(line_idx)
+        region_val = self._get_region_val(line_idx)
         neighborhood_hash = self._get_neighborhood_hash(line_idx)
 
-        # Split the 20-bit hash into two 10-bit halves
-        hash_a = (neighborhood_hash >> 10) & 0x3FF
-        hash_b = neighborhood_hash & 0x3FF
+        # Pack the 24-bit integer
+        packed = (region_val << 20) | neighborhood_hash
 
-        # Construct the mixed 24-bit integer
-        packed = (b1 << 22) | (b2 << 20) | (hash_a << 10) | hash_b
         res = ""
-        for _ in range(4):
-            res += self.B64[packed % 64]
-            packed //= 64
+        for _ in range(3):
+            res += self.B256[packed % 256]
+            packed //= 256
         return res
 
     def unpack_public_id(self, public_id: str) -> tuple[int, int]:
@@ -75,16 +103,13 @@ class HashPos:
         """
         packed = 0
         for i, char in enumerate(public_id):
-            packed |= self.B64.index(char) << (6 * i)
+            packed |= self.B256.index(char) << (8 * i)
 
-        b1 = (packed >> 22) & 3
-        b2 = (packed >> 20) & 3
-        hash_a = (packed >> 10) & 0x3FF
-        hash_b = packed & 0x3FF
-        mod_val = (b1 << 2) | b2
-        neighborhood_hash = (hash_a << 10) | hash_b
+        # Extract the 4-bit region (mask 0xF) and 20-bit hash (mask 0xFFFFF)
+        region_val = (packed >> 20) & 0xF
+        neighborhood_hash = packed & 0xFFFFF
 
-        return mod_val, neighborhood_hash
+        return region_val, neighborhood_hash
 
     def format_content(self, use_private_ids: bool = False, start_line: int = 1) -> str:
         formatted_lines = []
@@ -128,11 +153,6 @@ class HashPos:
     def resolve_range(self, start_id: str, end_id: str) -> tuple[int, int]:
         """
         Resolves a block range from two Public IDs.
-
-        Logic:
-        1. Resolve all candidates for both IDs (sorted by best match).
-        2. Find the pair of (start, end) that are logically ordered.
-        3. Returns (start_index, end_index)
         """
         starts = self.resolve_to_lines(start_id)
         ends = self.resolve_to_lines(end_id)
@@ -146,28 +166,17 @@ class HashPos:
                     return s, e
 
         raise ValueError(
-            f"Found matches for {start_id} and {end_id}, but no logically ordered range or unique"
-            " matches."
+            f"Found matches for {start_id} and {end_id}, but no logically ordered range or unique matches."
         )
 
     @staticmethod
     def strip_prefix(text: str) -> str:
-        r"""
+        """
         Remove HashPos prefixes from the start of every line.
-
-        Removes prefixes that match the pattern: "{4-char-hash}"
-        where the hash is exactly 4 characters from the set [0-9a-zA-Z\~_@] followed by '::'.
-
-        Args:
-            text: Input text with HashPos prefixes
-
-        Returns:
-            String with HashPos prefixes removed from each line
         """
         lines = text.splitlines(keepends=True)
         result_lines = []
         for line in lines:
-            # Remove the HashPos prefix if present
             stripped_line = HashPos.HASH_PREFIX_RE.sub("", line, count=1)
             result_lines.append(stripped_line)
 
@@ -177,12 +186,6 @@ class HashPos:
     def extract_prefix(line: str) -> str:
         """
         Extract the hash prefix from a line if it has a HashPos prefix.
-
-        Args:
-            line: A line of text that may contain a HashPos prefix
-
-        Returns:
-            The hash prefix (4 characters) if found, otherwise empty string
         """
         match = HashPos.HASH_PREFIX_RE.match(line)
         if match:
@@ -192,25 +195,11 @@ class HashPos:
     @staticmethod
     def normalize(hashpos_str: str) -> str:
         """
-        Normalize a HashPos string to the 4-character hash fragment.
-
-        Accepts HashPos strings in "{hash_prefix}::" format or a raw "{hash_prefix}" fragment.
-        Also extracts HashPos from strings that contain content after the HashPos,
-        e.g., "H7M5::Line 1"
-
-        Args:
-            hashpos_str: HashPos string in various formats
-
-        Returns:
-            str: The 4-character hash fragment
-
-        Raises:
-            ValueError: If format is invalid
+        Normalize a HashPos string to the 3-character hash fragment.
         """
         if hashpos_str is None:
             raise ValueError("HashPos string cannot be None")
 
-        # Check if it's already a raw fragment
         if HashPos.FRAGMENT_RE.match(hashpos_str):
             return hashpos_str
 
@@ -218,9 +207,7 @@ class HashPos:
         if match:
             return match.group(1)
 
-        # If no pattern matches, raise error
         raise ValueError(
             f"Invalid HashPos format '{hashpos_str}'. "
-            r"Expected \"{content ID}\" "
-            r"where content ID is exactly 4 characters from the set [0-9a-zA-Z\~_@]."
+            r"Expected a 3-character string from the Base256 character set."
         )

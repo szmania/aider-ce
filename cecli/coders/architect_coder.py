@@ -45,7 +45,6 @@ class ArchitectCoder(AskCoder):
         kwargs["args"] = self.args
         kwargs["suggest_shell_commands"] = False
         kwargs["map_tokens"] = 0
-        kwargs["total_cost"] = self.total_cost
         kwargs["cache_prompts"] = False
         kwargs["num_cache_warming_pings"] = 0
         kwargs["summarize_from_coder"] = False

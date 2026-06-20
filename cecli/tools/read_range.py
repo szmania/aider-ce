@@ -711,7 +711,7 @@ class Tool(BaseTool):
                 if start_found or end_found:
                     if start_found:
                         lines.append(
-                            f"File {rel_path} Snapshot (Lines {start_stub_s + 1} - {start_stub_e + 1}):"
+                            f"File {rel_path} Current Snapshot (Lines {start_stub_s + 1} - {start_stub_e + 1}):"
                         )
                         lines.extend(hashed_lines[start_stub_s:start_stub_e])
 
@@ -723,7 +723,7 @@ class Tool(BaseTool):
                     ):
                         lines.append("...⋮...")
                         lines.append(
-                            f"File {rel_path} Snapshot (Lines {end_stub_s + 1} - {end_stub_e + 1}):"
+                            f"File {rel_path} Current Snapshot (Lines {end_stub_s + 1} - {end_stub_e + 1}):"
                         )
                         lines.extend(hashed_lines[end_stub_s:end_stub_e])
 
@@ -732,14 +732,21 @@ class Tool(BaseTool):
         except Exception:
             pass
 
-        lines = [f"File {rel_path} Snapshot (Lines {s_idx + 1} - {e_idx + 1}):"]
+        lines = [f"File {rel_path} Current Snapshot (Lines {s_idx + 1} - {e_idx + 1}):"]
         total = e_idx - s_idx
-        if total <= 15:
+        hashed_content = "\n".join(hashed_lines[s_idx : e_idx + 1])
+        token_count = coder.main_model.token_count(hashed_content)
+
+        if token_count <= min(coder.large_file_token_threshold / 16, 512):
             lines.extend(hashed_lines[s_idx : e_idx + 1])
         else:
-            lines.extend(hashed_lines[s_idx : s_idx + 5])
-            lines.append("...⋮...")
-            lines.extend(hashed_lines[e_idx - 4 : e_idx + 1])
+            if total <= 15:
+                lines.extend(hashed_lines[s_idx : e_idx + 1])
+            else:
+                lines.extend(hashed_lines[s_idx : s_idx + 5])
+                lines.append("...⋮...")
+                lines.extend(hashed_lines[e_idx - 4 : e_idx + 1])
+
         lines.append("")
         return "\n".join(lines)
 

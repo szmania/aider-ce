@@ -46,7 +46,6 @@ class WeakModelCommand(BaseCommand):
             kwargs["main_model"] = model
             kwargs["edit_format"] = coder.edit_format  # Keep the same edit format
             kwargs["suggest_shell_commands"] = False
-            kwargs["total_cost"] = coder.total_cost
             kwargs["num_cache_warming_pings"] = 0
             kwargs["summarize_from_coder"] = False
             kwargs["done_messages"] = []

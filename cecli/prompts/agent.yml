@@ -27,7 +27,8 @@ main_system: |
 
   ## FILE FORMAT
   File contents will be prefixed with identifiers. Each line starts with a case-sensitive content ID followed by `::`. These are used to target where editing tools will perform edits.
-  They are algorithmically generated, maintained, and subject to change. Do not search for these content IDs. Focus on the lines they identify.
+  They are generated and maintained by a custom algorithm and subject to change on edits. Do not search for these content IDs directly. You will not be able to generate them.
+  Focus on the lines they identify.
 
   **Example File**
   ```
