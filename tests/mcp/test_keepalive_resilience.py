@@ -65,7 +65,6 @@ class TestKeepaliveResilience:
         """Verify keepalive intervals incorporate jitter."""
         server = http_based_server
         sleep_durations = []
-        original_sleep = asyncio.sleep
 
         async def mock_sleep(duration):
             sleep_durations.append(duration)
@@ -97,7 +96,6 @@ class TestKeepaliveResilience:
         self, http_based_server, running_mock_server
     ):
         """Verify exponential backoff reconnection after persistent failure."""
-        inspector = ServerStateInspector()
         server = http_based_server
         server.config["keepalive_interval"] = 1
 

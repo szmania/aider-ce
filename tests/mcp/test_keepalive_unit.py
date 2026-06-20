@@ -96,9 +96,6 @@ class TestReconnectionLogic:
     @pytest.mark.asyncio
     async def test_exponential_backoff_parameters(self, http_based_server):
         """Verify exponential backoff strategy parameters."""
-        server = http_based_server
-        config = server.config
-
         # According to plan: initial=1s, multiplier=2, max=300s, jitter=±20%
         initial_delay = 1
         multiplier = 2

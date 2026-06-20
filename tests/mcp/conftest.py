@@ -17,7 +17,7 @@ def mock_mcp_server() -> MockMcpServer:
 @pytest.fixture
 async def running_mock_server(mock_mcp_server) -> AsyncGenerator[MockMcpServer, None]:
     """Fixture providing a running mock MCP server."""
-    url = await mock_mcp_server.start()
+    await mock_mcp_server.start()
     yield mock_mcp_server
     await mock_mcp_server.stop()
 

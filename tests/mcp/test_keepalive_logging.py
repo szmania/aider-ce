@@ -12,7 +12,6 @@ class TestKeepaliveLogging:
     def test_log_sanitization_no_sensitive_data(self, http_based_server, caplog):
         """Verify that logs don't contain sensitive information like URLs or credentials."""
         server = http_based_server
-        inspector = ServerStateInspector()
 
         # Enable log capture
         caplog.set_level(logging.INFO)
@@ -27,7 +26,6 @@ class TestKeepaliveLogging:
 
         # Check that logs don't contain sensitive data
         log_text = "".join(caplog.messages)
-        server_url = server.config.get("url", "")
 
         # URL should not appear in logs (or should be sanitized)
         # In a real implementation, we'd check for proper sanitization
@@ -37,7 +35,6 @@ class TestKeepaliveLogging:
     def test_keepalive_events_logged_correctly(self, http_based_server, caplog):
         """Verify that key keepalive events are logged."""
         server = http_based_server
-        inspector = ServerStateInspector()
 
         caplog.set_level(logging.INFO)
 
@@ -50,18 +47,6 @@ class TestKeepaliveLogging:
 
         log_text = "".join(caplog.messages)
 
-        # Check for expected log events
-        expected_events = [
-            "Keepalive task started",
-            "Keepalive task stopped",
-            "Keepalive ping successful",
-            "Keepalive ping failed",
-            "transitioned to DISCONNECTED",
-            "Attempting reconnection",
-            "Reconnection successful",
-            "Reconnection failed",
-        ]
-
         # At least startup/shutdown logs should be present
         assert any(
             event in log_text for event in ["Keepalive task started", "Keepalive task stopped"]
@@ -70,7 +55,6 @@ class TestKeepaliveLogging:
     def test_state_transitions_are_logged(self, http_based_server, caplog):
         """Verify that all keepalive state transitions are properly logged."""
         server = http_based_server
-        inspector = ServerStateInspector()
 
         caplog.set_level(logging.INFO)
 
