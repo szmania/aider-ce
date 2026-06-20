@@ -6,7 +6,7 @@ description: Configure Model Control Protocol (MCP) servers for enhanced AI capa
 
 # Model Control Protocol (MCP)
 
-Model Control Protocol (MCP) servers extend cecli's capabilities by providing additional tools and functionality to the AI models. MCP servers can add features like git operations, context retrieval, and other specialized tools.
+Model Control Protocol (MCP) servers extend the capabilities of cecli by providing additional tools and functionality to the AI models. MCP servers can add features like git operations, context retrieval, and other specialized tools.
 
 ## Configuring MCP Servers
 
