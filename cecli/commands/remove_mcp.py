@@ -10,7 +10,7 @@ from cecli.commands.utils.helpers import (
 
 class RemoveMcpCommand(BaseCommand):
     NORM_NAME = "remove-mcp"
-    DESCRIPTION = "Remove a MCP server by name, or use '*' to remove all"
+    DESCRIPTION = "Remove (unload) a MCP server by name, or use '*' to remove all"
 
     @classmethod
     async def execute(cls, io, coder, args, **kwargs):

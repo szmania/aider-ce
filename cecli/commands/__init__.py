@@ -35,6 +35,7 @@ from .hooks import HooksCommand
 from .hot_reload import HotReloadCommand
 from .include_skill import IncludeSkillCommand
 from .lint import LintCommand
+from .list_mcp import ListMcpCommand
 from .list_sessions import ListSessionsCommand
 from .list_skills import ListSkillsCommand
 from .load import LoadCommand
@@ -123,6 +124,7 @@ CommandRegistry.register(SpawnAgentCommand)
 CommandRegistry.register(SwitchAgentCommand)
 CommandRegistry.register(IncludeSkillCommand)
 CommandRegistry.register(LintCommand)
+CommandRegistry.register(ListMcpCommand)
 CommandRegistry.register(ListSessionsCommand)
 CommandRegistry.register(ListSkillsCommand)
 CommandRegistry.register(LoadCommand)
@@ -210,6 +212,7 @@ __all__ = [
     "LoadCommand",
     "LoadHookCommand",
     "LoadMcpCommand",
+    "ListMcpCommand",
     "LoadSessionCommand",
     "LoadSkillCommand",
     "LsCommand",

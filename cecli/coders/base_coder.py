@@ -423,9 +423,11 @@ class Coder(metaclass=UsageMeta):
         registered_servers=None,
         uuid: str = "",
         parent_uuid: str = "",
+        **kwargs,
     ):
         from cecli.helpers.agents.service import AgentService
 
+        self.original_kwargs = kwargs
         # initialize from args.map_cache_dir
         self.coroutines = coroutines
         # Per-instance tool and server filtering dictionaries

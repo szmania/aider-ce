@@ -309,8 +309,26 @@ agent-config:
 
 For complete documentation on creating and using skills, including skill directory structure, SKILL.md format, and best practices, see the [Skills documentation](https://github.com/dwash96/cecli/blob/main/cecli/website/docs/config/skills.md).
 
-### Benefits
+### MCP Server Management
 
+MCP (Model Context Protocol) servers provide external tools to the agent, but each connected server and its tools consume context tokens. To maintain optimal performance:
+
+- **Remove unused servers**: If an MCP server is no longer needed for the current task, remove it using the `RemoveMcp` tool to free up context space.
+- **Load servers on demand**: Only load MCP servers when their tools are actually required. Use the `LoadMcp` tool to add servers as needed.
+- **Monitor context usage**: The context summary block shows total token usage. Removing unnecessary MCP servers can significantly reduce context overhead.
+- **List active servers**: Use the `ListMcp` tool to see which servers are currently connected and consuming context.
+
+### Benefits
+### MCP Server Management
+
+MCP (Model Context Protocol) servers provide external tools to the agent, but each connected server and its tools consume context tokens. To maintain optimal performance:
+
+- **Remove unused servers**: If an MCP server is no longer needed for the current task, remove it using the `RemoveMcp` tool to free up context space.
+- **Load servers on demand**: Only load MCP servers when their tools are actually required. Use the `LoadMcp` tool to add servers as needed.
+- **Monitor context usage**: The context summary block shows total token usage. Removing unnecessary MCP servers can significantly reduce context overhead.
+- **List active servers**: Use the `ListMcp` tool to see which servers are currently connected and consuming context.
+
+### Benefits
 - **Autonomous operation**: Reduces need for manual file management
 - **Context awareness**: Real-time project information improves decision making
 - **Precision editing**: Granular tools reduce errors compared to SEARCH/REPLACE

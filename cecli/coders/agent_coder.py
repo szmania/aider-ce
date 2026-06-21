@@ -32,7 +32,7 @@ from cecli.utils import copy_tool_call, tool_call_to_dict
 
 from .base_coder import Coder
 
-from cecli.helpers.coroutines import interruptible  # isort:skip
+from cecli.helpers import coroutines  # isort:skip
 
 logger = logging.getLogger(__name__)
 
@@ -110,7 +110,7 @@ class AgentCoder(Coder):
 
     def post_init(self):
         super().post_init()
-
+        self.coroutines = coroutines
         if not self._inherited_tools:
             # Populate per-instance tool and server filters from config
             self.registered_tools["included"] = set(
@@ -325,7 +325,9 @@ class AgentCoder(Coder):
                 self.io.tool_warning(f"Executing {tool_name} on {server.name} failed:\nError: {e}")
                 return f"Error executing tool call {tool_name}: {e}"
 
-        result, interrupted = await interruptible(_exec_async(), self.interrupt_event)
+        result, interrupted = await self.coroutines.interruptible(
+            _exec_async(), self.interrupt_event
+        )
 
         if interrupted:
             return "Tool execution interrupted by user."
@@ -625,7 +627,8 @@ class AgentCoder(Coder):
                 if percentage > 80:
                     result += "\n\n⚠ **Context is getting full!**\n"
                     result += "- Remove non-essential files via the `ContextManager` tool.\n"
-                    result += "- Keep only essential files in context for best performance"
+                    result += "- Remove unused MCP servers via the `RemoveMcp` tool to free context space.\n"
+                    result += "- Keep only essential files and MCP servers in context for best performance"
             result += "\n</context>"
             if not hasattr(self, "context_blocks_cache"):
                 self.context_blocks_cache = {}
@@ -659,7 +662,9 @@ class AgentCoder(Coder):
                     result += f"- Git repository: {rel_repo_dir} with {num_files:,} files\n"
                 except Exception:
                     result += "- Git repository: active but details unavailable\n"
-            else:
+                if self.mcp_manager and self.mcp_manager.connected_servers:
+                    num_mcp_servers = len(self.mcp_manager.connected_servers)
+                    result += f"- Connected MCP servers: {num_mcp_servers}\n"
                 result += "- Git repository: none\n"
             result += "</context>"
             return result
@@ -766,7 +771,7 @@ class AgentCoder(Coder):
                     async def gather_and_await():
                         return await asyncio.gather(*tasks, return_exceptions=True)
 
-                    task_results, interrupted = await interruptible(
+                    task_results, interrupted = await self.coroutines.interruptible(
                         gather_and_await(), self.interrupt_event
                     )
 
