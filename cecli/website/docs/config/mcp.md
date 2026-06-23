@@ -6,13 +6,31 @@ description: Configure Model Control Protocol (MCP) servers for enhanced AI capa
 
 # Model Control Protocol (MCP)
 
-Model Control Protocol (MCP) servers extend cecli's capabilities by providing additional tools and functionality to the AI models. MCP servers can add features like git operations, context retrieval, and other specialized tools.
+Model Control Protocol (MCP) servers extend the capabilities of cecli by providing additional tools and functionality to the AI models. MCP servers can add features like git operations, context retrieval, and other specialized tools.
 
 ## Configuring MCP Servers
 
 cecli supports configuring MCP servers using the MCP Server Configuration schema. Please
 see the [Model Context Protocol documentation](https://modelcontextprotocol.io/introduction)
 for more information.
+
+### Keepalive Mechanism
+
+For HTTP-based servers, you can enable a keepalive mechanism to prevent connections from dropping during long idle periods. This is done by adding the `keepalive_interval` property to your server configuration.
+
+- `keepalive_interval`: (Optional) An integer specifying the interval in seconds for sending a heartbeat (an `OPTIONS` request) to the server.
+  - If not provided, it defaults to **300** seconds.
+  - The value must be between **5** and **300** seconds.
+
+Example with keepalive enabled:
+```yaml
+mcp-servers:
+  mcpServers:
+    context7:
+      transport: http
+      url: https://mcp.context7.com/mcp
+      keepalive_interval: 60 # Send a heartbeat every 60 seconds
+```
 
 You have two ways of sharing your MCP server configuration with cecli.
 
