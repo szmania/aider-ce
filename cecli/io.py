@@ -1747,11 +1747,20 @@ class InputOutput:
             try:
                 # Use Popen to run the command in the background without waiting for it
                 # and without capturing its output, detaching it from the current terminal session.
+
+                # Determine if this is a terminal bell command that should not be suppressed
+                is_bell_cmd = (
+                    "\\a" in self.notifications_command or "\a" in self.notifications_command
+                ) and re.search(r"(?:echo|print)", self.notifications_command, re.IGNORECASE)
+
                 kwargs = {
                     "shell": True,
-                    "stdout": subprocess.DEVNULL,
-                    "stderr": subprocess.DEVNULL,
                 }
+
+                if not is_bell_cmd:
+                    kwargs["stdout"] = subprocess.DEVNULL
+                    kwargs["stderr"] = subprocess.DEVNULL
+
                 if platform.system() == "Windows":
                     kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
                 else:
