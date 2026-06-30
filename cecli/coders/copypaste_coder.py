@@ -80,7 +80,7 @@ class CopyPasteCoder(Coder):
         target_coder_class = None
         if coders is not None and selected_edit_format:
             # Use EDIT_FORMAT_MAP from base_coder to find the right coder class by edit_format
-            from cecli.coders.base_coder import EDIT_FORMAT_MAP
+            from cecli.coders import EDIT_FORMAT_MAP
 
             coder_name = EDIT_FORMAT_MAP.get(selected_edit_format)
             if coder_name:

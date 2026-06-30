@@ -105,28 +105,6 @@ all_fences = [
     wrap_fence("sourcecode"),
 ]
 
-# Map of edit_format values to coder class names.
-# Used by Coder.create() to find the right coder class by edit_format
-# without importing all coder modules.
-EDIT_FORMAT_MAP = {
-    "help": "HelpCoder",
-    "ask": "AskCoder",
-    "diff": "EditBlockCoder",
-    "diff-fenced": "EditBlockFencedCoder",
-    "whole": "WholeFileCoder",
-    "patch": "PatchCoder",
-    "udiff": "UnifiedDiffCoder",
-    "udiff-simple": "UnifiedDiffSimpleCoder",
-    "architect": "ArchitectCoder",
-    "editor-diff": "EditorEditBlockCoder",
-    "editor-whole": "EditorWholeFileCoder",
-    "editor-diff-fenced": "EditorDiffFencedCoder",
-    "context": "ContextCoder",
-    "agent": "AgentCoder",
-    "hashline": "HashLineCoder",
-    "subagent": "SubAgentCoder",
-}
-
 
 class UsageMeta(type):
     """Metaclass that provides shared accumulator properties across all Coder subclasses.
@@ -351,7 +329,7 @@ class Coder(metaclass=UsageMeta):
             res = coders.CopyPasteCoder(main_model, io, args=args, **kwargs)
 
         if not res:
-            coder_name = EDIT_FORMAT_MAP.get(edit_format)
+            coder_name = coders.EDIT_FORMAT_MAP.get(edit_format)
             if coder_name:
                 coder_cls = getattr(coders, coder_name)
                 res = coder_cls(main_model, io, args=args, **kwargs)
@@ -376,7 +354,7 @@ class Coder(metaclass=UsageMeta):
             res.original_kwargs = dict(kwargs)
             return res
 
-        valid_formats = list(EDIT_FORMAT_MAP.keys())
+        valid_formats = list(coders.EDIT_FORMAT_MAP.keys())
         raise UnknownEditFormat(edit_format, valid_formats)
 
     async def clone(self, **kwargs):

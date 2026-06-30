@@ -43,15 +43,10 @@ def get_parser(default_config_files, git_root):
     # List of valid edit formats for argparse validation & shtab completion.
     # Dynamically gather them from the registered coder classes so the list
     # stays in sync if new formats are added.
-    from cecli import coders as _cecli_coders
+    from cecli.coders import EDIT_FORMAT_MAP
 
-    edit_format_choices = sorted(
-        {
-            c.edit_format
-            for c in _cecli_coders.__all__
-            if hasattr(c, "edit_format") and c.edit_format is not None
-        }
-    )
+    edit_format_choices = sorted(EDIT_FORMAT_MAP.keys())
+
     group = parser.add_argument_group("Main model")
     group.add_argument(
         "files", metavar="FILE", nargs="*", help="files to edit with an LLM (optional)"
