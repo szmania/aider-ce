@@ -367,6 +367,7 @@ class InputOutput:
         root=".",
         notifications=False,
         notifications_command=None,
+        notification_bell=True,
         verbose=False,
     ):
         self.console = Console()
@@ -384,6 +385,7 @@ class InputOutput:
         self.multiline_mode = multiline_mode
         self.bell_on_next_input = False
         self.notifications = notifications
+        self.notification_bell = notification_bell
         self.verbose = verbose
         self.profile_start_time = None
         self.profile_last_time = None
@@ -1757,7 +1759,7 @@ class InputOutput:
                     "shell": True,
                 }
 
-                if not is_bell_cmd:
+                if not (is_bell_cmd or self.notification_bell):
                     kwargs["stdout"] = subprocess.DEVNULL
                     kwargs["stderr"] = subprocess.DEVNULL
 
