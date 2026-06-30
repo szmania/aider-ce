@@ -24,6 +24,12 @@ OPERATION_NOUNS = {
 }
 
 
+USER_EDIT_CATEGORIES = {
+    "no_changes": "No Changes",
+    "syntax_errors": "Syntax Errors",
+}
+
+
 class Tool(BaseTool):
     NORM_NAME = "edittext"
     TRACK_INVOCATIONS = False
@@ -37,54 +43,58 @@ class Tool(BaseTool):
             "name": "EditText",
             "description": (
                 "Edit text in one or more files using content ID markers. "
-                "Supports replace and delete operations in a single call. "
-                "Can handle an array of edits across multiple files. "
-                "Each edit must include its own file_path and operation type. "
-                "Use content ID ranges with the start_line and end_line parameters with format "
-                "`content_id::` (the content id with the :: demarcator). For empty files, use `@000` as the "
-                "content ID references. "
-                "Start and end values are inclusive: start and end content IDs both count as "
-                "part of the range to replace or delete. "
-                "Edits within a file must not be adjacent or overlapping."
+                "You can perform multiple 'replace' or 'delete' operations in a single call. "
+                "CRITICAL RULES: "
+                "1. Start and end content IDs are INCLUSIVE. Both will be modified or deleted. "
+                "2. Edits within the same file MUST NOT be adjacent or overlapping. "
+                "3. For empty files, you MUST use '@000' as the content ID reference."
             ),
             "parameters": {
                 "type": "object",
                 "properties": {
                     "edits": {
                         "type": "array",
+                        "description": (
+                            "List of edit operations to apply. Each edit requires a "
+                            "file path, operation type, start/end IDs, and text."
+                        ),
                         "items": {
                             "type": "object",
                             "properties": {
                                 "file_path": {
                                     "type": "string",
-                                    "description": "Required file path for this specific edit.",
+                                    "description": (
+                                        "The absolute or relative path to the file being edited."
+                                    ),
                                 },
                                 "operation": {
                                     "type": "string",
                                     "enum": ["replace", "delete"],
                                     "description": (
-                                        "The type of operation: 'replace' (replace range with"
-                                        " text) or 'delete' (remove range)."
+                                        "Choose 'replace' to swap the ID range with new text, "
+                                        "or 'delete' to remove the ID range entirely."
                                     ),
                                 },
                                 "start_line": {
                                     "type": "string",
                                     "description": (
-                                        "Content ID for start line. Only include the id and demarcator."
+                                        "The exact content ID and demarcator for the start of the edit "
+                                        "(e.g., 'abc::'). For empty files, use '@000'."
                                     ),
                                 },
                                 "end_line": {
                                     "type": "string",
                                     "description": (
-                                        "Content ID for end line. Only include the id and demarcator."
+                                        "The exact content ID and demarcator for the end of the edit "
+                                        "(e.g., 'xyz::'). For empty files, use '@000'."
                                     ),
                                 },
                                 "text": {
                                     "type": "string",
                                     "description": (
-                                        "Text content for replace operations. "
-                                        "Empty string for delete operations. "
-                                        "Do not include content IDs inside replacement text"
+                                        "The exact replacement text. If operation is 'delete', "
+                                        'this MUST be an empty string (""). '
+                                        "NEVER include content IDs in this text."
                                     ),
                                 },
                             },
@@ -96,9 +106,11 @@ class Tool(BaseTool):
                                 "text",
                             ],
                         },
-                        "description": "Array of edits to apply.",
                     },
-                    "change_id": {"type": "string"},
+                    "change_id": {
+                        "type": "string",
+                        "description": "Optional tracking ID for this batch of edits.",
+                    },
                 },
                 "required": ["edits"],
             },
@@ -255,7 +267,9 @@ class Tool(BaseTool):
 
                         except Exception as e:
                             # Record failed edit but continue with others
-                            file_failed_edits.append(f"Edit {edit_index + 1}: {str(e)}")
+                            file_failed_edits.append(
+                                f"Edit {edit_index + 1} - {cls._categorize_edit_error(str(e))}"
+                            )
                             continue
 
                     # Apply all operations in batch
@@ -269,13 +283,27 @@ class Tool(BaseTool):
                         if new_content != original_content:
                             file_successful_edits += len(successful_ops)
                         else:
-                            raise ToolError("Invalid Edit - Update content ID bounds")
+                            # Be specific about why content didn't change
+                            if failed_ops:
+                                error_details = "; ".join(
+                                    f"Edit {op['index'] + 1}: {op['error']}" for op in failed_ops
+                                )
+                                raise ToolError(
+                                    f"Invalid Edit - Update content ID bounds: {error_details}"
+                                )
+                            else:
+                                raise ToolError(
+                                    "Invalid Edit - Update content ID bounds - "
+                                    "all edits resulted in unchanged content"
+                                )
 
                         if len(failed_ops):
                             for failed_op in failed_ops:
                                 op_index = failed_op["index"]
                                 op_error = failed_op["error"]
-                                file_failed_edits.append(f"Edit {op_index + 1}: {str(op_error)}")
+                                file_failed_edits.append(
+                                    f"Edit {op_index + 1} - {cls._categorize_edit_error(str(op_error))}"
+                                )
                     except Exception as e:
                         # If batch operation fails, mark all operations as failed
                         for edit_index, _ in file_edits:
@@ -339,7 +367,9 @@ class Tool(BaseTool):
                 except Exception as e:
                     # Record all edits for this file as failed
                     for edit_index, _ in file_edits:
-                        all_failed_edits.append(f"Edit {edit_index + 1}: {str(e)}")
+                        all_failed_edits.append(
+                            f"Edit {edit_index + 1} - {cls._categorize_edit_error(str(e))}"
+                        )
                     continue
 
             # If dry run, return all results
@@ -360,10 +390,6 @@ class Tool(BaseTool):
                 raise ToolError(error_msg)
 
             # 5. Format and return result
-            # Log failed edit messages to console for visibility
-            if all_failed_edits:
-                for failed_msg in all_failed_edits:
-                    coder.io.tool_error(failed_msg)
 
             if files_processed == 1:
                 # Single file case
@@ -459,6 +485,9 @@ class Tool(BaseTool):
                             original_content = coder.io.read_text(abs_path)
 
                             if original_content is not None:
+                                start_line, end_line = resolve_content_to_hashline_ids(
+                                    original_content, start_line, end_line
+                                )
                                 diff_output = get_hashline_diff(
                                     original_content=strip_hashline(original_content),
                                     start_line_hash=start_line,
@@ -483,3 +512,21 @@ class Tool(BaseTool):
                         coder.io.tool_output("")
 
         tool_footer(coder=coder, tool_response=tool_response, params=params)
+
+    @classmethod
+    def _categorize_edit_error(cls, error_msg: str) -> str:
+        """Categorize an edit error message into a user-friendly display category.
+
+        Maps errors from apply_hashline_operations to simplified category names
+        for user-facing output instead of displaying full error details.
+
+        Args:
+            error_msg: The raw error message string.
+
+        Returns:
+            str: The display category name (e.g., "No Changes", "Syntax Errors").
+        """
+        error_lower = error_msg.lower()
+        if "syntax error" in error_lower or "introduces new syntax" in error_lower:
+            return USER_EDIT_CATEGORIES["syntax_errors"]
+        return USER_EDIT_CATEGORIES["no_changes"]

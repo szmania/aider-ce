@@ -252,21 +252,24 @@ def _make_closure_op(operation, text, start_idx, end_idx, index=0):
 def test_closure_safeguard_no_file_path():
     """Without file_path, ops should be returned unchanged."""
     ops = [_make_closure_op("replace", "pass", 0, 0)]
-    result = _apply_closure_safeguard("x = 1", ops, file_path=None)
+    result, rejected = _apply_closure_safeguard("x = 1", ops, file_path=None)
     assert result == ops
+    assert rejected == []
 
 
 def test_closure_safeguard_unsupported_language():
     """File path with unsupported language — ops returned unchanged."""
     ops = [_make_closure_op("replace", "xyz", 0, 0)]
-    result = _apply_closure_safeguard("some content", ops, file_path="test.xyz")
+    result, rejected = _apply_closure_safeguard("some content", ops, file_path="test.xyz")
     assert result == ops
+    assert rejected == []
 
 
 def test_closure_safeguard_empty_ops():
     """Empty ops list — returned as-is."""
-    result = _apply_closure_safeguard("x = 1", [], file_path="test.py")
+    result, rejected = _apply_closure_safeguard("x = 1", [], file_path="test.py")
     assert result == []
+    assert rejected == []
 
 
 def test_closure_safeguard_valid_code_no_change():
@@ -277,7 +280,7 @@ z = 3
 """
     # Replace all 3 lines with 2 valid lines
     ops = [_make_closure_op("replace", "a = 10\nb = 20", 0, 2)]
-    result = _apply_closure_safeguard(source, ops, file_path="test.py")
+    result, rejected = _apply_closure_safeguard(source, ops, file_path="test.py")
     assert result[0]["start_idx"] == 0
     assert result[0]["end_idx"] == 2
 
@@ -298,7 +301,7 @@ def test_closure_safeguard_heals_outer_scope():
     # which tree-sitter finds as an ERROR.
     # The safeguard should expand end_idx to include line 3.
     ops = [_make_closure_op("replace", '    return "value"', 1, 2)]
-    result = _apply_closure_safeguard(source, ops, file_path="test.py")
+    result, rejected = _apply_closure_safeguard(source, ops, file_path="test.py")
     assert result[0]["start_idx"] == 1
     assert result[0]["end_idx"] == 3  # Expanded to consume stray closing brace
 
@@ -311,7 +314,7 @@ z = 3
 """
     # Replace line 1 ("y = 2") with "y = 99"
     ops = [_make_closure_op("replace", "y = 99", 1, 1)]
-    result = _apply_closure_safeguard(source, ops, file_path="test.py")
+    result, rejected = _apply_closure_safeguard(source, ops, file_path="test.py")
     assert result[0]["start_idx"] == 1
     assert result[0]["end_idx"] == 1
 
@@ -324,7 +327,7 @@ z = 3
 """
     # Delete line 1 ("y = 2") — result is "x = 1\nz = 3" which is valid
     ops = [_make_closure_op("delete", None, 1, 1)]
-    result = _apply_closure_safeguard(source, ops, file_path="test.py")
+    result, rejected = _apply_closure_safeguard(source, ops, file_path="test.py")
     assert result[0]["start_idx"] == 1
     assert result[0]["end_idx"] == 1
 
@@ -343,7 +346,7 @@ except:
     # Replacing lines 0-1 with 'x = 1' leaves a stray 'except:' on line 2.
     # The safeguard should expand the boundary to avoid the parse error.
     ops = [_make_closure_op("replace", "x = 1", 0, 1)]
-    result = _apply_closure_safeguard(source, ops, file_path="test.py")
+    result, rejected = _apply_closure_safeguard(source, ops, file_path="test.py")
     healed_start = result[0]["start_idx"]
     healed_end = result[0]["end_idx"]
     # Boundaries should have changed from original (0, 1)
@@ -361,57 +364,78 @@ except:
     ), f"Healed source still has tree-sitter errors: {new_source!r}"
 
 
-def test_closure_safeguard_skip_insert():
-    """Insert operations should be skipped by the safeguard."""
-    source = "x = 1\ny = 2\n"
-    ops = [_make_closure_op("insert", "z = 3", 1, 1)]
-    result = _apply_closure_safeguard(source, ops, file_path="test.py")
-    assert result == ops  # Insert ops pass through unchanged
+# =============================================================================
+# Tests for eviction gate (edits that introduce syntax errors are rejected)
+# =============================================================================
 
 
-def test_closure_safeguard_with_outer_function_brace():
+def test_closure_safeguard_evicts_syntax_error_edit():
     """
-    Test that the safeguard can expand an edit that would 'eat' an outer
-    scope's closing brace.
+    Edit that produces invalid Python syntax should be evicted by the gate.
+    The eviction gate checks if ast_error_count > baseline_error_count and
+    discards the edit entirely when even the best candidate boundary fails.
     """
-    source = """if True:
-    if False:
-        x = 1
+    source = """x = 1
 y = 2
+z = 3
 """
-    lines = source.splitlines()  # noqa
-    # Line 0: "if True:"
-    # Line 1: "    if False:"
-    # Line 2: "        x = 1"
-    # Line 3: "y = 2"
-
-    # Replace lines 1-2 with something that would leave invalid indentation
-    # Let me test something that should work: replacing just the inner if
-    ops = [_make_closure_op("replace", "    x = 99", 1, 2)]
-    result = _apply_closure_safeguard(source, ops, file_path="test.py")
-    # The replacement "    x = 99" should be valid, keep original bounds
-    assert result[0]["start_idx"] == 1
-    assert result[0]["end_idx"] == 2
+    # Replace "z = 3" with "]][][[[]" — broken syntax that no boundary adjustment can fix.
+    ops = [_make_closure_op("replace", "]][][[[]", 2, 2)]
+    result, rejected = _apply_closure_safeguard(source, ops, file_path="test.py")
+    # The edit should be evicted (not in result, present in rejected)
+    assert len(result) == 0, f"Expected no ops to survive, got {len(result)}"
+    assert len(rejected) == 1, f"Expected 1 rejected op, got {len(rejected)}"
+    assert "syntax error" in rejected[0]["error"].lower()
+    assert rejected[0]["index"] == 0
 
 
-def test_closure_safeguard_heals_broken_dict():
+def test_closure_safeguard_evicts_incompatible_replacement():
     """
-    A replace that removes the opening brace but keeps the closing brace
-    should have its boundaries expanded by the safeguard to include the
-    stray closing brace.
+    An edit that fundamentally breaks the grammar (e.g., replacing a function
+    body with something syntactically incompatible) should be evicted.
+    No amount of boundary shifting can fix it.
+    """
+    source = """def foo():
+    return 1
+
+def bar():
+    return 2
+"""
+    # Replace the entire function + middle with just hard-to-parse junk
+    ops = [_make_closure_op("replace", "]]]]broken[[[[", 0, 3)]
+    result, rejected = _apply_closure_safeguard(source, ops, file_path="test.py")
+    assert len(result) == 0, f"Expected no ops to survive, got {len(result)}"
+    assert len(rejected) == 1
+    assert rejected[0]["index"] == 0
+
+
+def test_closure_safeguard_edit_with_off_by_one_healing():
+    """
+    An edit that is slightly off (off-by-one line) should be healed by
+    expanding boundaries to include the missing context.
     """
     source = """def foo():
     return {
-        "key": "value"
+        "key": "value",
     }
+
+def bar():
+    return 42
 """
-    # Replace lines 1-2 with '    return "value"' — this eats the opening
-    # brace but leaves the closing '}' on line 3, producing a parse error.
-    ops = [_make_closure_op("replace", '    return "value"', 1, 2)]
-    result = _apply_closure_safeguard(source, ops, file_path="test.py")
+    # Replace just line 1 ("    return {") with '    return "value"' — but
+    # leave lines 2-3 (the dict contents and closing brace) orphaned.
+    # The safeguard should expand end_idx to consume the orphaned lines.
+    ops = [_make_closure_op("replace", '    return "value"', 1, 1)]
+    result, rejected = _apply_closure_safeguard(source, ops, file_path="test.py")
+    assert len(result) == 1, f"Expected 1 healed op, got {len(result)}"
+    assert len(rejected) == 0, f"Expected no rejected ops, got {len(rejected)}"
+    # Boundaries should have expanded from (1, 1) to include lines 2-3
     healed_start = result[0]["start_idx"]
     healed_end = result[0]["end_idx"]
-    # Verify the healed result parses correctly via tree-sitter
+    assert (
+        healed_end >= 3
+    ), f"Expected end_idx >= 3 (to consume orphaned dict lines), got {healed_end}"
+    # Verify the healed result parses correctly
     from cecli.helpers.grep_ast.tsl import get_parser
 
     parser = get_parser("python")
@@ -424,9 +448,73 @@ def test_closure_safeguard_heals_broken_dict():
     ), f"Healed source still has tree-sitter errors: {new_source!r}"
 
 
+def test_closure_safeguard_off_by_one_start():
+    """
+    When an edit's start_idx is one line too late (doesn't include a
+    statement that opens a scope), the safeguard should expand it backward.
+    """
+    source = """def foo():
+    return {
+        "key": "value",
+    }
+"""
+    # Line 0: "def foo():"
+    # Line 1: "    return {"
+    # Line 2: '        "key": "value",'
+    # Line 3: "    }"
+    # Replace lines 2-3 with '    pass' — this leaves line 0 and 1
+    # (the function header and the opening brace) but replaces the
+    # content and closing brace. Result has a stray opening brace
+    # that cannot be parsed.
+    # The safeguard should expand start_idx from 2 backward to 1
+    # to include the "    return {" line.
+    ops = [_make_closure_op("replace", "    pass", 2, 3)]
+    result, rejected = _apply_closure_safeguard(source, ops, file_path="test.py")
+    assert len(result) == 1
+    assert len(rejected) == 0
+    # start_idx should have expanded from 2 to at most 1
+    assert result[0]["start_idx"] <= 1, (
+        f"Expected start_idx <= 1 (expanded for opening brace), " f"got {result[0]['start_idx']}"
+    )
+
+
+def test_apply_closure_safeguard_passes_rejected_ops_to_failed():
+    """
+    Integration test: apply_hashline_operations should propagate rejected
+    operations (from _apply_closure_safeguard) into the failed_ops list.
+    """
+    from cecli.helpers.hashline import apply_hashline_operations, hashline
+
+    source = """x = 1
+y = 2
+"""
+    # Try to replace a line with broken syntax — this should fail via eviction
+    # Get the correct hashline ID for the first line
+    hp_content = hashline(source)
+    first_line_hash = hp_content.splitlines()[0].split("::")[0] + "::"
+
+    ops = [
+        {
+            "start_line_hash": first_line_hash,
+            "end_line_hash": first_line_hash,
+            "operation": "replace",
+            "text": "]][[[[broken",
+        }
+    ]
+    new_content, successful_ops, failed_ops = apply_hashline_operations(
+        source, ops, file_path="test.py"
+    )
+    # Content should be unchanged since the edit was rejected
+    assert new_content == source, "Expected content unchanged when all edits are rejected"
+    assert len(failed_ops) >= 1, f"Expected at least 1 failed_ops from eviction, got {failed_ops}"
+    # Error message should mention syntax errors
+    assert any(
+        "syntax error" in op["error"].lower() for op in failed_ops
+    ), f"Expected syntax error mention in failed_ops, got {failed_ops}"
+
+
 # =============================================================================
 # Tests for _merge_replace_operations
-# =============================================================================
 
 
 def _make_merge_op(operation, text, start_idx, end_idx, index=0):
