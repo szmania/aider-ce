@@ -1,5 +1,6 @@
 import contextlib
 import os
+import sys
 import time
 from pathlib import Path, PurePosixPath
 
@@ -84,7 +85,9 @@ class GitRepo:
         self.models = models
 
         self.normalized_path = {}
-        self.tree_files = {}
+        # Single-entry file cache: (commit_sha, interned_set_of_paths)
+        # Using a single entry (not per-commit dict) limits unbounded memory growth
+        self._tree_cache = None
 
         self.attribute_author = attribute_author
         self.attribute_committer = attribute_committer
@@ -602,8 +605,8 @@ class GitRepo:
 
         files = set()
         if commit:
-            if commit in self.tree_files:
-                files = self.tree_files[commit]
+            if self._tree_cache is not None and self._tree_cache[0] == commit.hexsha:
+                files = self._tree_cache[1]
             else:
                 try:
                     iterator = commit.tree.traverse()
@@ -612,7 +615,8 @@ class GitRepo:
                         try:
                             blob = next(iterator)
                             if blob.type == "blob":  # blob is a file
-                                files.add(blob.path)
+                                # Use sys.intern() to deduplicate path strings in memory
+                                files.add(sys.intern(blob.path))
                         except IndexError:
                             # Handle potential index error during tree traversal
                             # without relying on potentially unassigned 'blob'
@@ -629,7 +633,10 @@ class GitRepo:
                     self.io.tool_output("Is your git repo corrupted?")
                     return []
                 files = set(self.normalize_path(path) for path in files)
-                self.tree_files[commit] = set(files)
+                # Use single-entry cache (not per-commit dict) to limit memory growth
+                # Store only the SHA string (not the Commit object) to avoid retaining
+                # the entire git object graph (tree, blobs, parent commits, etc.)
+                self._tree_cache = (commit.hexsha, files)
 
         # Add staged files
         index = self.repo.index

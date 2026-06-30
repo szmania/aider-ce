@@ -39,7 +39,10 @@ class TestScrape:
             def get_announcements(self):
                 return []
 
-        return Commands(io, DummyCoder())
+        coder = DummyCoder()
+        cmds = Commands(io, coder)
+        cmds._test_coder = coder  # keep strong reference to prevent GC of weakref
+        return cmds
 
     @patch("cecli.commands.web.install_playwright")
     @patch("cecli.commands.web.Scraper")

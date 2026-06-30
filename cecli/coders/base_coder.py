@@ -314,6 +314,7 @@ class Coder(metaclass=UsageMeta):
                 uuid=from_coder.uuid,
                 parent_uuid=from_coder.parent_uuid,
                 repo=from_coder.repo,
+                summarizer=from_coder.summarizer,
             )
             use_kwargs.update(update)  # override to complete the switch
             use_kwargs.update(kwargs)  # override passed kwargs
@@ -351,7 +352,11 @@ class Coder(metaclass=UsageMeta):
 
             await res.initialize_mcp_tools()
 
-            res.original_kwargs = dict(kwargs)
+            # Store only small/primitive kwargs to avoid retaining large object references.
+            # Large objects (repo, mcp_manager, commands, summarizer, file_watcher, etc.)
+            # are either overridden during clone() or accessible from instance attributes.
+            _LARGE_KWARGS = {"repo", "mcp_manager", "commands", "summarizer", "file_watcher"}
+            res.original_kwargs = {k: v for k, v in kwargs.items() if k not in _LARGE_KWARGS}
             return res
 
         valid_formats = list(coders.EDIT_FORMAT_MAP.keys())

@@ -6,6 +6,7 @@ according to the Skills specification.
 """
 
 import re
+import weakref
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -69,7 +70,7 @@ class SkillsManager:
         self.include_list = set(include_list) if include_list else None
         self.exclude_list = set(exclude_list) if exclude_list else set()
         self.git_root = Path(git_root).expanduser().resolve() if git_root else None
-        self.coder = coder  # Weak reference to coder instance
+        self._coder_ref = weakref.ref(coder) if coder else None  # Weak reference to coder instance
 
         # Cache for loaded skills
         self._skills_cache: Dict[str, SkillContent] = {}
@@ -104,6 +105,18 @@ class SkillsManager:
                 self.hot_reload()
 
             # Save initial state from config
+
+    def _get_coder(self):
+        """Return coder via weak reference, or None if collected."""
+        if self._coder_ref is not None:
+            return self._coder_ref()
+        return None
+
+    def _set_coder(self, value):
+        """Store coder as weakref to break circular reference chains."""
+        self._coder_ref = weakref.ref(value) if value is not None else None
+
+    coder = property(_get_coder, _set_coder)
 
     def _save_state(self):
         """Save current mutable state to the global skill state store.
