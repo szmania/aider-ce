@@ -1,43 +1,33 @@
 import hashlib
 import json
-from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, call, patch
 
 import pytest
 
-from cecli.coders.copypaste_coder import CopyPasteCoder
+from cecli.coders.copypaste_coder import get_copy_paste_coder_class
 from cecli.coders.editblock_coder import EditBlockCoder
 
-
-def test_init_prompts_uses_selected_edit_format():
-    coder = CopyPasteCoder.__new__(CopyPasteCoder)
-    coder.args = SimpleNamespace(edit_format="diff")
-    coder.main_model = SimpleNamespace(edit_format=None)
-    coder.edit_format = None
-    coder.gpt_prompts = None
-
-    coder._init_prompts_from_selected_edit_format()
-
-    assert coder.gpt_prompts is not None
-    assert hasattr(coder.gpt_prompts, "main_system")
-    assert coder.edit_format == EditBlockCoder.edit_format
+# Dynamically create a CopyPasteCoder class for testing purposes.
+# We use the 'diff' edit format so it inherits EditBlockCoder behavior.
+_TestModel = type("TestModel", (), {"edit_format": None, "name": "test"})
+CopyPasteCoder = get_copy_paste_coder_class("diff", _TestModel())
 
 
-def test_init_prompts_preserves_existing_when_no_match(monkeypatch):
-    coder = CopyPasteCoder.__new__(CopyPasteCoder)
-    coder.args = SimpleNamespace(edit_format="custom-format")
-    coder.main_model = SimpleNamespace(edit_format=None)
-    coder.edit_format = "original-format"
-    coder.gpt_prompts = "original-prompts"
+def test_dynamic_class_inherits_from_target_coder():
+    """The dynamic CopyPasteCoder class inherits from the target coder class."""
+    # Already created at module level: CopyPasteCoder = get_copy_paste_coder_class("diff", _TestModel())
+    assert issubclass(
+        CopyPasteCoder, EditBlockCoder
+    ), "CopyPasteCoder should inherit from EditBlockCoder for 'diff' format"
+    # The fixed CopyPasteCoder marker should also be in the MRO
+    from cecli.coders.copypaste_coder import CopyPasteCoder as FixedCopyPasteCoder
 
-    import cecli.coders as coders
-
-    monkeypatch.setattr(coders, "__all__", [], raising=False)
-
-    coder._init_prompts_from_selected_edit_format()
-
-    assert coder.gpt_prompts == "original-prompts"
-    assert coder.edit_format == "original-format"
+    assert (
+        FixedCopyPasteCoder in CopyPasteCoder.__mro__
+    ), "Fixed CopyPasteCoder should be in the MRO for isinstance checks"
+    # gpt_prompts should resolve correctly via the inherited property
+    assert CopyPasteCoder.prompt_format is not None
+    assert CopyPasteCoder.prompt_format == EditBlockCoder.prompt_format
 
 
 @pytest.mark.asyncio
@@ -51,7 +41,11 @@ async def test_send_uses_copy_paste_flow(monkeypatch):
     coder.partial_response_tool_calls = []
     coder.partial_response_function_call = None
     coder.chat_completion_call_hashes = []
-    coder.show_send_output = AsyncMock()
+    coder.interrupt_event = MagicMock()
+
+    coder.show_send_output = AsyncMock(
+        side_effect=lambda c: coder.partial_response_chunks.append(c)
+    )
     coder.calculate_and_show_tokens_and_cost = MagicMock()
 
     def fake_preprocess_response():

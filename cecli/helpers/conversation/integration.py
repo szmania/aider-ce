@@ -104,6 +104,10 @@ class ConversationChunks:
                     priority=75 + i,
                 )
 
+        if getattr(coder, "copy_paste_mode", False):
+            # Add copy-paste mode tool instructions for inline tool calling
+            self.add_copy_paste_tool_instructions()
+
         if self._cancel_post_message_injections():
             return
 
@@ -1034,6 +1038,84 @@ class ConversationChunks:
                     return True
 
         return False
+
+    def add_copy_paste_tool_instructions(self) -> None:
+        """
+        Add tool instructions for copy/paste mode.
+
+        When in copy/paste mode, the model cannot use native API tool calling so
+        we inject instructions on how to embed tool calls inline using XML, JSON,
+        or bracket formats. These are parsed out by the extract_tools_from_content_*
+        functions in ``responses.py``.
+        """
+        coder = self.get_coder()
+        if not coder:
+            return
+
+        tool_list = coder.get_tool_list()
+        if not tool_list:
+            return
+
+        # Prepare a clean, serializable version of the tool list
+        tool_descriptions = []
+        for prefixed_tool in tool_list:
+            if isinstance(prefixed_tool, dict):
+                func = prefixed_tool.get("function", {})
+                tool_descriptions.append(
+                    {
+                        "name": func.get("name", ""),
+                        "description": func.get("description", ""),
+                        "parameters": func.get("parameters", {}),
+                    }
+                )
+            elif hasattr(prefixed_tool, "function") and hasattr(prefixed_tool.function, "name"):
+                tool_descriptions.append(
+                    {
+                        "name": getattr(prefixed_tool.function, "name", ""),
+                        "description": getattr(prefixed_tool.function, "description", ""),
+                        "parameters": getattr(prefixed_tool.function, "parameters", {}),
+                    }
+                )
+
+        tool_list_json = json.dumps(tool_descriptions, indent=2)
+
+        inline_tool_instructions = (
+            '<context name="tool_list">\n'
+            "You are in copy/paste mode. Since the LLM API transport is unavailable, "
+            "you MUST embed tool calls directly in your response content using one of the "
+            "following formats. The system will parse these out and execute them.\n\n"
+            "Available tools:\n"
+            f"{tool_list_json}\n\n"
+            "TOOL CALLING FORMATS (use any of these):\n\n"
+            "1. XML Function Format:\n"
+            "   <function=ToolName>\n"
+            "   <parameter=param_name>param_value_json</parameter>\n"
+            "   </function>\n\n"
+            "   Example:\n"
+            "   <function=Local--ReadRange>\n"
+            '   <parameter=read>[{"file_path": "example.py", "range_start": "def hello",'
+            ' "range_end": "def goodbye"}]</parameter>\n'
+            "   </function>\n\n"
+            "2. JSON Tool-Call Format:\n"
+            '   Embed a JSON object with "name" and "arguments" keys.\n\n'
+            "   Example:\n"
+            '   {"name": "Local--ReadRange", "arguments": {"read": [{"file_path": "example.py",'
+            ' "range_start": "class A", "range_end": "class Z"}]}}\n\n'
+            "3. Bracket Format:\n"
+            "   [ToolName(key1=value1, key2=value2)]\n\n"
+            "   Example:\n"
+            '   [Local--ReadRange(read=[{"file_path": "example.py", "range_start": "class A"}])]\n\n'
+            "IMPORTANT: Use the FULL prefixed tool name "
+            '(e.g., "Local--ReadRange" not just "ReadRange").\n'
+            "</context>"
+        )
+
+        ConversationService.get_manager(coder).add_message(
+            message_dict={"role": "system", "content": inline_tool_instructions},
+            tag=MessageTag.SYSTEM,
+            hash_key=("main", "copy_paste_tools"),
+            force=True,
+        )
 
     def _shuffle_reminders(self, content: str) -> str:
         """
