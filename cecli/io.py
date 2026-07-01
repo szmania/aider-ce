@@ -1694,31 +1694,39 @@ class InputOutput:
         self.bell_on_next_input = True
 
     def get_default_notification_command(self):
-        """Return a default notification command based on the operating system."""
+        """Return a command that triggers a system bell followed by a notification."""
         import platform
+        import shutil
 
         system = platform.system()
 
-        if system == "Darwin":  # macOS
-            # Check for terminal-notifier first
+        # 1. Define the Bell component
+        if system == "Windows":
+            bell_cmd = "powershell -c [Console]::Beep(1000, 200)"
+        elif system == "Darwin":
+            bell_cmd = "osascript -e 'beep'"
+        else:  # Linux/Unix
+            bell_cmd = "tput bel" if shutil.which("tput") else "echo -e '\\a'"
+
+        # 2. Define the Notification component
+        notif_cmd = None
+        if system == "Darwin":
             if shutil.which("terminal-notifier"):
-                return f"terminal-notifier -title 'cecli' -message '{NOTIFICATION_MESSAGE}'"
-            # Fall back to osascript
-            return (
-                f'osascript -e \'display notification "{NOTIFICATION_MESSAGE}" with title "cecli"\''
-            )
+                notif_cmd = f"terminal-notifier -title 'cecli' -message '{NOTIFICATION_MESSAGE}'"
+            else:
+                notif_cmd = f'osascript -e \'display notification "{NOTIFICATION_MESSAGE}" with title "cecli"\''
+
         elif system == "Linux":
-            # Check for common Linux notification tools
             for cmd in ["notify-send", "zenity"]:
                 if shutil.which(cmd):
                     if cmd == "notify-send":
-                        return f"notify-send 'cecli' '{NOTIFICATION_MESSAGE}'"
+                        notif_cmd = f"notify-send 'cecli' '{NOTIFICATION_MESSAGE}'"
                     elif cmd == "zenity":
-                        return f"zenity --notification --text='{NOTIFICATION_MESSAGE}'"
-            return None  # No known notification tool found
+                        notif_cmd = f"zenity --notification --text='{NOTIFICATION_MESSAGE}'"
+                    break
+
         elif system == "Windows":
-            # PowerShell toast notification
-            ps_command = (
+            ps_body = (
                 ' "try {{ Add-Type -AssemblyName System.Runtime.WindowsRuntime; $null ='
                 " [Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications,"
                 " ContentType = WindowsRuntime] }} catch {{}}; "
@@ -1734,9 +1742,15 @@ class InputOutput:
                 "[Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('cecli')"
                 '.Show($toast)"'
             )
-            return "powershell -WindowStyle Hidden -Command" + ps_command
+            notif_cmd = f"powershell -WindowStyle Hidden -Command {ps_body}"
 
-        return None  # Unknown system
+        # 3. Concatenate them
+        if notif_cmd:
+            # Using ';' as a command separator works for both shell=True on Unix and Windows
+            return f"{bell_cmd} ; {notif_cmd}"
+
+        # Fallback if no notification tool is found
+        return bell_cmd
 
     def _send_notification(self):
         # Cooldown to prevent notification spam
