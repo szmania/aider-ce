@@ -30,7 +30,7 @@ def hashline(text: str, start_line: int = 1) -> str:
 
 
 def hashline_formatted(
-    text: str, file_name: str, partial: bool, start_line: int = 1
+    text: str, file_name: str, partial: bool, expanded: bool, start_line: int = 1
 ) -> tuple[str, str]:
     """
     Generate hashline-formatted content and return it as both raw hashline text and a JSON structure.
@@ -56,6 +56,7 @@ def hashline_formatted(
         "start_line": start_line,
         "end_line": end_line,
         "partial": partial,
+        "expanded": expanded,
         "prefixed_contents": prefixed,
     }
 

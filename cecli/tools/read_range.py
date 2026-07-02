@@ -511,7 +511,9 @@ class Tool(BaseTool):
                 # output_lines = [f"Displaying context around {found_by} in {rel_path}:"]
 
                 # Generate hashline for the entire file
-                hashed_content, _ = hashline_formatted(content, file_name=abs_path, partial=False)
+                hashed_content, _ = hashline_formatted(
+                    content, file_name=abs_path, partial=False, expanded=False
+                )
                 hashed_lines = hashed_content.splitlines()
 
                 # Extract the context window from hashed lines
@@ -632,7 +634,7 @@ class Tool(BaseTool):
                 if already_up_to_details:
                     coder.io.tool_output(
                         (
-                            "Lines already up to date in context for"
+                            "Earlier contents still valid for"
                             f" {len(already_up_to_details)} operation(s)"
                         ),
                         type="tool-result",
@@ -640,10 +642,10 @@ class Tool(BaseTool):
 
                     detail_str = "\n".join(already_up_to_details)
                     result_parts.append(
-                        "Content up to date and available in history from previous read for "
+                        "Earlier contents still valid from previous read for "
                         f"{len(already_up_to_details)} operation(s):\n\n"
                         f"{detail_str}\n"
-                        "Current contents for these reads available in previous content ID message."
+                        "Relevant contents for these reads available in previous message."
                     )
                 if already_up_to_date and not new_context_retrieved:
                     result_parts.append(
@@ -731,6 +733,7 @@ class Tool(BaseTool):
                         "start_line": start_stub_s + 1,
                         "end_line": end_stub_e if has_second_range else start_stub_e,
                         "partial": True,
+                        "expanded": True,
                         "prefixed_contents": prefixed,
                     }
                     return json.dumps(result, ensure_ascii=False)
@@ -754,6 +757,7 @@ class Tool(BaseTool):
             "start_line": s_idx + 1,
             "end_line": e_idx + 1,
             "partial": True,
+            "expanded": False,
             "prefixed_contents": prefixed,
         }
         return json.dumps(result, ensure_ascii=False)
