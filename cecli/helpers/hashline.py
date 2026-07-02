@@ -1,6 +1,7 @@
 import difflib
 import json
 import re
+from collections import Counter
 
 from cecli.helpers.hashpos.hashpos import HashPos
 
@@ -29,7 +30,7 @@ def hashline(text: str, start_line: int = 1) -> str:
 
 
 def hashline_formatted(
-    text: str, file_name: str, partial: bool, start_line: int = 1
+    text: str, file_name: str, partial: bool, expanded: bool, start_line: int = 1
 ) -> tuple[str, str]:
     """
     Generate hashline-formatted content and return it as both raw hashline text and a JSON structure.
@@ -55,6 +56,7 @@ def hashline_formatted(
         "start_line": start_line,
         "end_line": end_line,
         "partial": partial,
+        "expanded": expanded,
         "prefixed_contents": prefixed,
     }
 
@@ -1427,109 +1429,134 @@ def _apply_closure_safeguard(
     original_content: str,
     resolved_ops: list,
     file_path: str = None,
-) -> list:
+) -> tuple[list, list]:
     """
-    Use tree-sitter to heal edit boundaries by simulating edits and checking syntax.
-
-    For each replace/delete operation, this simulates applying the edit with
-    the replacement text, parses the resulting code with tree-sitter, and
-    checks if the result is syntactically valid (no ERROR/MISSING nodes).
-
-    If the edit produces invalid syntax (e.g., missing closing braces),
-    it progressively expands/contracts the start and end boundaries by a
-    step and re-tests until the resulting code parses correctly or the
-    maximum number of expansion steps is exhausted.
-
-    This prevents the common LLM edit error of "eating" outer scope
-    closing braces, parentheses, or brackets by finding the nearest
-    syntactically valid edit boundary.
-
-    Args:
-        original_content: Original source code (without hashlines)
-        resolved_ops: List of resolved operation dicts with start_idx/end_idx
-        file_path: File path to determine tree-sitter language
+    Use tree-sitter to heal edit boundaries by simulating edits and scoring by AST health.
+    Evicts edits that strictly increase the number of syntax errors.
 
     Returns:
-        Modified resolved_ops with healed boundaries
+        tuple: (safe_resolved_ops, rejected_ops)
+        - safe_resolved_ops: Operations with healed boundaries
+        - rejected_ops: List of dicts with {"index": int, "error": str} for evicted operations
     """
-
-    def is_syntactically_valid(source_bytes: bytes, parser) -> bool:
-        try:
-            tree = parser.parse(source_bytes)
-            return not tree.root_node.has_error
-        except Exception:
-            return False
-
-    def apply_edit(
-        source_lines: list[str],
-        start: int,
-        end: int,
-        replacement: list[str],
-    ) -> bytes:
-        """Applies the edit and returns the new source code as bytes."""
-        new_lines = source_lines[:start] + replacement + source_lines[end + 1 :]
-        return "\n".join(new_lines).encode("utf-8")
-
-    def count_closures(source_bytes: bytes) -> int:
-        """Counts the total number of brackets, braces, and parenthesis."""
-        return sum(source_bytes.count(b) for b in b"{}[]()")
-
-    def get_indentation(line: str) -> int:
-        """Helper to safely calculate the leading whitespace of a line."""
-        return len(line) - len(line.lstrip(" \t"))
-
     if not resolved_ops or not file_path:
-        return resolved_ops
+        return resolved_ops, []
 
-    # Determine language from file path
     from cecli.helpers.grep_ast.parsers import filename_to_lang
     from cecli.helpers.grep_ast.tsl import get_language, get_parser
 
     lang = filename_to_lang(file_path)
     if not lang:
-        return resolved_ops
+        return resolved_ops, []
 
-    # Set up tree-sitter parser
     try:
         language = get_language(lang)  # noqa
         parser = get_parser(lang)
     except Exception:
-        # Can't determine language, skip safeguard
-        return resolved_ops
+        return resolved_ops, []
 
     source_lines = original_content.splitlines()
+    source_bytes = original_content.encode("utf-8")
+
+    def apply_edit(
+        lines: list[str],
+        start: int,
+        end: int,
+        replacement: list[str],
+    ) -> bytes:
+        """Applies the edit and returns the new source code as bytes."""
+        new_lines = lines[:start] + replacement + lines[end + 1 :]
+        return "\n".join(new_lines).encode("utf-8")
+
+    def count_ast_errors(node) -> int:
+        """
+        Recursively counts MISSING or ERROR nodes in the AST.
+        """
+        errors = 0
+        if node.is_missing or node.type == "ERROR":
+            errors += 1
+        for child in node.children:
+            errors += count_ast_errors(child)
+        return errors
+
+    def _detect_indent_unit(source_lines: list) -> int:
+        """Detect the common indentation unit from non-empty source lines."""
+        indents = []
+        for line in source_lines:
+            if line.strip():  # non-empty
+                indent = len(line) - len(line.lstrip())
+                indents.append(indent)
+
+        if len(indents) < 2:
+            return 0
+
+        # Compute differences between consecutive non-empty lines
+        diffs = []
+        for i in range(1, len(indents)):
+            diff = abs(indents[i] - indents[i - 1])
+            if diff > 0:
+                diffs.append(diff)
+
+        if not diffs:
+            return 0
+
+        # Most common non-zero difference is the indentation unit
+        return Counter(diffs).most_common(1)[0][0]
+
+    def _has_indent_jump(test_lines: list, unit: int) -> bool:
+        """Check if the edit result creates an indentation jump of 2+ units."""
+        if unit == 0:
+            return False
+
+        prev_indent = None
+        for line in test_lines:
+            if line.strip():  # non-empty
+                indent = len(line) - len(line.lstrip())
+                if prev_indent is not None:
+                    diff = abs(indent - prev_indent)
+                    if diff > unit:
+                        return True
+                prev_indent = indent
+
+        return False
+
+    # Establish the baseline syntax health of the original file
+    base_tree = parser.parse(source_bytes)
+    baseline_error_count = count_ast_errors(base_tree.root_node)
+
+    # Detect if the original source follows normal indentation (steps of 1 unit)
+    indent_unit = _detect_indent_unit(source_lines)
+    is_normally_indented = indent_unit > 0
+
+    safe_resolved_ops = []
+    rejected_ops = []
 
     for resolved in resolved_ops:
         op = resolved["op"]
         if op["operation"] not in {"replace", "insert", "delete"}:
+            safe_resolved_ops.append(resolved)
             continue
 
         llm_start = resolved["start_idx"]
         llm_end = resolved["end_idx"]
 
-        # Clamp to valid bounds
         if llm_start < 0 or llm_start >= len(source_lines):
+            safe_resolved_ops.append(resolved)
             continue
         if llm_end < llm_start:
+            safe_resolved_ops.append(resolved)
             continue
 
-        # Get replacement text
         replacement_text = op.get("text", "") or ""
         if op["operation"] == "delete":
             replacement_text = ""
         repl_lines = replacement_text.splitlines()
 
-        # Clamp end to valid range
         llm_end = min(llm_end, len(source_lines) - 1)
-
-        # --- THE HEALING LOOP ---
-        # Generate all combinations of offsets in {-2, -1, 0, 1, 2} for both
-        # start and end, then filter to syntactically valid edits and rank
-        # by cumulative movement (abs(start_shift) + abs(end_shift)) as a
-        # primary criterion to bias toward minimal range perturbation.
 
         offsets = [0, 1, -1, 2, -2]
         all_candidates = []
+
         for start_shift in offsets:
             for end_shift in offsets:
                 candidate_start = max(0, llm_start - start_shift)
@@ -1538,7 +1565,6 @@ def _apply_closure_safeguard(
                 if candidate_end < candidate_start:
                     continue
 
-                # Skip candidates that overlap with other operations' ranges
                 overlaps = False
                 for other_op in resolved_ops:
                     if other_op is resolved:
@@ -1552,87 +1578,61 @@ def _apply_closure_safeguard(
                 if overlaps:
                     continue
 
-                # Skip candidates that would create duplicate adjacent content at edit boundaries
                 if _would_create_duplicate_content(
                     source_lines, candidate_start, candidate_end, repl_lines
                 ):
                     continue
 
-                test_source = apply_edit(
+                test_source_bytes = apply_edit(
                     source_lines,
                     candidate_start,
                     candidate_end,
                     repl_lines,
                 )
 
-                if is_syntactically_valid(test_source, parser):
-                    # Determine properties for tiebreaking
-                    is_partial = (start_shift == 0) ^ (end_shift == 0)  # XOR: exactly one is zero
-                    is_downward = start_shift <= 0  # Negative/zero shift = moving down
-                    is_both = start_shift == end_shift  # Whole range expansion/contraction
-                    closures = count_closures(test_source)
-                    start_line_match = source_lines[candidate_start] == source_lines[llm_start]
-                    end_line_match = source_lines[candidate_end] == source_lines[llm_end]
-                    cumulative_movement = abs(start_shift) + abs(end_shift)
+                # Parse the candidate to get structural truth
+                edited_tree = parser.parse(test_source_bytes)
+                ast_error_count = count_ast_errors(edited_tree.root_node)
 
-                    # --- INDENTATION SCORING ---
-                    indent_score = 0
-                    if repl_lines:
-                        # Safely grab the first and last non-empty replacement lines
-                        first_repl = next((line for line in repl_lines if line.strip()), "")
-                        last_repl = next(
-                            (line for line in reversed(repl_lines) if line.strip()), ""
-                        )
+                is_partial = (start_shift == 0) ^ (end_shift == 0)
+                is_downward = start_shift <= 0
+                is_both = start_shift == end_shift
+                start_line_match = source_lines[candidate_start] == source_lines[llm_start]
+                end_line_match = source_lines[candidate_end] == source_lines[llm_end]
+                cumulative_movement = abs(start_shift) + abs(end_shift)
 
-                        # Check Start Boundary Match
-                        if first_repl and candidate_start < len(source_lines):
-                            source_start_line = source_lines[candidate_start]
-                            if source_start_line.strip() and get_indentation(
-                                first_repl
-                            ) == get_indentation(source_start_line):
-                                indent_score += 1
+                # Check for indentation jumps in the resulting edit
+                if is_normally_indented:
+                    test_lines = test_source_bytes.decode("utf-8").splitlines()
+                    has_indent_jump = _has_indent_jump(test_lines, indent_unit)
+                else:
+                    has_indent_jump = False
 
-                        # Check End Boundary Match
-                        if last_repl and candidate_end < len(source_lines):
-                            source_end_line = source_lines[candidate_end]
-                            if source_end_line.strip() and get_indentation(
-                                last_repl
-                            ) == get_indentation(source_end_line):
-                                indent_score += 1
-
-                    all_candidates.append(
-                        {
-                            "start_idx": candidate_start,
-                            "end_idx": candidate_end,
-                            "start_line_match": start_line_match,
-                            "end_line_match": end_line_match,
-                            "source_len": len(test_source),
-                            "is_partial": is_partial,
-                            "is_downward": is_downward,
-                            "is_both": is_both,
-                            "closure_count": closures,
-                            "indent_score": indent_score,
-                            "cumulative_movement": cumulative_movement,
-                            "offsets": (start_shift, end_shift),
-                        }
-                    )
+                all_candidates.append(
+                    {
+                        "start_idx": candidate_start,
+                        "end_idx": candidate_end,
+                        "ast_error_count": ast_error_count,
+                        "start_line_match": start_line_match,
+                        "end_line_match": end_line_match,
+                        "cumulative_movement": cumulative_movement,
+                        "has_indent_jump": has_indent_jump,
+                        "is_partial": is_partial,
+                        "is_downward": is_downward,
+                        "is_both": is_both,
+                    }
+                )
 
         if all_candidates:
-            # Sort using the new hierarchy:
-            # 1. Cumulative movement (ascending — less movement is better)
-            # 2. Fewest total closures (minimize structural pollution)
-            # 3. Indentation Score (Descending: 2 is better than 0)
-            # 4. Longest source (preserve more file content)
-            # 5. Partial expansions over full range shifts
-            # 6. Downward changes over upward changes
+            # 1. AST Health is the absolute highest priority.
+            # 2. Cumulative movement acts as the tie-breaker for equally valid ASTs.
             all_candidates.sort(
                 key=lambda r: (
+                    r["ast_error_count"],  # Ascending: fewer syntax errors wins
                     not r["start_line_match"],  # Descending: True first
                     not r["end_line_match"],  # Descending: True first
+                    r.get("has_indent_jump", False),  # Ascending: False (no jump) first
                     r["cumulative_movement"],  # Ascending: smaller is better
-                    -r["indent_score"],  # Descending: larger score is better (2 > 1 > 0)
-                    -r["source_len"],  # Descending: larger is better
-                    r["closure_count"],  # Ascending: smaller is better
                     not r["is_partial"],  # Booleans: False comes before True
                     not r["is_downward"],  # Booleans: False comes before True
                     r["is_both"],  # Booleans: False comes before True
@@ -1640,10 +1640,30 @@ def _apply_closure_safeguard(
             )
 
             best = all_candidates[0]
+
+            # EVICTION GATE: If the absolute best boundary still introduces NEW
+            # syntax errors compared to the original file, discard the edit entirely.
+            if best["ast_error_count"] > baseline_error_count:
+
+                rejected_ops.append(
+                    {
+                        "index": resolved["index"],
+                        "error": (
+                            f"Edit introduces new syntax error(s) (baseline: {baseline_error_count}, "
+                            f"after edit: {best['ast_error_count']}) and none of the "
+                            f"{len(all_candidates)} candidate boundary adjustments could resolve it"
+                        ),
+                        "operation": op,
+                    }
+                )
+                continue
+
             resolved["start_idx"] = best["start_idx"]
             resolved["end_idx"] = best["end_idx"]
 
-    return resolved_ops
+        safe_resolved_ops.append(resolved)
+
+    return safe_resolved_ops, rejected_ops
 
 
 def apply_hashline_operations(
@@ -1794,7 +1814,16 @@ def apply_hashline_operations(
 
     if file_path:
         # Apply tree-sitter based closure safeguard to snap boundaries to AST nodes
-        resolved_ops = _apply_closure_safeguard(original_content, resolved_ops, file_path)
+        safe_ops, rejected_ops = _apply_closure_safeguard(original_content, resolved_ops, file_path)
+        resolved_ops = safe_ops
+        for rejected in rejected_ops:
+            failed_ops.append(
+                {
+                    "index": rejected["index"],
+                    "error": rejected["error"],
+                    "operation": rejected["operation"],
+                }
+            )
 
         # Fix edit boundaries where replacement content duplicates adjacent lines
         source_lines = original_content.splitlines()

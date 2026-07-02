@@ -156,7 +156,9 @@ class CoderWorker:
             else:
                 new_coder.show_announcements()
 
-            edit_format = getattr(target_coder, "edit_format", "code") or "code"
+            edit_format = kwargs.get(
+                "edit_format", getattr(target_coder, "edit_format", "code") or "code"
+            )
             self.output_queue.put(
                 {
                     "type": "mode_change",

@@ -44,6 +44,26 @@ _MODULE_MAP = {
 }
 
 
+EDIT_FORMAT_MAP = {
+    "help": "HelpCoder",
+    "ask": "AskCoder",
+    "diff": "EditBlockCoder",
+    "diff-fenced": "EditBlockFencedCoder",
+    "whole": "WholeFileCoder",
+    "patch": "PatchCoder",
+    "udiff": "UnifiedDiffCoder",
+    "udiff-simple": "UnifiedDiffSimpleCoder",
+    "architect": "ArchitectCoder",
+    "editor-diff": "EditorEditBlockCoder",
+    "editor-whole": "EditorWholeFileCoder",
+    "editor-diff-fenced": "EditorDiffFencedCoder",
+    "context": "ContextCoder",
+    "agent": "AgentCoder",
+    "hashline": "HashLineCoder",
+    "subagent": "SubAgentCoder",
+}
+
+
 def __getattr__(name):
     if name in _MODULE_MAP:
         import importlib

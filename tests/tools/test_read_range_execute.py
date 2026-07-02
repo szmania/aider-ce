@@ -125,7 +125,7 @@ class TestReadRangeExecute:
         # Patch hashline_formatted to return (text, json)
         hl_patch = patch(
             "cecli.tools.read_range.hashline_formatted",
-            side_effect=lambda text, file_name, partial, start_line=1: (text, "{}"),
+            side_effect=lambda text, file_name, partial, expanded, start_line=1: (text, "{}"),
         )
         hl_patch.start()
         self.patches.append(hl_patch)
@@ -451,7 +451,7 @@ class TestReadRangeExecute:
 
         hl_patch = patch(
             "cecli.tools.read_range.hashline_formatted",
-            side_effect=lambda text, file_name, partial, start_line=1: (text, "{}"),
+            side_effect=lambda text, file_name, partial, expanded, start_line=1: (text, "{}"),
         )
         hl_patch.start()
 

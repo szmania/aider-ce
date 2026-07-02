@@ -117,7 +117,7 @@ class ConversationFiles:
                     content = coder.io.read_text(abs_fname, silent=True)
                     if coder.hashlines:
                         content, json_str = hashline_formatted(
-                            content, file_name=abs_fname, partial=False
+                            content, file_name=abs_fname, partial=False, expanded=False
                         )
                         self._file_json_contents[abs_fname] = json_str
                 except Exception:
@@ -237,7 +237,7 @@ class ConversationFiles:
             current_content = coder.io.read_text(abs_fname, silent=True)
             if coder.hashlines:
                 current_content, _ = hashline_formatted(
-                    current_content, file_name=abs_fname, partial=False
+                    current_content, file_name=abs_fname, partial=False, expanded=False
                 )
         except Exception:
             return None
@@ -260,6 +260,7 @@ class ConversationFiles:
             new_content=current_content,
             fromfile=f"{rel_fname} (snapshot)",
             tofile=f"{rel_fname} (current)",
+            context_lines=3,
         )
 
         # If there's a diff, update the last snapshot with current content
@@ -606,7 +607,11 @@ class ConversationFiles:
                 continue
 
             _, json_str = hashline_formatted(
-                range_content, file_name=abs_fname, partial=True, start_line=start_line_adj
+                range_content,
+                file_name=abs_fname,
+                partial=True,
+                expanded=False,
+                start_line=start_line_adj,
             )
             results.append(json.loads(json_str))
 

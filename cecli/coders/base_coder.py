@@ -105,28 +105,6 @@ all_fences = [
     wrap_fence("sourcecode"),
 ]
 
-# Map of edit_format values to coder class names.
-# Used by Coder.create() to find the right coder class by edit_format
-# without importing all coder modules.
-EDIT_FORMAT_MAP = {
-    "help": "HelpCoder",
-    "ask": "AskCoder",
-    "diff": "EditBlockCoder",
-    "diff-fenced": "EditBlockFencedCoder",
-    "whole": "WholeFileCoder",
-    "patch": "PatchCoder",
-    "udiff": "UnifiedDiffCoder",
-    "udiff-simple": "UnifiedDiffSimpleCoder",
-    "architect": "ArchitectCoder",
-    "editor-diff": "EditorEditBlockCoder",
-    "editor-whole": "EditorWholeFileCoder",
-    "editor-diff-fenced": "EditorDiffFencedCoder",
-    "context": "ContextCoder",
-    "agent": "AgentCoder",
-    "hashline": "HashLineCoder",
-    "subagent": "SubAgentCoder",
-}
-
 
 class UsageMeta(type):
     """Metaclass that provides shared accumulator properties across all Coder subclasses.
@@ -336,6 +314,7 @@ class Coder(metaclass=UsageMeta):
                 uuid=from_coder.uuid,
                 parent_uuid=from_coder.parent_uuid,
                 repo=from_coder.repo,
+                summarizer=from_coder.summarizer,
             )
             use_kwargs.update(update)  # override to complete the switch
             use_kwargs.update(kwargs)  # override passed kwargs
@@ -351,7 +330,7 @@ class Coder(metaclass=UsageMeta):
             res = coders.CopyPasteCoder(main_model, io, args=args, **kwargs)
 
         if not res:
-            coder_name = EDIT_FORMAT_MAP.get(edit_format)
+            coder_name = coders.EDIT_FORMAT_MAP.get(edit_format)
             if coder_name:
                 coder_cls = getattr(coders, coder_name)
                 res = coder_cls(main_model, io, args=args, **kwargs)
@@ -373,10 +352,14 @@ class Coder(metaclass=UsageMeta):
 
             await res.initialize_mcp_tools()
 
-            res.original_kwargs = dict(kwargs)
+            # Store only small/primitive kwargs to avoid retaining large object references.
+            # Large objects (repo, mcp_manager, commands, summarizer, file_watcher, etc.)
+            # are either overridden during clone() or accessible from instance attributes.
+            _LARGE_KWARGS = {"repo", "mcp_manager", "commands", "summarizer", "file_watcher"}
+            res.original_kwargs = {k: v for k, v in kwargs.items() if k not in _LARGE_KWARGS}
             return res
 
-        valid_formats = list(EDIT_FORMAT_MAP.keys())
+        valid_formats = list(coders.EDIT_FORMAT_MAP.keys())
         raise UnknownEditFormat(edit_format, valid_formats)
 
     async def clone(self, **kwargs):

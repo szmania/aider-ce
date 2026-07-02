@@ -1,6 +1,7 @@
 import json
 import re
 import sys
+import weakref
 from pathlib import Path
 
 from cecli.commands.utils.registry import CommandRegistry
@@ -55,6 +56,18 @@ class ReloadProgramSignal(BaseException):
 class Commands:
     scraper = None
 
+    def _get_coder(self):
+        """Return coder via weak reference, or None if collected."""
+        if self._coder_ref is not None:
+            return self._coder_ref()
+        return None
+
+    def _set_coder(self, value):
+        """Store coder as weakref to break circular reference chains."""
+        self._coder_ref = weakref.ref(value) if value is not None else None
+
+    coder = property(_get_coder, _set_coder)
+
     def clone(self):
         cloned = Commands(
             self.io,
@@ -87,7 +100,8 @@ class Commands:
         original_read_only_fnames=None,
     ):
         self.io = io
-        self.coder = coder
+        # Use weak ref to avoid circular reference chains
+        self._coder_ref = weakref.ref(coder) if coder else None
         self.parser = parser
         self.args = args
         self.verbose = verbose

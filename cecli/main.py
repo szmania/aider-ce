@@ -273,10 +273,10 @@ def parse_lint_cmds(lint_cmds, io):
 
 def register_models(git_root, model_settings_fname, io, verbose=False):
     from cecli import models
-    from cecli.helpers.file_searcher import generate_search_path_list
+    from cecli.helpers.file_searcher import generate_search_path_list, handle_core_files
 
     model_settings_files = generate_search_path_list(
-        ".cecli.model.settings.yml", git_root, model_settings_fname
+        handle_core_files(".cecli.model.settings.yml"), git_root, model_settings_fname
     )
     try:
         files_loaded = models.register_models(model_settings_files)
@@ -326,13 +326,13 @@ def load_dotenv_files(git_root, dotenv_fname, encoding="utf-8"):
 
 def register_litellm_models(git_root, model_metadata_fname, io, verbose=False):
     from cecli import models
-    from cecli.helpers.file_searcher import generate_search_path_list
+    from cecli.helpers.file_searcher import generate_search_path_list, handle_core_files
 
     model_metadata_files = []
     resource_metadata = importlib_resources.files("cecli.resources").joinpath("model-metadata.json")
     model_metadata_files.append(str(resource_metadata))
     model_metadata_files += generate_search_path_list(
-        ".cecli.model.metadata.json", git_root, model_metadata_fname
+        handle_core_files(".cecli.model.metadata.json"), git_root, model_metadata_fname
     )
     try:
         model_metadata_files_loaded = models.register_litellm_models(model_metadata_files)
@@ -697,6 +697,7 @@ async def main_async(
             multiline_mode=args.multiline,
             notifications=args.notifications,
             notifications_command=args.notifications_command,
+            notification_bell=args.notification_bell,
             verbose=args.verbose,
         )
 
