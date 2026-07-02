@@ -1,6 +1,7 @@
 import difflib
 import json
 import re
+from collections import Counter
 
 from cecli.helpers.hashpos.hashpos import HashPos
 
@@ -1477,9 +1478,54 @@ def _apply_closure_safeguard(
             errors += count_ast_errors(child)
         return errors
 
+    def _detect_indent_unit(source_lines: list) -> int:
+        """Detect the common indentation unit from non-empty source lines."""
+        indents = []
+        for line in source_lines:
+            if line.strip():  # non-empty
+                indent = len(line) - len(line.lstrip())
+                indents.append(indent)
+
+        if len(indents) < 2:
+            return 0
+
+        # Compute differences between consecutive non-empty lines
+        diffs = []
+        for i in range(1, len(indents)):
+            diff = abs(indents[i] - indents[i - 1])
+            if diff > 0:
+                diffs.append(diff)
+
+        if not diffs:
+            return 0
+
+        # Most common non-zero difference is the indentation unit
+        return Counter(diffs).most_common(1)[0][0]
+
+    def _has_indent_jump(test_lines: list, unit: int) -> bool:
+        """Check if the edit result creates an indentation jump of 2+ units."""
+        if unit == 0:
+            return False
+
+        prev_indent = None
+        for line in test_lines:
+            if line.strip():  # non-empty
+                indent = len(line) - len(line.lstrip())
+                if prev_indent is not None:
+                    diff = abs(indent - prev_indent)
+                    if diff > unit:
+                        return True
+                prev_indent = indent
+
+        return False
+
     # Establish the baseline syntax health of the original file
     base_tree = parser.parse(source_bytes)
     baseline_error_count = count_ast_errors(base_tree.root_node)
+
+    # Detect if the original source follows normal indentation (steps of 1 unit)
+    indent_unit = _detect_indent_unit(source_lines)
+    is_normally_indented = indent_unit > 0
 
     safe_resolved_ops = []
     rejected_ops = []
@@ -1554,6 +1600,13 @@ def _apply_closure_safeguard(
                 end_line_match = source_lines[candidate_end] == source_lines[llm_end]
                 cumulative_movement = abs(start_shift) + abs(end_shift)
 
+                # Check for indentation jumps in the resulting edit
+                if is_normally_indented:
+                    test_lines = test_source_bytes.decode("utf-8").splitlines()
+                    has_indent_jump = _has_indent_jump(test_lines, indent_unit)
+                else:
+                    has_indent_jump = False
+
                 all_candidates.append(
                     {
                         "start_idx": candidate_start,
@@ -1562,6 +1615,7 @@ def _apply_closure_safeguard(
                         "start_line_match": start_line_match,
                         "end_line_match": end_line_match,
                         "cumulative_movement": cumulative_movement,
+                        "has_indent_jump": has_indent_jump,
                         "is_partial": is_partial,
                         "is_downward": is_downward,
                         "is_both": is_both,
@@ -1576,6 +1630,7 @@ def _apply_closure_safeguard(
                     r["ast_error_count"],  # Ascending: fewer syntax errors wins
                     not r["start_line_match"],  # Descending: True first
                     not r["end_line_match"],  # Descending: True first
+                    r.get("has_indent_jump", False),  # Ascending: False (no jump) first
                     r["cumulative_movement"],  # Ascending: smaller is better
                     not r["is_partial"],  # Booleans: False comes before True
                     not r["is_downward"],  # Booleans: False comes before True
