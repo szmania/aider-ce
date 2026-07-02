@@ -260,6 +260,7 @@ class ConversationFiles:
             new_content=current_content,
             fromfile=f"{rel_fname} (snapshot)",
             tofile=f"{rel_fname} (current)",
+            context_lines=3,
         )
 
         # If there's a diff, update the last snapshot with current content
