@@ -285,9 +285,7 @@ class Tool(BaseTool):
                         else:
                             # Be specific about why content didn't change
                             if failed_ops:
-                                error_details = "; ".join(
-                                    f"Edit {op['index'] + 1}: {op['error']}" for op in failed_ops
-                                )
+                                error_details = "; ".join(op["error"] for op in failed_ops)
                                 raise ToolError(
                                     f"Invalid Edit - Update content ID bounds: {error_details}"
                                 )
