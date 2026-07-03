@@ -49,7 +49,7 @@ main_system: |
 
 system_reminder: |
   <context name="critical_reminders">
-  - Prefer the `ReadRange` tool to cli commands for file reading
+  - Prefer the `ReadFile` tool to cli commands for file reading
   - Pay close attention to indentation and styling when editing files  
   - Batch tool calls as often as possible
   - Reason out loud through problems but be brief. 

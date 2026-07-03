@@ -65,7 +65,7 @@ class AgentCoder(Coder):
             "commandinteractive",
             "explorecode",
             "ls",
-            "readrange",
+            "readfile",
             "grep",
             "thinking",
             "updatetodolist",
@@ -73,7 +73,7 @@ class AgentCoder(Coder):
         self.write_tools = {
             "command",
             "commandinteractive",
-            "edittext",
+            "editfile",
             "undochange",
         }
         self.edit_allowed = True
@@ -1138,7 +1138,7 @@ class AgentCoder(Coder):
             context_parts.append("\n\n")
             context_parts.append("## File Editing Tools Disabled")
             context_parts.append(
-                "File editing tools are currently disabled. Use `ReadRange` to determine the"
+                "File editing tools are currently disabled. Use `ReadFile` to determine the"
                 " current content ID prefixes needed to perform an edit and activate them when"
                 " you are ready to edit a file."
             )

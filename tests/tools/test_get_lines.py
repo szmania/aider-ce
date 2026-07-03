@@ -4,7 +4,7 @@ from unittest.mock import Mock
 
 import pytest
 
-from cecli.tools import read_range
+from cecli.tools import read_file
 
 
 class DummyIO:
@@ -62,7 +62,7 @@ def coder_with_file(tmp_path):
 def test_pattern_with_zero_line_number_is_allowed(coder_with_file):
     coder, file_path = coder_with_file
 
-    result = read_range.Tool.execute(
+    result = read_file.Tool.execute(
         coder,
         read=[
             {
@@ -74,7 +74,7 @@ def test_pattern_with_zero_line_number_is_allowed(coder_with_file):
         ],
     )
 
-    # read_range now returns a new formatted context message
+    # read_file now returns a new formatted context message
     assert "Retrieved context for 1 operation(s)" in result
     coder.io.tool_error.assert_not_called()
 
@@ -82,7 +82,7 @@ def test_pattern_with_zero_line_number_is_allowed(coder_with_file):
 def test_empty_pattern_uses_line_number(coder_with_file):
     coder, file_path = coder_with_file
 
-    result = read_range.Tool.execute(
+    result = read_file.Tool.execute(
         coder,
         read=[
             {
@@ -94,7 +94,7 @@ def test_empty_pattern_uses_line_number(coder_with_file):
         ],
     )
 
-    # read_range now returns a static success message
+    # read_file now returns a static success message
     assert "Retrieved context for 1 operation(s)" in result
     coder.io.tool_error.assert_not_called()
 
@@ -104,7 +104,7 @@ def test_conflicting_pattern_and_line_number_raise(coder_with_file):
 
     # Test that missing start_text raises an error
     # Test that missing range_start raises an error
-    result = read_range.Tool.execute(
+    result = read_file.Tool.execute(
         coder,
         read=[
             {
@@ -139,7 +139,7 @@ def test_multiline_pattern_search(coder_with_file):
     coder, file_path = coder_with_file
     # file_path contains "alpha\nbeta\ngamma\n"
 
-    result = read_range.Tool.execute(
+    result = read_file.Tool.execute(
         coder,
         read=[
             {
@@ -166,7 +166,7 @@ def test_empty_file_includes_edit_hint(tmp_path):
         conv.get_files.return_value.clear_ranges = Mock()
         conv.get_files.return_value.push_range = Mock()
         conv.get_chunks.return_value.add_file_context_messages = Mock()
-        result = read_range.Tool.execute(
+        result = read_file.Tool.execute(
             coder,
             read=[
                 {
@@ -178,6 +178,6 @@ def test_empty_file_includes_edit_hint(tmp_path):
         )
 
     assert "pubspec.yaml is empty" in result
-    assert "EditText" in result
-    assert "readrange again" in result.lower()
+    assert "EditFile" in result
+    assert "readfile again" in result.lower()
     coder.io.tool_error.assert_not_called()

@@ -1092,21 +1092,21 @@ class ConversationChunks:
             "   <parameter=param_name>param_value_json</parameter>\n"
             "   </function>\n\n"
             "   Example:\n"
-            "   <function=Local--ReadRange>\n"
+            "   <function=Local--ReadFile>\n"
             '   <parameter=read>[{"file_path": "example.py", "range_start": "def hello",'
             ' "range_end": "def goodbye"}]</parameter>\n'
             "   </function>\n\n"
             "2. JSON Tool-Call Format:\n"
             '   Embed a JSON object with "name" and "arguments" keys.\n\n'
             "   Example:\n"
-            '   {"name": "Local--ReadRange", "arguments": {"read": [{"file_path": "example.py",'
+            '   {"name": "Local--ReadFile", "arguments": {"read": [{"file_path": "example.py",'
             ' "range_start": "class A", "range_end": "class Z"}]}}\n\n'
             "3. Bracket Format:\n"
             "   [ToolName(key1=value1, key2=value2)]\n\n"
             "   Example:\n"
-            '   [Local--ReadRange(read=[{"file_path": "example.py", "range_start": "class A"}])]\n\n'
+            '   [Local--ReadFile(read=[{"file_path": "example.py", "range_start": "class A"}])]\n\n'
             "IMPORTANT: Use the FULL prefixed tool name "
-            '(e.g., "Local--ReadRange" not just "ReadRange").\n'
+            '(e.g., "Local--ReadFile" not just "ReadFile").\n'
             "</context>"
         )
 

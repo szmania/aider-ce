@@ -31,7 +31,7 @@ USER_EDIT_CATEGORIES = {
 
 
 class Tool(BaseTool):
-    NORM_NAME = "edittext"
+    NORM_NAME = "editfile"
     TRACK_INVOCATIONS = False
     VALIDATIONS = {
         "edits": ["coerce_list"],
@@ -40,7 +40,7 @@ class Tool(BaseTool):
     SCHEMA = {
         "type": "function",
         "function": {
-            "name": "EditText",
+            "name": "EditFile",
             "description": (
                 "Edit text in one or more files using content ID markers. "
                 "You can perform multiple 'replace' or 'delete' operations in a single call. "
@@ -138,19 +138,19 @@ class Tool(BaseTool):
                 message_dict=dict(
                     role="user",
                     content=(
-                        "Please call `ReadRange` on files you intend to edit to"
+                        "Please call `ReadFile` on files you intend to edit to"
                         " make sure edits are appropriately targeted."
                     ),
                 ),
                 tag=MessageTag.CUR,
-                hash_key=("edit_text", "reminder"),
+                hash_key=("edit_file", "reminder"),
                 promotion=ConversationService.get_manager(coder).DEFAULT_TAG_PROMOTION_VALUE,
                 mark_for_delete=0,
                 mark_for_demotion=1,
                 force=True,
             )
 
-        tool_name = "EditText"
+        tool_name = "EditFile"
         try:
             # 1. Validate edits parameter
             if not isinstance(edits, list):
@@ -198,18 +198,18 @@ class Tool(BaseTool):
                                     "Must be 'replace' or 'delete'"
                                 )
 
-                            edit_text_raw = edit.get("text")
-                            edit_text = edit.get("text")
+                            edit_file_raw = edit.get("text")
+                            edit_file = edit.get("text")
                             edit_start_line = edit.get("start_line")
                             edit_end_line = edit.get("end_line")
 
-                            if edit_text_raw is not None:
-                                edit_text_raw = strip_hashline(edit_text_raw)
-                                while edit_text_raw != edit_text:
-                                    edit_text_raw = strip_hashline(edit_text_raw)
-                                    edit_text = strip_hashline(edit_text)
+                            if edit_file_raw is not None:
+                                edit_file_raw = strip_hashline(edit_file_raw)
+                                while edit_file_raw != edit_file:
+                                    edit_file_raw = strip_hashline(edit_file_raw)
+                                    edit_file = strip_hashline(edit_file)
 
-                                edit_text = edit_text_raw
+                                edit_file = edit_file_raw
 
                             # Try to resolve line content values to content IDs
                             # This handles cases where LLMs pass actual line content
@@ -220,7 +220,7 @@ class Tool(BaseTool):
 
                             # Validate required fields based on operation type
                             if operation in ("replace", "insert"):
-                                if edit_text is None:
+                                if edit_file is None:
                                     raise ToolError(
                                         f"Edit {edit_index + 1}: 'text' parameter is required for "
                                         f"'{operation}' operation"
@@ -251,8 +251,8 @@ class Tool(BaseTool):
                                 "end_line_hash": edit_end_line,
                                 "operation": operation,
                             }
-                            if edit_text is not None:
-                                op_dict["text"] = edit_text
+                            if edit_file is not None:
+                                op_dict["text"] = edit_file
 
                             operations.append(op_dict)
 
@@ -261,7 +261,7 @@ class Tool(BaseTool):
                                 "operation": operation,
                                 "start_line": edit_start_line,
                                 "end_line": edit_end_line,
-                                "text": edit_text,
+                                "text": edit_file,
                             }
                             file_metadata.append(metadata)
 
@@ -345,7 +345,7 @@ class Tool(BaseTool):
                         rel_path,
                         original_content,
                         new_content,
-                        "edittext",
+                        "editfile",
                         metadata,
                         change_id,
                     )

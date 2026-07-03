@@ -95,14 +95,14 @@ def test_json_with_string_arguments():
 def test_json_tool_with_nested_arguments():
     """Tool call with deeply nested arguments should work."""
     content = (
-        '{"name": "ReadRange", "arguments": {'
+        '{"name": "ReadFile", "arguments": {'
         '"show": [{"file_path": "test.py", "start_text": "hello"}]'
         "}}"
     )
     result = extract_tools_from_content_json(content)
     assert result is not None
     assert len(result) == 1
-    assert result[0].function.name == "ReadRange"
+    assert result[0].function.name == "ReadFile"
     args = json.loads(result[0].function.arguments)
     assert args["show"][0]["file_path"] == "test.py"
 
@@ -151,7 +151,7 @@ def test_xml_single_tool_call():
 def test_xml_multiple_parameters():
     """Tool call with multiple parameters should work."""
     content = (
-        "<function=ReadRange>"
+        "<function=ReadFile>"
         "<parameter=file_path>"
         '"test.py"'
         "</parameter>"
@@ -163,7 +163,7 @@ def test_xml_multiple_parameters():
     result = extract_tools_from_content_xml(content)
     assert result is not None
     assert len(result) == 1
-    assert result[0].function.name == "ReadRange"
+    assert result[0].function.name == "ReadFile"
     args = json.loads(result[0].function.arguments)
     assert args["file_path"] == "test.py"
     assert args["start_text"] == "hello"
@@ -252,11 +252,11 @@ def test_xml_nested_in_text():
 
 def test_pseudo_single_tool_with_array_arg():
     """Bracket format with a JSON array argument should be extracted."""
-    content = '[Local--ReadRange(show=[{"file_path": "test.py", ' '"start_text": "def foo"}])]'
+    content = '[Local--ReadFile(show=[{"file_path": "test.py", ' '"start_text": "def foo"}])]'
     result = extract_tools_from_pseudo_json(content)
     assert result is not None
     assert len(result) == 1
-    assert result[0].function.name == "Local--ReadRange"
+    assert result[0].function.name == "Local--ReadFile"
     args = json.loads(result[0].function.arguments)
     assert args["show"][0]["file_path"] == "test.py"
 
@@ -264,13 +264,13 @@ def test_pseudo_single_tool_with_array_arg():
 def test_pseudo_multiple_args_with_different_types():
     """Multiple args with boolean, string, and array values."""
     content = (
-        '[Local--ReadRange(show=[{"file_path": "test.py", '
+        '[Local--ReadFile(show=[{"file_path": "test.py", '
         '"start_text": "class A"}], verbose=true, mode="strict")]'
     )
     result = extract_tools_from_pseudo_json(content)
     assert result is not None
     assert len(result) == 1
-    assert result[0].function.name == "Local--ReadRange"
+    assert result[0].function.name == "Local--ReadFile"
     args = json.loads(result[0].function.arguments)
     assert args["verbose"] is True
     assert args["mode"] == "strict"
@@ -327,14 +327,14 @@ def test_pseudo_missing_closing_paren():
 def test_pseudo_tool_in_surrounding_text():
     """Bracket tool call embedded in text should be extracted."""
     content = (
-        "I will use the Local--ReadRange tool:\n"
-        '[Local--ReadRange(show=[{"file_path": "test.py"}])]'
+        "I will use the Local--ReadFile tool:\n"
+        '[Local--ReadFile(show=[{"file_path": "test.py"}])]'
         "\nThat should read the file."
     )
     result = extract_tools_from_pseudo_json(content)
     assert result is not None
     assert len(result) == 1
-    assert result[0].function.name == "Local--ReadRange"
+    assert result[0].function.name == "Local--ReadFile"
 
 
 def test_pseudo_numeric_and_null_values():
