@@ -317,7 +317,7 @@ def resolve_content_to_hashline_ids(
 
     def _find_substring_matches(lines, value):
         """Find all line indices where the value appears as a substring."""
-        value_stripped = value.rstrip("\r\n")
+        value_stripped = value.strip()
         return [i for i, line in enumerate(lines) if value_stripped in line]
 
     def _resolve_to_hash_id(lines, idx, hp):
