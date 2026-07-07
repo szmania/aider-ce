@@ -66,6 +66,11 @@ class SkillsManager:
             git_root: Optional git root directory for relative path resolution
             coder: Optional reference to the coder instance (weak reference)
         """
+        # Always include the default skills directory in the user's home
+        default_skill_dir = str(Path.home() / ".cecli" / "skills")
+        if default_skill_dir not in directory_paths:
+            directory_paths = list(directory_paths) + [default_skill_dir]
+
         self.directory_paths = [Path(p).expanduser().resolve() for p in directory_paths]
         self.include_list = set(include_list) if include_list else None
         self.exclude_list = set(exclude_list) if exclude_list else set()
