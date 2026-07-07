@@ -13,8 +13,8 @@ from cecli.tui.worker import CoderWorker
 async def test_sub_agent_interrupt_scenario():
     """Test sub-agent interrupt scenario (TC-INTERRUPT-004)."""
     # Setup
-    coder = BaseCoder(MagicMock())
-    worker = CoderWorker()
+    coder = Coder(MagicMock())
+    worker = CoderWorker(coder, MagicMock(), MagicMock())
 
     # Mock the io object and its tasks
     coder.io = MagicMock()
@@ -29,9 +29,10 @@ async def test_sub_agent_interrupt_scenario():
     # Mock the generate method to simulate processing
     async def mock_generate():
         await asyncio.sleep(0.1)  # Simulate processing time
-        return "response"
 
-    coder.generate = mock_generate
+    coder = Coder(MagicMock())
+
+    worker = CoderWorker(coder, MagicMock(), MagicMock())
 
     # Mock _run_parallel to return normally
     with patch.object(coder, "_run_parallel", return_value="response") as mock_run:
@@ -56,7 +57,7 @@ async def test_sub_agent_interrupt_scenario():
 async def test_sub_agent_interrupt_with_layers_2_and_3():
     """Test sub-agent interrupt with Layers 2 and 3 applied."""
     # Setup
-    coder = BaseCoder(MagicMock())
+    coder = Coder(MagicMock())
     worker = CoderWorker()
 
     # Mock the io object and its tasks

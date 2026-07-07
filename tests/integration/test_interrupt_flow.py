@@ -13,8 +13,8 @@ from cecli.tui.worker import CoderWorker
 async def test_single_interrupt_scenario():
     """Test single interrupt scenario (TC-INTERRUPT-001)."""
     # Setup
-    coder = BaseCoder(MagicMock())
-    worker = CoderWorker()
+    coder = Coder(MagicMock())
+    worker = CoderWorker(coder, MagicMock(), MagicMock())
 
     # Mock the io object and its tasks
     coder.io = MagicMock()
@@ -53,8 +53,8 @@ async def test_single_interrupt_scenario():
 async def test_double_interrupt_scenario():
     """Test double interrupt scenario (primary bug) (TC-INTERRUPT-002)."""
     # Setup
-    coder = BaseCoder(MagicMock())
-    worker = CoderWorker()
+    coder = Coder(MagicMock())
+    worker = CoderWorker(coder, MagicMock(), MagicMock())
 
     # Mock the io object and its tasks
     coder.io = MagicMock()
@@ -100,8 +100,8 @@ async def test_double_interrupt_scenario():
 async def test_triple_interrupt_scenario():
     """Test triple+ interrupt scenario (TC-INTERRUPT-003)."""
     # Setup
-    coder = BaseCoder(MagicMock())
-    worker = CoderWorker()
+    coder = Coder(MagicMock())
+    worker = CoderWorker(coder, MagicMock(), MagicMock())
 
     # Mock the io object and its tasks
     coder.io = MagicMock()
@@ -141,7 +141,7 @@ async def test_triple_interrupt_scenario():
 async def test_normal_operation_regression():
     """Test normal (non-interrupt) regression (TC-INTERRUPT-005)."""
     # Setup
-    coder = BaseCoder(MagicMock())
+    coder = Coder(MagicMock())
 
     # Mock the io object and its tasks
     coder.io = MagicMock()
@@ -179,8 +179,8 @@ async def test_normal_operation_regression():
 async def test_rapid_message_interrupt_sequence():
     """Test rapid message + interrupt sequence (TC-INTERRUPT-006)."""
     # Setup
-    coder = BaseCoder(MagicMock())
-    worker = CoderWorker()
+    coder = Coder(MagicMock())
+    worker = CoderWorker(coder, MagicMock(), MagicMock())
 
     # Mock the io object and its tasks
     coder.io = MagicMock()

@@ -11,8 +11,8 @@ from cecli.coders.base_coder import Coder
 @pytest.mark.asyncio
 async def test_interrupt_event_cleared_in_run_parallel():
     """Verify that interrupt_event is cleared in _run_parallel's finally block."""
-    # Create a mock BaseCoder instance
-    coder = BaseCoder(MagicMock())
+    # Create a mock Coder instance
+    coder = Coder(MagicMock(), MagicMock())
     coder.interrupt_event.set()  # Pre-set the event
 
     # Mock the tasks

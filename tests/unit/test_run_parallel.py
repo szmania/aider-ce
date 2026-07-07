@@ -11,8 +11,8 @@ from cecli.coders.base_coder import Coder
 @pytest.mark.asyncio
 async def test_run_parallel_first_completed():
     """Test that _run_parallel returns when first task completes (FIRST_COMPLETED)."""
-    # Create a mock BaseCoder instance
-    coder = MagicMock(spec=BaseCoder)
+    # Create a mock Coder instance
+    coder = MagicMock(spec=Coder)
     coder.input_running = True
     coder.output_running = True
     coder.interrupt_event = MagicMock()
@@ -45,8 +45,8 @@ async def test_run_parallel_first_completed():
 @pytest.mark.asyncio
 async def test_run_parallel_interrupt_event_cleared():
     """Test that interrupt_event is cleared in _run_parallel finally block."""
-    # Create a mock BaseCoder instance
-    coder = MagicMock(spec=BaseCoder)
+    # Create a mock Coder instance
+    coder = MagicMock(spec=Coder)
     coder.input_running = True
     coder.output_running = True
     coder.interrupt_event = MagicMock()
