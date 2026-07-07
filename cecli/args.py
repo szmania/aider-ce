@@ -1113,7 +1113,7 @@ def get_parser(default_config_files, git_root):
     group.add_argument(
         "--notification-bell",
         action=argparse.BooleanOptionalAction,
-        default=True,
+        default=False,
         help=(
             "Allow notification commands to produce an audible bell. When enabled, command"
             " output is not suppressed so terminal bell escape sequences can ring through"
