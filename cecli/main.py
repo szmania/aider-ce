@@ -554,6 +554,7 @@ async def main_async(
         git_root = get_git_root()
     conf_fname = handle_core_files(Path(".cecli.conf.yml"))
     default_config_files = [
+        str(Path.home() / ".cecli" / "conf.yml"),
         str(Path.home() / ".cecli.conf.yml"),
         str(Path(".cecli.conf.yml")),
     ]
