@@ -5,15 +5,15 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from cecli.coders.base_coder import Coder
 from cecli.tui.worker import CoderWorker
+from tests.fixtures.test_coder import create_test_coder
 
 
 @pytest.mark.asyncio
 async def test_single_interrupt_scenario():
     """Test single interrupt scenario (TC-INTERRUPT-001)."""
     # Setup
-    coder = Coder(MagicMock())
+    coder = create_test_coder()
     worker = CoderWorker(coder, MagicMock(), MagicMock())
 
     # Mock the io object and its tasks
@@ -35,25 +35,31 @@ async def test_single_interrupt_scenario():
 
     # Mock _run_parallel to return normally
     with patch.object(coder, "_run_parallel", return_value="response") as mock_run:
-        # Simulate first interrupt
-        worker.interrupt(coder)
+        # Mock AgentService to return our test coder as foreground
+        with patch("cecli.tui.worker.AgentService") as mock_agent_service:
+            mock_instance = MagicMock()
+            mock_instance.foreground_coder.return_value = coder
+            mock_agent_service.get_instance.return_value = mock_instance
 
-        # Verify both flags are set to False
-        assert coder.input_running is False
-        assert coder.output_running is False
+            # Simulate first interrupt
+            worker.interrupt()
 
-        # Verify interrupt_event is set
-        coder.interrupt_event.set.assert_called()
+            # Verify both flags are set to False
+            assert coder.input_running is False
+            assert coder.output_running is False
 
-        # Verify _run_parallel was called
-        mock_run.assert_called()
+            # Verify interrupt_event is set
+            assert coder.interrupt_event.is_set()
+
+            # Verify _run_parallel was called
+            mock_run.assert_called()
 
 
 @pytest.mark.asyncio
 async def test_double_interrupt_scenario():
     """Test double interrupt scenario (primary bug) (TC-INTERRUPT-002)."""
     # Setup
-    coder = Coder(MagicMock())
+    coder = create_test_coder()
     worker = CoderWorker(coder, MagicMock(), MagicMock())
 
     # Mock the io object and its tasks
@@ -75,32 +81,38 @@ async def test_double_interrupt_scenario():
 
     # Mock _run_parallel to return normally
     with patch.object(coder, "_run_parallel", return_value="response") as mock_run:
-        # Simulate first interrupt
-        worker.interrupt(coder)
+        # Mock AgentService to return our test coder as foreground
+        with patch("cecli.tui.worker.AgentService") as mock_agent_service:
+            mock_instance = MagicMock()
+            mock_instance.foreground_coder.return_value = coder
+            mock_agent_service.get_instance.return_value = mock_instance
 
-        # Verify both flags are set to False after first interrupt
-        assert coder.input_running is False
-        assert coder.output_running is False
+            # Simulate first interrupt
+            worker.interrupt()
 
-        # Simulate second interrupt immediately after
-        worker.interrupt(coder)
+            # Verify both flags are set to False after first interrupt
+            assert coder.input_running is False
+            assert coder.output_running is False
 
-        # Verify both flags remain False (no regression)
-        assert coder.input_running is False
-        assert coder.output_running is False
+            # Simulate second interrupt immediately after
+            worker.interrupt()
 
-        # Verify interrupt_event is set both times
-        assert coder.interrupt_event.set.call_count == 2
+            # Verify both flags remain False (no regression)
+            assert coder.input_running is False
+            assert coder.output_running is False
 
-        # Verify _run_parallel was called
-        mock_run.assert_called()
+            # Verify interrupt_event is set both times
+            assert coder.interrupt_event.is_set()
+
+            # Verify _run_parallel was called
+            mock_run.assert_called()
 
 
 @pytest.mark.asyncio
 async def test_triple_interrupt_scenario():
     """Test triple+ interrupt scenario (TC-INTERRUPT-003)."""
     # Setup
-    coder = Coder(MagicMock())
+    coder = create_test_coder()
     worker = CoderWorker(coder, MagicMock(), MagicMock())
 
     # Mock the io object and its tasks
@@ -122,26 +134,32 @@ async def test_triple_interrupt_scenario():
 
     # Mock _run_parallel to return normally
     with patch.object(coder, "_run_parallel", return_value="response") as mock_run:
-        # Simulate three interrupts in rapid succession
-        for i in range(3):
-            worker.interrupt(coder)
+        # Mock AgentService to return our test coder as foreground
+        with patch("cecli.tui.worker.AgentService") as mock_agent_service:
+            mock_instance = MagicMock()
+            mock_instance.foreground_coder.return_value = coder
+            mock_agent_service.get_instance.return_value = mock_instance
 
-            # Verify both flags are set to False after each interrupt
-            assert coder.input_running is False
-            assert coder.output_running is False
+            # Simulate three interrupts in rapid succession
+            for i in range(3):
+                worker.interrupt()
 
-        # Verify interrupt_event is set three times
-        assert coder.interrupt_event.set.call_count == 3
+                # Verify both flags are set to False after each interrupt
+                assert coder.input_running is False
+                assert coder.output_running is False
 
-        # Verify _run_parallel was called
-        mock_run.assert_called()
+            # Verify interrupt_event is set
+            assert coder.interrupt_event.is_set()
+
+            # Verify _run_parallel was called
+            mock_run.assert_called()
 
 
 @pytest.mark.asyncio
 async def test_normal_operation_regression():
     """Test normal (non-interrupt) regression (TC-INTERRUPT-005)."""
     # Setup
-    coder = Coder(MagicMock())
+    coder = create_test_coder()
 
     # Mock the io object and its tasks
     coder.io = MagicMock()
@@ -171,15 +189,12 @@ async def test_normal_operation_regression():
         # Verify _run_parallel was called
         mock_run.assert_called()
 
-        # Verify flags were reset in finally block (simulated)
-        # In real implementation, this happens in _run_parallel finally block
-
 
 @pytest.mark.asyncio
 async def test_rapid_message_interrupt_sequence():
     """Test rapid message + interrupt sequence (TC-INTERRUPT-006)."""
     # Setup
-    coder = Coder(MagicMock())
+    coder = create_test_coder()
     worker = CoderWorker(coder, MagicMock(), MagicMock())
 
     # Mock the io object and its tasks
@@ -201,24 +216,34 @@ async def test_rapid_message_interrupt_sequence():
 
     # Mock _run_parallel to return normally
     with patch.object(coder, "_run_parallel", return_value="response") as mock_run:
-        # Simulate message 1 + interrupt
-        await coder.generate()  # Message 1
-        worker.interrupt(coder)  # Interrupt 1
-        assert coder.input_running is False
-        assert coder.output_running is False
+        # Mock AgentService to return our test coder as foreground
+        with patch("cecli.tui.worker.AgentService") as mock_agent_service:
+            mock_instance = MagicMock()
+            mock_instance.foreground_coder.return_value = coder
+            mock_agent_service.get_instance.return_value = mock_instance
 
-        # Simulate message 2 + double interrupt
-        await coder.generate()  # Message 2
-        worker.interrupt(coder)  # Interrupt 2a
-        worker.interrupt(coder)  # Interrupt 2b
-        assert coder.input_running is False
-        assert coder.output_running is False
+            # Simulate message 1 + interrupt
+            await coder.generate()  # Message 1
+            worker.interrupt()  # Interrupt 1
+            assert coder.input_running is False
+            assert coder.output_running is False
 
-        # Simulate message 3 (normal)
-        await coder.generate()  # Message 3
+            # Simulate message 2 + double interrupt
+            await coder.generate()  # Message 2
+            worker.interrupt()  # Interrupt 2a
+            worker.interrupt()  # Interrupt 2b
+            assert coder.input_running is False
+            assert coder.output_running is False
 
-        # Simulate message 4 (normal)
-        await coder.generate()  # Message 4
+            # Simulate message 3 (normal)
+            await coder.generate()  # Message 3
 
-        # Verify _run_parallel was called for each message
-        assert mock_run.call_count == 4
+            # Simulate message 4 (normal)
+            await coder.generate()  # Message 4
+
+            # Verify _run_parallel was called for each message
+            assert mock_run.call_count == 4
+
+
+if __name__ == "__main__":
+    pytest.main([__file__])

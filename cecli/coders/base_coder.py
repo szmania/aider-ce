@@ -719,7 +719,8 @@ class Coder(metaclass=UsageMeta):
             customizations = dict()
             pass
 
-        self.custom = customizations
+        self.custom = customizations or {}
+        self.prompt_format = nested.getter(self.custom, "prompt_format", "default")
         self.file_diffs = nested.getter(self.args, "file_diffs", True)
 
         if nested.getter(self.custom, "prompt_map.all", None):
@@ -1582,6 +1583,8 @@ class Coder(metaclass=UsageMeta):
                 # Signal tasks to stop
                 self.input_running = False
                 self.output_running = False
+                # Clear interrupt_event to prevent state leakage between interrupt cycles
+                self.interrupt_event.clear()
 
                 # Clear interrupt_event to prevent state leakage between
                 # interrupt cycles. Without this, a stale interrupt_event can
