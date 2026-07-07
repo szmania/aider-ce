@@ -311,6 +311,12 @@ def load_dotenv_files(git_root, dotenv_fname, encoding="utf-8"):
     if oauth_keys_file.exists():
         dotenv_files.insert(0, str(oauth_keys_file.resolve()))
         dotenv_files = list(dict.fromkeys(dotenv_files))
+
+    # Also check ~/.cecli/.env as a default dotenv file (lowest priority)
+    cecli_env_file = Path.home() / ".cecli" / ".env"
+    if cecli_env_file.exists():
+        dotenv_files.insert(0, str(cecli_env_file.resolve()))
+        dotenv_files = list(dict.fromkeys(dotenv_files))
     loaded = []
     for fname in dotenv_files:
         try:
