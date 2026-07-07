@@ -221,6 +221,13 @@ class CoderWorker:
                 if hasattr(target_coder, "output_running"):
                     target_coder.output_running = False
 
+                # Also set input_running to False to prevent input_task deadlock.
+                # Mirrors worker.stop() which sets both flags. Without this,
+                # _run_parallel's asyncio.wait(FIRST_EXCEPTION) hangs because
+                # input_task keeps looping while input_running stays True.
+                if hasattr(target_coder, "input_running"):
+                    target_coder.input_running = False
+
             # Cancel any tracked generate task on the coder directly
             if hasattr(target_coder, "interrupt_event") and target_coder.interrupt_event:
                 target_coder.interrupt_event.set()

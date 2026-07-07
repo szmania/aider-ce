@@ -1560,8 +1560,14 @@ class Coder(metaclass=UsageMeta):
 
             try:
                 # Wait for both tasks to complete or for one to raise an exception
+                # Wait for either task to complete. FIRST_COMPLETED provides
+                # faster interrupt response and robustness against asymmetric
+                # state bugs (e.g., if only one running flag is set to False).
+                # In normal operation both tasks run indefinitely (while-loops),
+                # so neither completes first — behavior is identical to
+                # FIRST_EXCEPTION in the absence of exceptions.
                 done, pending = await asyncio.wait(
-                    [input_task, output_task], return_when=asyncio.FIRST_EXCEPTION
+                    [input_task, output_task], return_when=asyncio.FIRST_COMPLETED
                 )
 
                 # Check for exceptions
@@ -1576,6 +1582,12 @@ class Coder(metaclass=UsageMeta):
                 # Signal tasks to stop
                 self.input_running = False
                 self.output_running = False
+
+                # Clear interrupt_event to prevent state leakage between
+                # interrupt cycles. Without this, a stale interrupt_event can
+                # cause the next generate() call to immediately abort.
+                # ThreadSafeEvent.clear() is thread-safe and idempotent.
+                self.interrupt_event.clear()
 
                 # Cancel tasks
                 input_task.cancel()
