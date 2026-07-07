@@ -41,34 +41,38 @@ CECLI_DARK_MODE=true
 ```
 
 
-## Retries
+## Default `~/.cecli/` Locations
 
-cecli can be configured to retry failed API calls.
-This is useful for handling intermittent network issues or other transient errors.
-The `retries` option is a JSON object that can be configured with the following keys:
+cecli also checks several default locations inside `~/.cecli/` for
+configuration, environment variables, and agent resources.
+These are always included with lower precedence than project-level equivalents,
+so a setting in a project `.cecli.conf.yml` or `.env` file will override the
+`~/.cecli/` default.
 
-- `retry-timeout`: The timeout in seconds for each retry.
-- `retry-backoff-factor`: The backoff factor to use between retries.
-- `retry-on-unavailable`: Whether to retry on 503 Service Unavailable errors.
+### `~/.cecli/conf.yml`
 
-Example usage in `.cecli.conf.yml`:
+A YAML configuration file read after all other config file sources,
+making it the lowest-precedence config option. Useful for setting
+machine-wide defaults that individual projects can override.
+See the [configuration section](/docs/config/conf.html) above for supported options.
 
-```yaml
-retries:
-  retry-timeout: 30
-  retry-backoff-factor: 1.50
-  retry-on-unavailable: true
-```
+### `~/.cecli/.env`
 
-This can also be set with the `--retries` command line switch, passing a JSON string:
+An environment file loaded before any other `.env` file, so project-level
+`.env` files can override its values. A convenient place to store
+API keys or other environment variables used across multiple projects.
 
-```
-$ cecli --retries '{"retry-timeout": 30, "retry-backoff-factor": 1.50, "retry-on-unavailable": true}'
-```
+### `~/.cecli/skills/`
 
-Or by setting the `CECLI_RETRIES` environment variable:
+A directory containing skill packages (each a sub-directory with a
+`SKILL.md` file). Skills here are discoverable alongside those in any
+user-configured skills paths.
 
-```
-export CECLI_RETRIES='{"retry-timeout": 30, "retry-backoff-factor": 1.50, "retry-on-unavailable": true}'
-```
+### `~/.cecli/subagents/`
+
+A directory containing sub-agent definition files (`.md` files with
+YAML front matter). Sub-agents here are registered alongside those in
+any user-configured sub-agent paths.
+
+
 {% include keys.md %}
