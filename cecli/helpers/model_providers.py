@@ -289,6 +289,16 @@ class ModelProviderManager:
     def set_verify_ssl(self, verify_ssl: bool) -> None:
         self.verify_ssl = verify_ssl
 
+    def merge_provider_configs(self, user_configs: Dict[str, Dict]) -> None:
+        """Merge user-defined provider configs into the existing provider configs."""
+        for slug, cfg in user_configs.items():
+            if slug in self.provider_configs:
+                self.provider_configs[slug] = _deep_merge(self.provider_configs[slug], cfg)
+            else:
+                self.provider_configs[slug] = deepcopy(cfg)
+                self._provider_cache[slug] = None
+                self._cache_loaded[slug] = False
+
     def supports_provider(self, provider: Optional[str]) -> bool:
         return bool(provider and provider in self.provider_configs)
 
@@ -569,6 +579,12 @@ class ModelProviderManager:
         if account_id_env:
             return os.environ.get(account_id_env)
         return None
+
+
+def register_user_providers_with_litellm(user_configs: Dict[str, Dict]) -> None:
+    """Register user-defined providers with LiteLLM for custom handler support."""
+    for slug, cfg in user_configs.items():
+        _register_provider_with_litellm(slug, cfg)
 
 
 def ensure_litellm_providers_registered() -> None:

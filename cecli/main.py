@@ -629,6 +629,8 @@ async def main_async(
         args.hooks = convert_yaml_to_json_string(args.hooks)
     if hasattr(args, "workspaces") and args.workspaces is not None:
         args.workspaces = convert_yaml_to_json_string(args.workspaces)
+    if hasattr(args, "model_providers") and args.model_providers is not None:
+        args.model_providers = convert_yaml_to_json_string(args.model_providers)
 
     # Interpolate environment variables in all string arguments
     for key, value in vars(args).items():
@@ -862,6 +864,23 @@ async def main_async(
     await check_and_load_imports(io, is_first_run, verbose=args.verbose)
     register_models(git_root, args.model_settings_file, io, verbose=args.verbose)
     register_litellm_models(git_root, args.model_metadata_file, io, verbose=args.verbose)
+    if args.model_providers:
+        try:
+            user_providers = json.loads(args.model_providers)
+            if isinstance(user_providers, dict):
+                models.model_info_manager.provider_manager.merge_provider_configs(user_providers)
+                from cecli.helpers.model_providers import (
+                    register_user_providers_with_litellm,
+                )
+
+                register_user_providers_with_litellm(user_providers)
+                if args.verbose:
+                    io.tool_output(f"Loaded {len(user_providers)} custom model provider(s):")
+                    for slug in user_providers:
+                        io.tool_output(f"  - {slug}")
+        except json.JSONDecodeError as e:
+            io.tool_error(f"Failed to parse --model-providers JSON: {e}")
+
     if args.list_models:
         models.print_matching_models(io, args.list_models)
         return await graceful_exit(None)

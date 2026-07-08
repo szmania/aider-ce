@@ -133,6 +133,15 @@ def get_parser(default_config_files, git_root):
         ),
     ).complete = shtab.FILE
     group.add_argument(
+        "--model-providers",
+        metavar="MODEL_PROVIDERS_JSON",
+        help=(
+            "Specify custom OpenAI-compatible model providers as a JSON/YAML string (e.g.,"
+            ' \'{"my-provider": {"api_base": "https://...", "api_key_env": ["MY_KEY"]}}\')'
+        ),
+        default=None,
+    )
+    group.add_argument(
         "--reasoning-effort",
         type=str,
         help="Set the reasoning_effort API parameter (default: not set)",
