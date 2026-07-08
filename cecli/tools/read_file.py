@@ -29,7 +29,7 @@ class Tool(BaseTool):
             "name": "ReadFile",
             "description": (
                 "Get content ID prefixed content between start and end markers in files."
-                " This is useful for files you are attempting to edit and for understanding their structure."
+                " This is useful for understanding the structure of files and targeting edits."
                 " Accepts an array of `read` objects, each with file_path, range_start, range_end."
                 " They can contain up to 3 lines of content. Avoid using singular generic keywords and"
                 " symbols. Special markers @000 and 000@ represent the file boundaries and can be"
@@ -37,6 +37,8 @@ class Tool(BaseTool):
                 " respectively. Line numbers may also be used for range lookups."
                 " It is best to use function names, variable declarations, entire line contents"
                 " and other meaningful identifiers as range_start and range_end values."
+                " Results may be modified from the raw search for semantic relevance."
+                " The returned identifiers will not persist after editing the file."
                 " Do not use the same pattern for the range_start and range_end."
                 " Do not use empty strings for the range_start and range_end."
                 " Do not use content IDs for the range_start and range_end values as they change between edits."
