@@ -409,6 +409,7 @@ def get_hashline_diff(
     end_line_hash,
     operation,
     text=None,
+    pretty=False,
 ):
     """
     Generate a diff for a hashline operation in the format used by the original format_output.
@@ -420,6 +421,8 @@ def get_hashline_diff(
         end_line_hash: Hashline format for end line: "{4 char hash}" (without the braces)
         operation: One of "replace", "insert", or "delete"
         text: Text to insert or replace with (required for replace/insert operations)
+        pretty: When True, color removed lines in magenta (\x1b[95m) and added lines
+               in light green (\033[32m). When False, all diff lines use \033[92m.
 
     Returns:
         str: A formatted diff snippet showing changes, or empty string if no changes
@@ -523,7 +526,18 @@ def get_hashline_diff(
     diff_lines = list(diff)[2:]
 
     if diff_lines:
-        return "\n".join([line for line in diff_lines])
+        if pretty:
+            colored_lines = []
+            for line in diff_lines:
+                if line.startswith("-"):
+                    colored_lines.append(f"\033[38;5;96m{line}\x1b[0m")
+                elif line.startswith("+"):
+                    colored_lines.append(f"\033[32m{line}\x1b[0m")
+                else:
+                    colored_lines.append(line)
+            return "\n".join(colored_lines)
+        else:
+            return "\n".join([line for line in diff_lines])
     else:
         return ""
 

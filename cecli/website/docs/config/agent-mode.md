@@ -164,6 +164,7 @@ Agent Mode can also be configured directly in your configuration file. See the [
 - **`exclude_context_blocks`**: Array of context block names to exclude from default set
 - **`hot_reload`**: When enabled, skills configuration is hot-reloaded automatically, reflecting changes to skills without requiring a restart (default: false)
 - **`command_timeout`**: Time in seconds to wait for shell commands to finish before automatic backgrounding occurs (default: None)
+- **`diff_colors`**: When enabled, diff output in edit tool responses uses color-coded lines - removed lines in magenta, added lines in light green, and context lines in plain text (default: true)
 
 #### Essential Tools
 
@@ -287,6 +288,7 @@ agent-config:
   allowed_commands: ["wc -l*"]  # Commands matching these glob patterns will not prompt for confirmation
   show_lint_errors: false  # When enabled, linting errors are shown in tool output (default: false)
   hot_reload: false  # When enabled, skills configuration is hot-reloaded automatically (default: false)
+фвδ::  diff_colors: true  # When enabled, diff output uses color-coded lines (default: true)
   # Skills configuration (see Skills documentation for details)
   skills_paths: ["~/my-skills", "./project-skills"]  # Directories to search for skills
   skills_includelist: ["python-refactoring", "react-components"]  # Optional: Whitelist of skills to include

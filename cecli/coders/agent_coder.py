@@ -165,6 +165,7 @@ class AgentCoder(Coder):
         config["command_timeout"] = nested.getter(config, "command_timeout", 30)
         config["allowed_commands"] = nested.getter(config, "allowed_commands", [])
         config["hot_reload"] = nested.getter(config, "hot_reload", False)
+        config["diff_colors"] = nested.getter(config, "diff_colors", True)
         config["allow_nested_delegation"] = nested.getter(config, "allow_nested_delegation", False)
 
         config["tools_paths"] = nested.getter(config, ["tools_paths", "tool_paths"], [])

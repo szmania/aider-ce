@@ -492,6 +492,7 @@ class Tool(BaseTool):
                                     end_line_hash=end_line,
                                     operation=operation,
                                     text=strip_hashline(text),
+                                    pretty=coder.agent_config.get("diff_colors", True),
                                 )
                         except ContentHashError:
                             # diff_output = f"content ID verification failed: {str(e)}"
