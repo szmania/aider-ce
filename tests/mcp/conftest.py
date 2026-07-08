@@ -3,8 +3,12 @@ from unittest.mock import MagicMock
 
 import pytest
 
+# Allow short keepalive intervals in tests
+import cecli.mcp.server as mcp_server
 from cecli.mcp.server import HttpBasedMcpServer, HttpStreamingServer
 from tests.mcp.mock_server import MockMcpServer
+
+mcp_server.MIN_KEEPALIVE_INTERVAL = 1
 
 
 @pytest.fixture
@@ -27,7 +31,7 @@ def http_server_config(running_mock_server) -> Dict[str, Any]:
     """Fixture providing a basic HTTP server configuration."""
     return {
         "name": "test-server",
-        "url": running_mock_server,
+        "url": f"http://{running_mock_server.host}:{running_mock_server.port}",
         "type": "http",
         "keepalive_interval": 1,  # 1 second for fast tests
         "headers": {},
@@ -40,7 +44,7 @@ def http_streaming_server_config(running_mock_server) -> Dict[str, Any]:
     """Fixture providing an HTTP streaming server configuration."""
     return {
         "name": "test-streaming-server",
-        "url": running_mock_server,
+        "url": f"http://{running_mock_server.host}:{running_mock_server.port}",
         "type": "streamable_http",
         "keepalive_interval": 1,
         "headers": {},
@@ -60,14 +64,46 @@ def mock_io():
 
 @pytest.fixture
 def http_based_server(http_server_config, mock_io) -> HttpBasedMcpServer:
-    """Fixture providing an HttpBasedMcpServer instance."""
-    return HttpBasedMcpServer(http_server_config, io=mock_io)
+    """Fixture providing an HttpBasedMcpServer instance with mocked transport."""
+    server = HttpBasedMcpServer(http_server_config, io=mock_io)
+    # Mock transport layer: _create_transport needs to return an async context manager
+    from unittest.mock import AsyncMock, MagicMock, patch
+
+    mock_transport = AsyncMock()
+    mock_transport.__aenter__ = AsyncMock(return_value=(AsyncMock(), AsyncMock(), None))
+    server._create_transport = MagicMock(return_value=mock_transport)
+    # Mock OAuth provider to avoid creating OAuth callback server
+    server._create_oauth_provider = AsyncMock(return_value=None)
+    # Mock ClientSession to avoid real MCP protocol communication
+    mock_session = AsyncMock()
+    mock_session.initialize = AsyncMock()
+    mock_session_class = MagicMock(return_value=mock_session)
+    server._session_patch = patch("cecli.mcp.server.ClientSession", mock_session_class)
+    server._session_patch.start()
+    return server
 
 
 @pytest.fixture
 def http_streaming_server(http_streaming_server_config, mock_io) -> HttpStreamingServer:
     """Fixture providing an HttpStreamingServer instance."""
-    return HttpStreamingServer(http_streaming_server_config, io=mock_io)
+    server = HttpStreamingServer(http_streaming_server_config, io=mock_io)
+    # Mock transport layer
+    from unittest.mock import AsyncMock
+
+    mock_transport = AsyncMock()
+    mock_transport.__aenter__ = AsyncMock(return_value=(AsyncMock(), AsyncMock(), None))
+    server._create_transport = MagicMock(return_value=mock_transport)
+    # Mock OAuth provider
+    server._create_oauth_provider = AsyncMock(return_value=None)
+    # Mock ClientSession to avoid real MCP protocol communication
+    from unittest.mock import patch
+
+    mock_session = AsyncMock()
+    mock_session.initialize = AsyncMock()
+    mock_session_class = MagicMock(return_value=mock_session)
+    server._session_patch = patch("cecli.mcp.server.ClientSession", mock_session_class)
+    server._session_patch.start()
+    return server
 
 
 # Test utilities for inspecting internal state

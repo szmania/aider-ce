@@ -114,6 +114,17 @@ class TestKeepaliveTaskLifecycle:
 
         inspector = ServerStateInspector()
         server = HttpBasedMcpServer(config, io=mock_io)
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        mock_transport = AsyncMock()
+        mock_transport.__aenter__ = AsyncMock(return_value=(AsyncMock(), AsyncMock(), None))
+        server._create_transport = MagicMock(return_value=mock_transport)
+        server._create_oauth_provider = AsyncMock(return_value=None)
+        mock_session = AsyncMock()
+        mock_session.initialize = AsyncMock()
+        mock_session_class = MagicMock(return_value=mock_session)
+        server._session_patch = patch("cecli.mcp.server.ClientSession", mock_session_class)
+        server._session_patch.start()
 
         # Connect server
         await server.connect()

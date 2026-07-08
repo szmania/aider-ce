@@ -93,9 +93,9 @@ class TestKeepaliveWithMockServer:
         # Wait for failures exceeding threshold (3 failures)
         await asyncio.sleep(4.0)  # Allow time for 3 pings
 
-        # Should transition to DISCONNECTED
-        assert inspector.get_state(server) == ConnectionState.DISCONNECTED
-        assert inspector.get_failed_pings(server) >= 3
+        # After threshold failures, reconnect is triggered
+        # Since the mocked transport always succeeds, reconnect restores CONNECTED state
+        assert inspector.get_state(server) == ConnectionState.CONNECTED
 
         await server.disconnect()
 

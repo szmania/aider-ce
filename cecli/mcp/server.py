@@ -26,6 +26,8 @@ MIN_KEEPALIVE_INTERVAL = 5
 MAX_KEEPALIVE_INTERVAL = 300
 FAILED_PING_THRESHOLD = 3
 
+logger = logging.getLogger(__name__)
+
 
 class ConnectionState(Enum):
     CONNECTED = auto()
@@ -261,7 +263,7 @@ class HttpBasedMcpServer(McpServer):
             await self.start_keepalive()
             self._connection_loop = current_loop
 
-            if oauth_provider.context.oauth_metadata:
+            if oauth_provider is not None and oauth_provider.context.oauth_metadata:
                 token_endpoint = oauth_provider._get_token_endpoint()
                 server_info = get_mcp_oauth_token(self.name)
                 if "client_info" not in server_info:
@@ -270,8 +272,6 @@ class HttpBasedMcpServer(McpServer):
                 server_info["client_info"]["token_endpoint"] = token_endpoint
 
                 save_mcp_oauth_token(self.name, server_info)
-
-            return session
         except Exception as e:
             logging.error(f"Error initializing {self.name}: {e}")
             await self.disconnect()
@@ -279,7 +279,9 @@ class HttpBasedMcpServer(McpServer):
 
     async def start_keepalive(self):
         """Start the background keepalive loop if configured."""
-        interval = self.config.get("keepalive_interval", 300)
+        interval = self.config.get("keepalive_interval")
+        if interval is None:
+            return
 
         try:
             interval = int(interval)
@@ -299,6 +301,7 @@ class HttpBasedMcpServer(McpServer):
             self._keepalive_task.cancel()
 
         self._keepalive_task = asyncio.create_task(self._keepalive_loop(interval))
+        logger.info(f"Keepalive task started for {self.name} (interval: {interval}s)")
         if self.verbose and self.io:
             self.io.tool_output(f"Started keepalive loop for {self.name} (interval: {interval}s)")
 
@@ -390,6 +393,11 @@ class HttpBasedMcpServer(McpServer):
             try:
                 if cancel_keepalive and self._keepalive_task:
                     self._keepalive_task.cancel()
+                    try:
+                        await asyncio.wait_for(self._keepalive_task, timeout=15)
+                    except asyncio.CancelledError:
+                        pass
+                    logger.info(f"Keepalive task stopped for {self.name}")
                 if hasattr(self, "_oauth_shutdown"):
                     self._oauth_shutdown()
                 await self.exit_stack.aclose()

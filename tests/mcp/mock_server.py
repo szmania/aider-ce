@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 class MockMcpServer:
     """Mock MCP server with controllable behavior for testing."""
 
-    def __init__(self, host: str = "127.0.0.1", port: int = 8765):
+    def __init__(self, host: str = "127.0.0.1", port: int = 0):
         self.host = host
         self.port = port
         self.app = web.Application()
@@ -77,7 +77,7 @@ class MockMcpServer:
         # Simulate MCP server behavior - return 200 for OPTIONS
         if request.method == "OPTIONS":
             return web.Response(
-                status=200,
+                status=self.response_status,
                 headers={
                     "Access-Control-Allow-Origin": "*",
                     "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
@@ -92,6 +92,12 @@ class MockMcpServer:
         await self.runner.setup()
         self.site = web.TCPSite(self.runner, self.host, self.port)
         await self.site.start()
+
+        # Capture the actual port when using port 0 (OS-assigned)
+        if self.port == 0:
+            for sock in self.site._server.sockets:
+                self.port = sock.getsockname()[1]
+                break
 
         url = f"http://{self.host}:{self.port}"
         logger.info(f"Mock MCP server started at {url}")

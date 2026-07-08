@@ -115,8 +115,8 @@ class TestReconnectionLogic:
         assert delays[0][1] == 1.2  # 1s + 20%
         assert delays[1][0] == 1.6  # 2s - 20%
         assert delays[1][1] == 2.4  # 2s + 20%
-        assert delays[4][0] == 25.6  # 32s - 20%
-        assert delays[4][1] == 38.4  # 32s + 20%
+        assert delays[4][0] == 12.8  # 16s - 20%
+        assert delays[4][1] == 19.2  # 16s + 20%
 
     @pytest.mark.asyncio
     async def test_max_backoff_cap(self, http_based_server):

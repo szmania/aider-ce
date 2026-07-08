@@ -94,7 +94,7 @@ class TestKeepaliveConfigurationValidation:
             "name": "test-server",
             "url": f"http://{running_mock_server.host}:{running_mock_server.port}",
             "type": "streamable_http",
-            "keepalive_interval": 1,
+            "keepalive_interval": 5,
             "headers": {"Authorization": "Bearer test-token"},
             "enabled": True,
         }
@@ -118,7 +118,10 @@ class TestKeepaliveConfigurationValidation:
             # Setup mock transport
             mock_read = AsyncMock()
             mock_write = AsyncMock()
-            mock_transport.return_value = (mock_read, mock_write, None)
+            mock_transport.return_value = AsyncMock()
+            mock_transport.return_value.__aenter__ = AsyncMock(
+                return_value=(mock_read, mock_write, None)
+            )
 
             await server.connect()
             await asyncio.sleep(0.2)  # Allow keepalive to run
