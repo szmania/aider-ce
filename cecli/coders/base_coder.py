@@ -1686,7 +1686,6 @@ class Coder(metaclass=UsageMeta):
             except Exception as e:
                 if self.verbose or self.args.debug:
                     print(e)
-        print("DEBUG: output_task finished")
         print("DEBUG: input_task finished")
 
     async def output_task(self, preproc):
@@ -1750,6 +1749,7 @@ class Coder(metaclass=UsageMeta):
 
                 if self.verbose or self.args.debug:
                     print(e)
+        print("DEBUG: output_task finished")
 
     async def generate(self, user_message, preproc):
         await asyncio.sleep(0.1)
