@@ -1676,7 +1676,6 @@ class Coder(metaclass=UsageMeta):
             except Exception as e:
                 if self.verbose or self.args.debug:
                     print(e)
-        print(f"DEBUG: input_task exiting, input_running={self.input_running}")
 
     async def output_task(self, preproc):
         """
