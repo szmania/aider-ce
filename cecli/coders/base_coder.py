@@ -1560,6 +1560,10 @@ class Coder(metaclass=UsageMeta):
             output_task = asyncio.create_task(self.output_task(preproc))
 
             try:
+                print(
+                    f"DEBUG _run_parallel before wait: input_running={self.input_running},"
+                    f" output_running={self.output_running}"
+                )
                 # Wait for both tasks to complete or for one to raise an exception
                 # Wait for either task to complete. FIRST_COMPLETED provides
                 # faster interrupt response and robustness against asymmetric
@@ -1570,6 +1574,7 @@ class Coder(metaclass=UsageMeta):
                 done, pending = await asyncio.wait(
                     [input_task, output_task], return_when=asyncio.FIRST_COMPLETED
                 )
+                print("DEBUG _run_parallel after wait")
 
                 # Check for exceptions
                 for task in done:
@@ -1581,6 +1586,10 @@ class Coder(metaclass=UsageMeta):
                 raise
             finally:
                 # Signal tasks to stop
+                print(
+                    f"DEBUG _run_parallel finally: input_running={self.input_running},"
+                    f" output_running={self.output_running}"
+                )
                 self.input_running = False
                 self.output_running = False
                 # Clear interrupt_event to prevent state leakage between interrupt cycles
@@ -1616,6 +1625,7 @@ class Coder(metaclass=UsageMeta):
         Handles input creation/recreation and user message processing.
         This task manages the input loop and coordinates with output_task.
         """
+        print("DEBUG: input_task started")
         while self.input_running:
             try:
                 # Wait for commands to finish
@@ -1676,12 +1686,15 @@ class Coder(metaclass=UsageMeta):
             except Exception as e:
                 if self.verbose or self.args.debug:
                     print(e)
+        print("DEBUG: output_task finished")
+        print("DEBUG: input_task finished")
 
     async def output_task(self, preproc):
         """
         Handles output task generation and monitoring.
         This task manages the output loop and coordinates with input_task.
         """
+        print("DEBUG: output_task started")
         while self.output_running:
             try:
                 # Wait for commands to finish
