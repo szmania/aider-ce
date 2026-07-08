@@ -91,19 +91,22 @@ Python hooks allow for more complex logic. To create a Python hook, create a `.p
 
 **File**: `.cecli/hooks/my_hook.py`
 ```python
-from cecli.hooks import BaseHook
+from cecli.hooks import BaseHook, HookHelpers
 from cecli.hooks.types import HookType
 
 class MyCustomHook(BaseHook):
     type = HookType.PRE_TOOL
-    
+
     async def execute(self, coder, metadata):
         # Access coder instance or metadata
         tool_name = metadata.get("tool_name")
-        
+
         if tool_name == "delete_file":
             print("Warning: Deleting a file!")
-            
+
+            # Fetch recent messages for context
+            recent = HookHelpers.get_messages(coder, last_n=3)
+
         # Return False to abort operation (for pre_tool/post_tool)
         return True
 ```
@@ -115,6 +118,88 @@ hooks:
     - name: my_custom_python_hook
       file: .cecli/hooks/my_hook.py
 ```
+
+## Hook Helpers
+
+The ``HookHelpers`` class provides a higher-level API for writing Python hooks.
+All helpers are accessed through a single import — ``from cecli.hooks import HookHelpers`` —
+giving you convenient access to conversation history, model calls, and sub-agent
+invocation from within any hook's ``execute()`` method.
+
+```python
+from cecli.hooks import BaseHook, HookHelpers
+from cecli.hooks.types import HookType
+
+class MyHook(BaseHook):
+    type = HookType.POST_TOOL
+
+    async def execute(self, coder, metadata):
+        # Fetch recent conversation messages
+        recent = HookHelpers.get_messages(coder, last_n=5)
+
+        # Make an LLM call
+        reply = await HookHelpers.call(coder, prompt="Summarize the last message.")
+
+        # Append a message to the conversation
+        HookHelpers.append_message(coder, {"role": "user", "content": reply})
+
+        # Invoke a sub-agent
+        summary = await HookHelpers.call_subagent(
+            coder, "reviewer", "Review these changes"
+        )
+        return True
+```
+
+### get_messages(coder, last_n=None, tag=None, reload=False)
+
+Retrieve messages from the agent's conversation history as a list of message
+dicts (``{"role": …, "content": …}``).
+
+| Parameter | Description |
+|-----------|-------------|
+| ``coder`` | The coder instance passed to ``execute()``. |
+| ``last_n`` | If set, return only the *last_n* messages (most recent). |
+| ``tag`` | Optional tag to filter by (e.g. ``"cur"``, ``"done"``). |
+| ``reload`` | If ``True``, bypass the internal cache. |
+
+### append_message(coder, message_dict, tag="cur", **kwargs)
+
+Append a message to the agent's conversation history. The message will be
+visible to the LLM on the next turn. Returns the ``BaseMessage`` instance.
+
+| Parameter | Description |
+|-----------|-------------|
+| ``coder`` | The coder instance passed to ``execute()``. |
+| ``message_dict`` | The message content dict, e.g. ``{"role": "user", "content": "..."}``. |
+| ``tag`` | Message tag (default ``"cur"``). |
+| ``**kwargs`` | Extra arguments like ``hash_key``, ``force``, ``priority``. |
+
+### call(coder, messages=None, prompt=None, system=None, model_name=None, max_tokens=None, **kwargs)
+
+Make a language model generation call (async). You can either pass a pre-built
+``messages`` list, or use ``prompt`` with an optional ``system`` preamble.
+
+| Parameter | Description |
+|-----------|-------------|
+| ``coder`` | The coder instance passed to ``execute()``. |
+| ``messages`` | Full message list (overrides ``prompt``/``system``). |
+| ``prompt`` | A simple user-prompt string. |
+| ``system`` | Optional system message prepended to ``prompt``. |
+| ``model_name`` | Override model (e.g. ``"gpt-4o"``). Defaults to ``coder.main_model``. |
+| ``max_tokens`` | Maximum response tokens. |
+| ``**kwargs`` | Extra arguments passed to the underlying ``simple_send_with_retries()``. |
+
+### call_subagent(coder, name, prompt, **kwargs)
+
+Invoke a registered sub-agent by name (async, blocking by default). Returns
+the sub-agent's summary string, or ``None`` on failure.
+
+| Parameter | Description |
+|-----------|-------------|
+| ``coder`` | The coder instance passed to ``execute()``. |
+| ``name`` | The registered sub-agent name (e.g. ``"reviewer"``, ``"tester"``). |
+| ``prompt`` | The user message to send to the sub-agent. |
+| ``**kwargs`` | Extra arguments like ``blocking``, ``parent``, ``auto_reap``. |
 
 ## Managing Hooks
 
