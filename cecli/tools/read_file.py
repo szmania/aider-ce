@@ -29,7 +29,6 @@ class Tool(BaseTool):
             "name": "ReadFile",
             "description": (
                 "Get content ID prefixed content between start and end markers in files."
-                " This is useful for understanding the structure of files and targeting edits."
                 " Accepts an array of `read` objects, each with file_path, range_start, range_end."
                 " They can contain up to 3 lines of content. Avoid using singular generic keywords and"
                 " symbols. Special markers @000 and 000@ represent the file boundaries and can be"

@@ -2,6 +2,7 @@ from cecli.helpers.hashline import (
     ContentHashError,
     apply_hashline_operations,
     get_hashline_diff,
+    normalize_hashline,
     resolve_content_to_hashline_ids,
     strip_hashline,
 )
@@ -27,6 +28,7 @@ OPERATION_NOUNS = {
 USER_EDIT_CATEGORIES = {
     "no_changes": "No Changes",
     "syntax_errors": "Syntax Errors",
+    "boundary_errors": "Boundary Resolution Error",
 }
 
 
@@ -75,6 +77,14 @@ class Tool(BaseTool):
                                         "or 'delete' to remove the ID range entirely."
                                     ),
                                 },
+                                "text": {
+                                    "type": "string",
+                                    "description": (
+                                        "The exact replacement text. If operation is 'delete', "
+                                        'this MUST be an empty string (""). '
+                                        "NEVER include content IDs in this text."
+                                    ),
+                                },
                                 "start_line": {
                                     "type": "string",
                                     "description": (
@@ -89,21 +99,13 @@ class Tool(BaseTool):
                                         "(e.g., 'xyz::'). For empty files, use '@000'."
                                     ),
                                 },
-                                "text": {
-                                    "type": "string",
-                                    "description": (
-                                        "The exact replacement text. If operation is 'delete', "
-                                        'this MUST be an empty string (""). '
-                                        "NEVER include content IDs in this text."
-                                    ),
-                                },
                             },
                             "required": [
                                 "file_path",
                                 "operation",
+                                "text",
                                 "start_line",
                                 "end_line",
-                                "text",
                             ],
                         },
                     },
@@ -199,26 +201,47 @@ class Tool(BaseTool):
                                 )
 
                             edit_file_raw = edit.get("text")
-                            edit_file = edit.get("text")
                             edit_start_line = edit.get("start_line")
                             edit_end_line = edit.get("end_line")
 
-                            if edit_file_raw is not None:
+                            # ---------------------------------------------------------
+                            # DEFENSIVE FALLBACKS
+                            # ---------------------------------------------------------
+
+                            # 1. Handle missing text parameter by defaulting to empty string
+                            if edit_file_raw is None:
+                                edit_file_raw = ""
+
+                            # 2. Programmatically enforce @000 for empty files
+                            if not original_content or not original_content.strip():
+                                edit_start_line = "@000"
+                                edit_end_line = "@000"
+
+                            # 3. Auto-sanitize malformed boundaries (strip accidentally appended code)
+                            if isinstance(edit_start_line, str) and "::" in edit_start_line:
+                                edit_start_line = normalize_hashline(edit_start_line)
+                            if isinstance(edit_end_line, str) and "::" in edit_end_line:
+                                edit_end_line = normalize_hashline(edit_end_line)
+
+                            # ---------------------------------------------------------
+
+                            edit_file = edit_file_raw
+                            if edit_file_raw:
                                 edit_file_raw = strip_hashline(edit_file_raw)
                                 while edit_file_raw != edit_file:
                                     edit_file_raw = strip_hashline(edit_file_raw)
                                     edit_file = strip_hashline(edit_file)
 
-                                edit_file = edit_file_raw
+                            edit_file = edit_file_raw
 
                             # Try to resolve line content values to content IDs
-                            # This handles cases where LLMs pass actual line content
-                            # instead of content ID markers
                             edit_start_line, edit_end_line = resolve_content_to_hashline_ids(
                                 original_content, edit_start_line, edit_end_line
                             )
 
                             # Validate required fields based on operation type
+                            # (Note: The check for 'edit_file is None' will now be safely
+                            # bypassed because we defaulted it to "" above)
                             if operation in ("replace", "insert"):
                                 if edit_file is None:
                                     raise ToolError(
@@ -287,12 +310,12 @@ class Tool(BaseTool):
                             if failed_ops:
                                 error_details = "; ".join(op["error"] for op in failed_ops)
                                 raise ToolError(
-                                    f"Invalid Edit - Update content ID bounds: {error_details}"
+                                    f"Invalid Edit - Review content ID bounds: {error_details}"
                                 )
                             else:
                                 raise ToolError(
-                                    "Invalid Edit - Update content ID bounds - "
-                                    "all edits resulted in unchanged content"
+                                    "Invalid Edit - Review content ID bounds - "
+                                    "All edits resulted in unchanged content"
                                 )
 
                         if len(failed_ops):
@@ -514,18 +537,18 @@ class Tool(BaseTool):
 
     @classmethod
     def _categorize_edit_error(cls, error_msg: str) -> str:
-        """Categorize an edit error message into a user-friendly display category.
-
-        Maps errors from apply_hashline_operations to simplified category names
-        for user-facing output instead of displaying full error details.
-
-        Args:
-            error_msg: The raw error message string.
-
-        Returns:
-            str: The display category name (e.g., "No Changes", "Syntax Errors").
-        """
+        """Categorize an edit error message into a user-friendly display category."""
         error_lower = error_msg.lower()
+
         if "syntax error" in error_lower or "introduces new syntax" in error_lower:
             return USER_EDIT_CATEGORIES["syntax_errors"]
-        return USER_EDIT_CATEGORIES["no_changes"]
+
+        elif "hash" in error_lower or "content id" in error_lower or "not found" in error_lower:
+            # Append the actual error string so the LLM can self-correct its specific mistake
+            return f"{USER_EDIT_CATEGORIES['boundary_errors']}: {error_msg}"
+
+        elif "no changes" in error_lower:
+            return USER_EDIT_CATEGORIES["no_changes"]
+
+        # Stop masking unknown errors; return them directly
+        return f"Edit Failed: {error_msg}"
