@@ -1556,6 +1556,7 @@ class Coder(metaclass=UsageMeta):
             await self.io.stop_task_streams()
 
             # Start the input and output tasks
+            print("DEBUG _run_parallel: Starting input_task and output_task")
             input_task = asyncio.create_task(self.input_task(preproc))
             output_task = asyncio.create_task(self.output_task(preproc))
 
@@ -1567,9 +1568,11 @@ class Coder(metaclass=UsageMeta):
                 # In normal operation both tasks run indefinitely (while-loops),
                 # so neither completes first — behavior is identical to
                 # FIRST_EXCEPTION in the absence of exceptions.
+                print("DEBUG _run_parallel: Before asyncio.wait")
                 done, pending = await asyncio.wait(
                     [input_task, output_task], return_when=asyncio.FIRST_COMPLETED
                 )
+                print("DEBUG _run_parallel: After asyncio.wait")
 
                 # Check for exceptions
                 for task in done:
@@ -1580,9 +1583,17 @@ class Coder(metaclass=UsageMeta):
                 # Re-raise SwitchCoder to be handled by outer try block
                 raise
             finally:
+                print(
+                    "DEBUG _run_parallel finally: "
+                    f"input_running={self.input_running}, output_running={self.output_running}"
+                )
                 # Signal tasks to stop
                 self.input_running = False
                 self.output_running = False
+                print(
+                    "DEBUG _run_parallel finally after set: "
+                    f"input_running={self.input_running}, output_running={self.output_running}"
+                )
                 # Clear interrupt_event to prevent state leakage between interrupt cycles
                 self.interrupt_event.clear()
 
@@ -1616,6 +1627,7 @@ class Coder(metaclass=UsageMeta):
         Handles input creation/recreation and user message processing.
         This task manages the input loop and coordinates with output_task.
         """
+        print("DEBUG: input_task started")
         while self.input_running:
             try:
                 # Wait for commands to finish
@@ -1676,12 +1688,15 @@ class Coder(metaclass=UsageMeta):
             except Exception as e:
                 if self.verbose or self.args.debug:
                     print(e)
+        print(f"DEBUG: output_task exiting, output_running={self.output_running}")
+        print(f"DEBUG: input_task exiting, input_running={self.input_running}")
 
     async def output_task(self, preproc):
         """
         Handles output task generation and monitoring.
         This task manages the output loop and coordinates with input_task.
         """
+        print("DEBUG: output_task started")
         while self.output_running:
             try:
                 # Wait for commands to finish

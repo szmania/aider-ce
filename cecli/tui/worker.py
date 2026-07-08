@@ -224,15 +224,16 @@ class CoderWorker:
                 # Also set input_running to False to prevent input_task deadlock.
                 # _run_parallel's asyncio.wait(FIRST_EXCEPTION) hangs because
                 # input_task keeps looping while input_running stays True.
-                print(f"DEBUG interrupt: target_coder={id(target_coder)}")
-                print(
-                    f"DEBUG interrupt: has_input_running={hasattr(target_coder, 'input_running')}"
-                )
-                print(
-                    f"DEBUG interrupt: input_running_before={getattr(target_coder, 'input_running', 'MISSING')}"
-                )
                 if hasattr(target_coder, "input_running"):
+                    print(
+                        "DEBUG interrupt:"
+                        f" input_running_before={getattr(target_coder, 'input_running', 'MISSING')}"
+                    )
                     target_coder.input_running = False
+                    print(
+                        "DEBUG interrupt:"
+                        f" input_running_after={getattr(target_coder, 'input_running', 'MISSING')}"
+                    )
 
             # Cancel any tracked generate task on the coder directly
             if hasattr(target_coder, "interrupt_event") and target_coder.interrupt_event:
