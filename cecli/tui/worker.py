@@ -227,6 +227,11 @@ class CoderWorker:
                 if hasattr(target_coder, "input_running"):
                     target_coder.input_running = False
 
+            # Also cancel the input task to unblock it from get_input()
+            if self.loop and self.loop.is_running():
+                if hasattr(target_coder.io, "input_task") and target_coder.io.input_task:
+                    self.loop.call_soon_threadsafe(target_coder.io.input_task.cancel)
+
             # Cancel any tracked generate task on the coder directly
             if hasattr(target_coder, "interrupt_event") and target_coder.interrupt_event:
                 target_coder.interrupt_event.set()
