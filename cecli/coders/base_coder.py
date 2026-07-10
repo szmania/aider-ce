@@ -2004,6 +2004,7 @@ class Coder(metaclass=UsageMeta):
             ConversationService.get_files(self).clear_file_cache()
             ConversationService.get_chunks(self).flush_removals()
             ConversationService.get_chunks(self).reset_clear_count()
+            ObservationService.get_instance(self).reset_index()
 
         if not force and combined_tokens < self.context_compaction_max_tokens:
             return
@@ -2110,6 +2111,7 @@ class Coder(metaclass=UsageMeta):
             ConversationService.get_files(self).clear_file_cache()
             ConversationService.get_chunks(self).flush_removals()
             ConversationService.get_chunks(self).reset_clear_count()
+            ObservationService.get_instance(self).reset_index()
             self.format_chat_chunks()
 
         except Exception as e:
