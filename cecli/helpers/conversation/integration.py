@@ -245,62 +245,7 @@ class ConversationChunks:
         if not coder:
             return
 
-        # Check diff message ratio and clear if too many diffs
-        diff_messages = ConversationService.get_manager(coder).get_messages_dict(MessageTag.DIFFS)
-        read_only_messages = ConversationService.get_manager(coder).get_messages_dict(
-            MessageTag.READONLY_FILES
-        )
-        chat_messages = ConversationService.get_manager(coder).get_messages_dict(
-            MessageTag.CHAT_FILES
-        )
-        edit_messages = ConversationService.get_manager(coder).get_messages_dict(
-            MessageTag.EDIT_FILES
-        )
-
-        # Calculate token counts for token-based ratio check
-        diff_tokens = coder.main_model.token_count(diff_messages) if diff_messages else 0
-
-        # Calculate tokens for readonly, chat, and edit tag messages
-        other_tokens = 0
-        if read_only_messages:
-            other_tokens += coder.main_model.token_count(read_only_messages)
-        if chat_messages:
-            other_tokens += coder.main_model.token_count(chat_messages)
-        if edit_messages:
-            other_tokens += coder.main_model.token_count(edit_messages)
-
-        # Calculate message counts for message-based ratio check
-        diff_count = len(diff_messages)
-        other_count = len(read_only_messages) + len(chat_messages) + len(edit_messages)
-
-        # Clear diff messages and file caches if EITHER:
-        # 1. Diff tokens > 33% of other message tokens (token-based check)
-        # 2. Diff message count ratio > 5:1 (message count-based check for periodic refresh)
-        should_clear = False
-
-        # Token-based check
-        if diff_tokens > 0 and other_tokens > 0 and diff_tokens / other_tokens > 0.5:
-            should_clear = True
-
-        # Message count-based check (for periodic refresh)
-        if diff_count > 0 and other_count > 0 and diff_count / other_count > 20:
-            should_clear = True
-
         self.last_clear_count += 1
-
-        if (
-            should_clear
-            and coder.context_compaction_current_ratio > 0.8
-            and self.last_clear_count >= 20
-            and diff_tokens + other_tokens > coder.context_compaction_max_tokens * 0.5
-        ):
-            self.last_clear_count = 0
-
-            # Clear all diff messages
-            ConversationService.get_manager(coder).clear_tag(MessageTag.DIFFS, 0.33)
-            # Clear ConversationFiles caches to force regeneration
-            ConversationService.get_files(coder).clear_file_cache(clear_contexts=False)
-
         # Get all tracked files (both regular and image files)
         tracked_files = ConversationService.get_files(coder).get_all_tracked_files()
 
@@ -483,7 +428,7 @@ class ConversationChunks:
         repo_messages = ConversationService.get_manager(coder).get_messages_dict(MessageTag.REPO)
         if len(repo_messages) >= 20:
             # Clear all REPO tagged messages
-            ConversationService.get_manager(coder).clear_tag(MessageTag.REPO)
+            ConversationService.get_manager(coder).clear_tag(MessageTag.REPO, ratio=0.33)
             # Clear the combined repomap dict to force fresh regeneration
             if (
                 hasattr(coder, "repo_map")
@@ -1016,6 +961,9 @@ class ConversationChunks:
 
     def flush_removals(self):
         self._deferred_removals.clear()
+
+    def reset_clear_count(self):
+        self.last_clear_count = 0
 
     def _cancel_post_message_injections(self, modulus=10):
         coder = self.get_coder()

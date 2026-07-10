@@ -1977,27 +1977,33 @@ class Coder(metaclass=UsageMeta):
         done_messages = manager.get_messages_dict(MessageTag.DONE)
         cur_messages = manager.get_messages_dict(MessageTag.CUR)
         diff_messages = manager.get_messages_dict(MessageTag.DIFFS)
+        file_context_messages = manager.get_messages_dict(MessageTag.FILE_CONTEXTS)
         all_messages = manager.get_messages_dict()
 
         # Exclude first cur_message since that's the user's initial input
         done_tokens = self.summarizer.count_tokens(done_messages)
         cur_tokens = self.summarizer.count_tokens(cur_messages[1:] if len(cur_messages) > 1 else [])
         diff_tokens = self.summarizer.count_tokens(diff_messages)
+        file_context_tokens = self.summarizer.count_tokens(file_context_messages)
         all_tokens = self.summarizer.count_tokens(all_messages)
 
-        combined_tokens = done_tokens + cur_tokens + diff_tokens
+        message_tokens = done_tokens + cur_tokens
+        file_tokens = diff_tokens + file_context_tokens
+        combined_tokens = done_tokens + cur_tokens + diff_tokens + file_context_tokens
 
         self.context_compaction_current_ratio = all_tokens / self.context_compaction_max_tokens
 
         if force or (
             all_tokens >= self.context_compaction_max_tokens * 0.9
             and ConversationService.get_chunks(self).last_clear_count > 20
+            and file_tokens / max(message_tokens, 1) > 2
         ):
             manager.clear_tag(MessageTag.LINT, ratio=0.33)
             manager.clear_tag(MessageTag.DIFFS, ratio=0.33)
             manager.clear_tag(MessageTag.FILE_CONTEXTS, ratio=0.33)
             ConversationService.get_files(self).clear_file_cache()
             ConversationService.get_chunks(self).flush_removals()
+            ConversationService.get_chunks(self).reset_clear_count()
 
         if not force and combined_tokens < self.context_compaction_max_tokens:
             return
@@ -2031,9 +2037,9 @@ class Coder(metaclass=UsageMeta):
                 manager.clear_tag(tag)
 
                 if tag == MessageTag.DONE:
-                    manager.add_message({"role": "user", "content": text}, tag=tag)
-                    manager.add_message(
-                        {
+                    manager.queue_message(message_dict={"role": "user", "content": text}, tag=tag)
+                    manager.queue_message(
+                        message_dict={
                             "role": "assistant",
                             "content": (
                                 "Ok, I will use this summary and the observations as context for"
@@ -2044,12 +2050,13 @@ class Coder(metaclass=UsageMeta):
                     )
                 else:
                     if self.last_user_message:
-                        manager.add_message(
-                            {"role": "user", "content": self.last_user_message}, tag=tag
+                        manager.queue_message(
+                            message_dict={"role": "user", "content": self.last_user_message},
+                            tag=tag,
                         )
 
-                    manager.add_message(
-                        {
+                    manager.queue_message(
+                        message_dict={
                             "role": "assistant",
                             "content": "Ok. I am awaiting your summary of our goals to proceed.",
                         },
@@ -2057,8 +2064,8 @@ class Coder(metaclass=UsageMeta):
                         force=True,
                     )
 
-                    manager.add_message(
-                        {
+                    manager.queue_message(
+                        message_dict={
                             "role": "user",
                             "content": (
                                 "Here is a summary of our current goals and historical"
@@ -2068,8 +2075,8 @@ class Coder(metaclass=UsageMeta):
                         tag=tag,
                     )
 
-                    manager.add_message(
-                        {
+                    manager.queue_message(
+                        message_dict={
                             "role": "assistant",
                             "content": (
                                 "Ok, I will use this summary and proceed with our task. I will"
@@ -2102,6 +2109,8 @@ class Coder(metaclass=UsageMeta):
             manager.clear_tag(MessageTag.FILE_CONTEXTS)
             ConversationService.get_files(self).clear_file_cache()
             ConversationService.get_chunks(self).flush_removals()
+            ConversationService.get_chunks(self).reset_clear_count()
+            self.format_chat_chunks()
 
         except Exception as e:
             self.io.tool_warning(f"Context compaction failed: {e}")
