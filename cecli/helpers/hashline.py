@@ -320,6 +320,16 @@ def resolve_content_to_hashline_ids(
         value_stripped = value.strip()
         return [i for i, line in enumerate(lines) if value_stripped in line]
 
+    def _find_multiline_match(lines, value):
+        """Find the start index where the full multiline value matches consecutive lines."""
+        value_lines = value.strip().splitlines()
+        if len(value_lines) <= 1:
+            return None
+        for i in range(len(lines) - len(value_lines) + 1):
+            if all(value_lines[j].strip() in lines[i + j] for j in range(len(value_lines))):
+                return i
+        return None
+
     def _resolve_to_hash_id(lines, idx, hp):
         """Generate a hash ID for the line at the given index."""
         hash_id = hp.generate_public_id(lines[idx], idx)
@@ -333,10 +343,18 @@ def resolve_content_to_hashline_ids(
     resolved_start_idx = None
 
     if start_value is not None and not _looks_like_content_id(start_value):
-        containing_indices = _find_substring_matches(lines, start_value)
-        if len(containing_indices) == 1:
-            resolved_start_idx = containing_indices[0]
+        # For multiline values, try full multiline match first
+        first_line = start_value.splitlines()[0] if start_value.splitlines() else start_value
+        multiline_start_idx = _find_multiline_match(lines, start_value)
+        if multiline_start_idx is not None:
+            resolved_start_idx = multiline_start_idx
             resolved_start = _resolve_to_hash_id(lines, resolved_start_idx, hp)
+        else:
+            # Fall back to first line substring matching
+            containing_indices = _find_substring_matches(lines, first_line)
+            if len(containing_indices) == 1:
+                resolved_start_idx = containing_indices[0]
+                resolved_start = _resolve_to_hash_id(lines, resolved_start_idx, hp)
     elif start_value is not None and _looks_like_content_id(start_value):
         # Already a content ID - try to resolve it to find the line position
         # for proximity matching with end_value
@@ -352,18 +370,26 @@ def resolve_content_to_hashline_ids(
     resolved_end = end_value
 
     if end_value is not None and not _looks_like_content_id(end_value):
-        containing_indices = _find_substring_matches(lines, end_value)
-        if len(containing_indices) == 1:
-            # Unique match - resolve directly
-            idx = containing_indices[0]
+        # For multiline values, try full multiline match first
+        first_line = end_value.splitlines()[0] if end_value.splitlines() else end_value
+        multiline_end_idx = _find_multiline_match(lines, end_value)
+        if multiline_end_idx is not None:
+            idx = multiline_end_idx
             resolved_end = _resolve_to_hash_id(lines, idx, hp)
-        elif len(containing_indices) > 1 and resolved_start_idx is not None:
-            # Multiple matches - pick closest to start position
-            closest_idx = min(
-                containing_indices,
-                key=lambda idx: abs(idx - resolved_start_idx),
-            )
-            resolved_end = _resolve_to_hash_id(lines, closest_idx, hp)
+        else:
+            # Fall back to first line substring matching
+            containing_indices = _find_substring_matches(lines, first_line)
+            if len(containing_indices) == 1:
+                # Unique match - resolve directly
+                idx = containing_indices[0]
+                resolved_end = _resolve_to_hash_id(lines, idx, hp)
+            elif len(containing_indices) > 1 and resolved_start_idx is not None:
+                # Multiple matches - pick closest to start position
+                closest_idx = min(
+                    containing_indices,
+                    key=lambda idx: abs(idx - resolved_start_idx),
+                )
+                resolved_end = _resolve_to_hash_id(lines, closest_idx, hp)
 
     return resolved_start, resolved_end
 
