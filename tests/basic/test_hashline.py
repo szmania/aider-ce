@@ -171,7 +171,7 @@ def test_parse_hashline():
 
     # Test invalid format (should raise ContentHashError)
     try:
-        parse_hashline("invalid")
+        parse_hashline("xxxxxx")
         assert False, "Expected ContentHashError for invalid input"
     except ContentHashError:
         pass  # Expected behavior

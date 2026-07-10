@@ -48,8 +48,9 @@ class Tool(BaseTool):
                 "You can perform multiple 'replace' or 'delete' operations in a single call. "
                 "CRITICAL RULES: "
                 "1. Start and end content IDs are INCLUSIVE. Both will be modified or deleted. "
-                "2. Edits within the same file MUST NOT be adjacent or overlapping. "
-                "3. For empty files, you MUST use '@000' as the content ID reference."
+                "2. Content IDs MUST include the `::` demarcator. "
+                "3. Edits within the same file MUST NOT be adjacent or overlapping. "
+                "4. For empty files, you MUST use '@000' as the content ID reference."
             ),
             "parameters": {
                 "type": "object",

@@ -44,7 +44,7 @@ class HashPos:
     # Regex for HashPos format: {3 encoded bytes}::
     HASH_PREFIX_RE = re.compile(rf"^({_BYTE_REGEX}{{3}})::")
     # Regex for normalization: 3 encoded bytes optionally followed by '::'
-    NORMALIZE_RE = re.compile(rf"^({_BYTE_REGEX}{{3}})(?:::)?")
+    NORMALIZE_RE = re.compile(rf"^({_BYTE_REGEX}{{3}})(?:::.*| .*)?$")
     # Regex for a raw 3-byte encoded fragment
     FRAGMENT_RE = re.compile(rf"^{_BYTE_REGEX}{{3}}$")
 
