@@ -829,7 +829,7 @@ class AgentCoder(Coder):
             if lint_errors:
                 lint_errors = lint_errors.replace(
                     "# Fix any linting errors below, if possible.",
-                    "# Fix any linting errors below, if possible and then continue with your task.",
+                    "# Fix the linting errors below, and then continue with your task.",
                     1,
                 )
                 ConversationService.get_manager(self).add_message(
