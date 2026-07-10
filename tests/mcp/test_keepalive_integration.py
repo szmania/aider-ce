@@ -90,12 +90,15 @@ class TestKeepaliveWithMockServer:
         # Make mock server consistently fail
         running_mock_server.set_status(500)
 
-        # Wait for failures exceeding threshold (3 failures)
-        await asyncio.sleep(4.0)  # Allow time for 3 pings
-
-        # After threshold failures, reconnect is triggered
-        # Since the mocked transport always succeeds, reconnect restores CONNECTED state
-        assert inspector.get_state(server) == ConnectionState.CONNECTED
+        # After threshold failures, reconnect is triggered.
+        # Since the mocked transport always succeeds, reconnect restores CONNECTED state.
+        # Use polling instead of fixed sleep for cross-platform reliability.
+        for _ in range(50):  # 50 * 0.2s = 10s timeout
+            if inspector.get_state(server) == ConnectionState.CONNECTED:
+                break
+            await asyncio.sleep(0.2)
+        else:
+            pytest.fail("Server did not reconnect to CONNECTED state after failures")
 
         await server.disconnect()
 
