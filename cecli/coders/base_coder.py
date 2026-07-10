@@ -1733,7 +1733,27 @@ class Coder(metaclass=UsageMeta):
                 # Compacting is wasteful since /clear will clear everything
                 # and /exit will exit the application
                 stripped = user_message.strip()
-                if stripped not in ("/clear", "/reset", "/exit", "/quit"):
+                is_command = self.commands.is_command(stripped)
+                is_allowed_command = False
+
+                if is_command:
+                    res = self.commands.matching_commands(user_message)
+                    if res is not None:
+                        matching_commands, first_word, rest_inp = res
+                        if len(matching_commands) == 1:
+                            command = matching_commands[0]
+                            splits = (rest_inp or "").split()
+                            split_map = {
+                                "/agent": 1,
+                                "/architect": 1,
+                                "/ask": 1,
+                                "/code": 1,
+                                "/model": 2,
+                            }
+                            if command in split_map and len(splits) >= split_map.get(command, 0):
+                                is_allowed_command = True
+
+                if not is_command or is_allowed_command:
                     self.compact_context_completed = False
                     await self.compact_context_if_needed()
                     self.compact_context_completed = True
