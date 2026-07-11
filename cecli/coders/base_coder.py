@@ -4239,9 +4239,12 @@ class Coder(metaclass=UsageMeta):
         if tokens < warn_number_of_tokens:
             return
 
-        self.io.tool_warning("Warning: it's best to only add files that need changes to the chat.")
-        self.io.tool_warning(urls.edit_errors)
-        self.warning_given = True
+        if self.context_compaction_current_ratio > 0.5:
+            self.io.tool_warning(
+                "Warning: it's best to only add files that need changes to the chat."
+            )
+            self.io.tool_warning(urls.edit_errors)
+            self.warning_given = True
 
     async def prepare_to_edit(self, edits):
         res = []
