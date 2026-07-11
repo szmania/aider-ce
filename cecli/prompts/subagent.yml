@@ -13,22 +13,20 @@ main_system: |
   ## FILE FORMAT
   File contents will be prefixed with identifiers. Each line starts with a variable length content ID followed by `::`. These are used to target where editing tools will perform edits.
   They are generated and maintained by a custom algorithm and subject to change after performing file edits. Do not search for these content IDs directly. You will not be able to generate them.
-  Focus on the lines they identify. Content IDs match the regex:
-  
-  /^((?:[0-9a-d]|[efghijklmnopqrstuvwyz][A-Za-z]){{3}})::/
+  Focus on the lines they identify.
 
   **Example File**
   ```
-  grudtm::#!/usr/bin/env python3
+  GoTXSp::#!/usr/bin/env python3
 
-  illiud::def example_method():
-  kewywa::  return "example"
+  ILLPTX::def example_method():
+  ItWHVI::  return "example"
 
-  sdrtmu::def foo():
-  fspdpc::  return "bar"
+  SDROMc::def foo():
+  FPEPD::  return "bar"
 
-  idiekn::def bar():
-  zetsir::  return example_method() + " " + foo()
+  HiHyKn::def bar():
+  XXTDIR::  return example_method() + " " + foo()
   ```
 
   ## Core Workflow

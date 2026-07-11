@@ -10,22 +10,22 @@ class HashPos:
     # flake8: noqa
     # fmt: off
     _TOKEN_LIST =   [
-        '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'eb', 'ec', # noqa
-        'ed', 'eg', 'ej', 'ek', 'el', 'em', 'en', 'ep', 'eq', 'er', 'es', 'et', 'eu', 'ev', 'ex', 'ey', # noqa
-        'fa', 'fd', 'fe', 'fi', 'fl', 'fn', 'fo', 'fp', 'fr', 'fs', 'ft', 'ga', 'ge', 'gi', 'gl', 'go', # noqa
-        'gr', 'gu', 'gy', 'ha', 'he', 'hi', 'ho', 'hr', 'hw', 'hy', 'ib', 'ic', 'id', 'ie', 'if', 'ig', # noqa
-        'ih', 'ii', 'ik', 'il', 'im', 'in', 'io', 'ip', 'ir', 'is', 'it', 'iv', 'iz', 'ja', 'je', 'ji', # noqa
-        'jo', 'js', 'ju', 'ka', 'ke', 'kg', 'ki', 'kl', 'km', 'kn', 'ko', 'kw', 'la', 'lb', 'le', 'li', # noqa
-        'll', 'lo', 'lp', 'lu', 'ly', 'ma', 'mb', 'md', 'me', 'mg', 'mi', 'mk', 'ml', 'mm', 'mo', 'mp', # noqa
-        'ms', 'mt', 'mu', 'mx', 'my', 'na', 'nd', 'ne', 'ng', 'ni', 'nl', 'nn', 'no', 'np', 'ns', 'nu', # noqa
-        'nv', 'ny', 'ob', 'oc', 'od', 'of', 'og', 'oh', 'ok', 'ol', 'om', 'on', 'op', 'or', 'os', 'ot', # noqa
-        'ou', 'ov', 'ox', 'oz', 'pa', 'pb', 'pc', 'pd', 'pe', 'pg', 'ph', 'pi', 'pl', 'pm', 'po', 'pp', # noqa
-        'pr', 'ps', 'pt', 'pu', 'px', 'py', 'qu', 'ra', 'rb', 'rc', 're', 'rh', 'ri', 'rm', 'ro', 'rs', # noqa
-        'rt', 'ru', 'rv', 'rx', 'ry', 'sa', 'sb', 'sc', 'sd', 'se', 'sf', 'sh', 'si', 'sk', 'sl', 'sm', # noqa
-        'sn', 'so', 'sp', 'sq', 'ss', 'st', 'su', 'sv', 'sw', 'sy', 'ta', 'tb', 'tc', 'td', 'te', 'tf', # noqa
-        'th', 'ti', 'tm', 'to', 'tp', 'tr', 'ts', 'tt', 'tu', 'tv', 'tw', 'tx', 'ty', 'ub', 'ud', 'ui', # noqa
-        'uk', 'ul', 'um', 'un', 'up', 'ur', 'us', 'ut', 'uz', 'va', 've', 'vi', 'vm', 'vo', 'vr', 'vs', # noqa
-        'vy', 'wa', 'we', 'wh', 'wo', 'wp', 'wr', 'wx', 'wy', 'ya', 'ye', 'yo', 'yy', 'za', 'ze', 'zo' # noqa
+        '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f', #noqa
+        'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', #noqa
+        'w', 'x', 'y', 'z', 'A', 'B', 'C', 'D', 'E', 'F', 'GA', 'GB', 'GC', 'GD', 'Ge', 'Gl', #noqa
+        'Go', 'Gr', 'Gu', 'HA', 'HD', 'HE', 'HO', 'HP', 'HR', 'HT', 'Ha', 'He', 'Hi', 'Hy', 'IC', 'ID', #noqa
+        'IE', 'IF', 'II', 'IL', 'IM', 'IN', 'IO', 'IP', 'IR', 'IS', 'IT', 'IV', 'IX', 'Id', 'If', 'Il', #noqa
+        'Im', 'In', 'Ir', 'Is', 'It', 'JO', 'JS', 'Jo', 'Ke', 'Kn', 'LA', 'LE', 'LI', 'LL', 'LO', 'LP', #noqa
+        'La', 'Le', 'Li', 'Lo', 'MA', 'MB', 'MC', 'MD', 'ME', 'MI', 'ML', 'MO', 'MP', 'MR', 'MS', 'MT', #noqa
+        'MY', 'Ma', 'Mc', 'Me', 'Mi', 'Mo', 'Mr', 'Ms', 'My', 'NA', 'NC', 'NE', 'NL', 'NO', 'NS', 'NT', #noqa
+        'NV', 'NY', 'Na', 'Ne', 'No', 'OB', 'OF', 'OK', 'ON', 'OP', 'OR', 'OS', 'Ob', 'Of', 'Oh', 'Ok', #noqa
+        'On', 'Op', 'Or', 'Os', 'PA', 'PC', 'PD', 'PE', 'PG', 'PH', 'PI', 'PK', 'PL', 'PM', 'PO', 'PP', #noqa
+        'PR', 'PS', 'PT', 'Pa', 'Pe', 'Ph', 'Pi', 'Pl', 'Po', 'Pr', 'Py', 'Qt', 'Qu', 'RC', 'RE', 'RF', #noqa
+        'RO', 'RT', 'Ra', 'Re', 'Ro', 'SA', 'SB', 'SC', 'SD', 'SE', 'SF', 'SH', 'SI', 'SK', 'SL', 'SM', #noqa
+        'SN', 'SO', 'SP', 'SR', 'SS', 'ST', 'SU', 'SW', 'SY', 'Sc', 'Se', 'Sh', 'Si', 'Sk', 'Sl', 'Sm', #noqa
+        'Sn', 'So', 'Sp', 'St', 'Su', 'Sw', 'TD', 'TE', 'TF', 'TH', 'TL', 'TO', 'TR', 'TV', 'TX', 'Te', #noqa
+        'Th', 'To', 'Tr', 'Tw', 'Ty', 'UE', 'UI', 'UK', 'UN', 'UP', 'US', 'UV', 'Un', 'Up', 'Ur', 'Us', #noqa
+        'VA', 'VI', 'VM', 'VT', 'Va', 'Ve', 'WA', 'WE', 'WH', 'WM', 'WR', 'We', 'Wh', 'Wr', 'XX', 'Ye', #noqa
     ]
     # fmt: on
     # flake8: qa
@@ -34,17 +34,17 @@ class HashPos:
     ENCODE_MAP = {i: token for i, token in enumerate(_TOKEN_LIST)}
     DECODE_MAP = {token: i for i, token in enumerate(_TOKEN_LIST)}
 
-    # Because all 2-char tokens start with letters e-z (except x), which are never used as standalone
+    # Because all 2-char tokens start with uppercase G-Y, which are never used as standalone
     # 1-char tokens, we can cleanly split them.
-    _PREFIX_CHARS = set("efghijklmnopqrstuvwyz")
+    _PREFIX_CHARS = set("GHIJKLMNOPQRSTUVWXY")
 
     # Regex building blocks dynamically matching the list logic.
-    # Single chars are 0-9 and a-d. Two-char tokens are e-z (except x) followed by a letter.
-    _BYTE_REGEX = r"(?:[0-9a-d]|[efghijklmnopqrstuvwyz][A-Za-z])"
+    # Single chars are 0-9, A-F, and a-z. Two-char tokens start with G-Y followed by any letter.
+    _BYTE_REGEX = r"(?:[0-9a-zA-F]|[GHIJKLMNOPQRSTUVWXY][A-Za-z])"
     # Regex for HashPos format: {3 encoded bytes}::
     HASH_PREFIX_RE = re.compile(rf"^({_BYTE_REGEX}{{3}})::")
     # Regex for normalization: 3 encoded bytes optionally followed by '::'
-    NORMALIZE_RE = re.compile(rf"^({_BYTE_REGEX}{{3}})(?:::.*| .*)?$")
+    NORMALIZE_RE = re.compile(rf"^({_BYTE_REGEX}{{3}})(?:::)?")
     # Regex for a raw 3-byte encoded fragment
     FRAGMENT_RE = re.compile(rf"^{_BYTE_REGEX}{{3}}$")
 
@@ -116,7 +116,7 @@ class HashPos:
         while i < len(public_id):
             char = public_id[i]
 
-            # The S-Z characters explicitly signal a two-character sequence
+            # The G-Y characters explicitly signal a two-character sequence
             if char in self._PREFIX_CHARS:
                 seq = public_id[i : i + 2]
                 i += 2
@@ -233,5 +233,5 @@ class HashPos:
 
         raise ValueError(
             f"Invalid HashPos format '{hashpos_str}'. "
-            r"Expected a valid content ID containing [a-z0-9] followed by `::`"
+            r"Expected a valid content ID followed by `::`"
         )
