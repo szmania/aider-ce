@@ -1,7 +1,6 @@
 # flake8: noqa: F401
 # Import tool modules into the cecli.tools namespace
 
-# Import all tool modules
 from . import (
     _yield,
     command,
@@ -17,6 +16,7 @@ from . import (
     git_status,
     grep,
     ls,
+    orchestrate,
     read_file,
     resource_manager,
     thinking,
@@ -40,6 +40,7 @@ TOOL_MODULES = [
     git_status,
     grep,
     ls,
+    orchestrate,
     read_file,
     resource_manager,
     thinking,

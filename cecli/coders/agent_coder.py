@@ -184,6 +184,8 @@ class AgentCoder(Coder):
         config["servers_excludelist"] = nested.getter(
             config, ["servers_excludelist", "servers_blacklist"], []
         )
+        config["allow_orchestration"] = nested.getter(config, "allow_orchestration", True)
+
         config["include_context_blocks"] = set(
             nested.getter(
                 config,
@@ -202,6 +204,10 @@ class AgentCoder(Coder):
             )
         )
         config["exclude_context_blocks"] = set(nested.getter(config, "exclude_context_blocks", []))
+
+        if config["allow_orchestration"]:
+            config["include_context_blocks"].add("orchestration")
+            config["exclude_context_blocks"].discard("orchestration")
 
         self.large_file_token_threshold = config["large_file_token_threshold"]
         self.skip_cli_confirmations = config["skip_cli_confirmations"]
@@ -364,6 +370,7 @@ class AgentCoder(Coder):
                 "servers",
                 "sub_agents",
                 "loaded_skills",
+                "orchestration",
             ]
             for block_type in block_types:
                 if block_type in self.allowed_context_blocks:
@@ -400,6 +407,8 @@ class AgentCoder(Coder):
             content = self.get_servers_context()
         elif block_name == "loaded_skills":
             content = self.get_skills_content()
+        elif block_name == "orchestration":
+            content = self.get_orchestration_context()
         elif block_name == "sub_agents" and (
             not self.parent_uuid or self.agent_config.get("allow_nested_delegation", False)
         ):
@@ -1580,6 +1589,23 @@ Todo list does not exist. Please update it with the `UpdateTodoList` tool.</cont
             return result
         except Exception as e:
             self.io.tool_error(f"Error generating servers context: {str(e)}")
+            return None
+
+    def get_orchestration_context(self):
+        """
+        Generate a context block for the Orchestrate tool if allowed.
+
+        Only returns content if ``allow_orchestration`` is enabled in the agent config.
+        """
+        if not self.use_enhanced_context:
+            return None
+
+        try:
+            from cecli.helpers.orchestration import build_orchestration_context_block
+
+            return build_orchestration_context_block(self.agent_config)
+        except Exception as e:
+            self.io.tool_error(f"Error generating orchestration context: {str(e)}")
             return None
 
     def get_sub_agents_context(self):

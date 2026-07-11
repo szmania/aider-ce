@@ -809,6 +809,10 @@ class ConversationChunks:
                 block = coder._generate_context_block("servers")
                 if block:
                     message_blocks["servers"] = block
+            if "orchestration" in coder.allowed_context_blocks:
+                block = coder._generate_context_block("orchestration")
+                if block:
+                    message_blocks["orchestration"] = block
 
         # Add static blocks to conversation manager with stable hash keys
         for block_type, block_content in message_blocks.items():
