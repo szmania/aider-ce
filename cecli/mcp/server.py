@@ -1,8 +1,10 @@
 import asyncio
 import logging
 import os
+import random
 import webbrowser
 from contextlib import AsyncExitStack
+from enum import Enum, auto
 from urllib.parse import urlparse
 
 import httpx
@@ -19,6 +21,18 @@ from .oauth import (
     get_mcp_oauth_token,
     save_mcp_oauth_token,
 )
+
+MIN_KEEPALIVE_INTERVAL = 5
+MAX_KEEPALIVE_INTERVAL = 300
+FAILED_PING_THRESHOLD = 3
+
+logger = logging.getLogger(__name__)
+
+
+class ConnectionState(Enum):
+    CONNECTED = auto()
+    UNHEALTHY = auto()
+    DISCONNECTED = auto()
 
 
 class McpServer:
@@ -119,6 +133,13 @@ class McpServer:
 
 class HttpBasedMcpServer(McpServer):
     """Base class for HTTP-based MCP servers (HTTP streaming and SSE)."""
+
+    def __init__(self, server_config, io=None, verbose=False):
+        super().__init__(server_config, io, verbose)
+        self._state: ConnectionState = ConnectionState.CONNECTED
+        self._failed_pings: int = 0
+        self._keepalive_task: asyncio.Task | None = None
+        self._http_client: httpx.AsyncClient | None = None
 
     async def _create_oauth_provider(self):
         """Create an OAuthClientProvider using the MCP SDK."""
@@ -228,6 +249,7 @@ class HttpBasedMcpServer(McpServer):
                     timeout=30,
                 )
             )
+            self._http_client = http_client
 
             transport = await self.exit_stack.enter_async_context(
                 self._create_transport(url, http_client=http_client)
@@ -238,9 +260,10 @@ class HttpBasedMcpServer(McpServer):
             session = await self.exit_stack.enter_async_context(ClientSession(read, write))
             await session.initialize()
             self.session = session
+            await self.start_keepalive()
             self._connection_loop = current_loop
 
-            if oauth_provider.context.oauth_metadata:
+            if oauth_provider is not None and oauth_provider.context.oauth_metadata:
                 token_endpoint = oauth_provider._get_token_endpoint()
                 server_info = get_mcp_oauth_token(self.name)
                 if "client_info" not in server_info:
@@ -249,17 +272,132 @@ class HttpBasedMcpServer(McpServer):
                 server_info["client_info"]["token_endpoint"] = token_endpoint
 
                 save_mcp_oauth_token(self.name, server_info)
-
-            return session
         except Exception as e:
             logging.error(f"Error initializing {self.name}: {e}")
             await self.disconnect()
             raise
 
-    async def disconnect(self):
+    async def start_keepalive(self):
+        """Start the background keepalive loop if configured."""
+        interval = self.config.get("keepalive_interval")
+        if interval is None:
+            return
+
+        try:
+            interval = int(interval)
+            if not (MIN_KEEPALIVE_INTERVAL <= interval <= MAX_KEEPALIVE_INTERVAL):
+                if self.verbose and self.io:
+                    self.io.tool_warning(
+                        f"Keepalive interval {interval} out of range ({MIN_KEEPALIVE_INTERVAL}-"
+                        f"{MAX_KEEPALIVE_INTERVAL}). Ignoring."
+                    )
+                return
+        except (ValueError, TypeError):
+            if self.verbose and self.io:
+                self.io.tool_warning(f"Invalid keepalive interval {interval}. Must be an integer.")
+            return
+
+        if self._keepalive_task and not self._keepalive_task.done():
+            self._keepalive_task.cancel()
+
+        self._keepalive_task = asyncio.create_task(self._keepalive_loop(interval))
+        logger.info(f"Keepalive task started for {self.name} (interval: {interval}s)")
+        if self.verbose and self.io:
+            self.io.tool_output(f"Started keepalive loop for {self.name} (interval: {interval}s)")
+
+    async def _keepalive_loop(self, interval: int):
+        """Background loop that sends periodic heartbeats to the MCP server."""
+        try:
+            while True:
+                # Jitter: ±10% to prevent timing analysis
+                jitter = interval * 0.1 * (2 * random.random() - 1)
+                await asyncio.sleep(interval + jitter)
+
+                if not self._http_client:
+                    continue
+
+                try:
+                    url = self.config.get("url")
+                    headers = self.config.get("headers", {})
+
+                    # Use OPTIONS request as a lightweight heartbeat
+                    response = await self._http_client.options(url, headers=headers)
+                    if response.status_code == 200:
+                        self._state = ConnectionState.CONNECTED
+                        self._failed_pings = 0
+                    else:
+                        raise httpx.HTTPStatusError(
+                            f"Unexpected status {response.status_code}",
+                            request=response.request,
+                            response=response,
+                        )
+                except Exception:
+                    self._failed_pings += 1
+                    if self._failed_pings >= FAILED_PING_THRESHOLD:
+                        self._state = ConnectionState.DISCONNECTED
+                        if self.verbose and self.io:
+                            self.io.tool_warning(
+                                f"MCP server {self.name} disconnected after {self._failed_pings} failed"
+                                " pings. Attempting reconnect..."
+                            )
+                        await self.reconnect()
+                    else:
+                        self._state = ConnectionState.UNHEALTHY
+                        if self.verbose and self.io:
+                            self.io.tool_output(
+                                f"MCP server {self.name} unhealthy (ping {self._failed_pings}/{FAILED_PING_THRESHOLD})"
+                            )
+        except asyncio.CancelledError:
+            pass
+        except Exception as e:
+            logging.error(f"Keepalive loop for {self.name} crashed: {e}")
+
+    async def reconnect(self):
+        """Attempt to reconnect to the server using exponential backoff."""
+        initial_delay = 1
+        multiplier = 2
+        max_delay = 300
+
+        attempt = 0
+        while self._state == ConnectionState.DISCONNECTED:
+            delay = min(initial_delay * (multiplier**attempt), max_delay)
+            # Jitter: ±20%
+            jitter = delay * 0.2 * (2 * random.random() - 1)
+            await asyncio.sleep(delay + jitter)
+
+            try:
+                if self.verbose and self.io:
+                    self.io.tool_output(
+                        f"Attempting to reconnect to {self.name} (attempt {attempt + 1})..."
+                    )
+
+                # Clean up old session/client without cancelling the keepalive task
+                await self.disconnect(cancel_keepalive=False)
+                await self.connect()
+
+                self._state = ConnectionState.CONNECTED
+                self._failed_pings = 0
+                if self.verbose and self.io:
+                    self.io.tool_output(f"Successfully reconnected to {self.name}")
+                break
+            except Exception as e:
+                attempt += 1
+                if self.verbose and self.io:
+                    self.io.tool_warning(
+                        f"Reconnection attempt {attempt} failed for {self.name}: {e}"
+                    )
+
+    async def disconnect(self, cancel_keepalive: bool = True):
         """Disconnect from the MCP server and clean up resources."""
         async with self._cleanup_lock:
             try:
+                if cancel_keepalive and self._keepalive_task:
+                    self._keepalive_task.cancel()
+                    try:
+                        await asyncio.wait_for(self._keepalive_task, timeout=15)
+                    except asyncio.CancelledError:
+                        pass
+                    logger.info(f"Keepalive task stopped for {self.name}")
                 if hasattr(self, "_oauth_shutdown"):
                     self._oauth_shutdown()
                 await self.exit_stack.aclose()
@@ -271,6 +409,7 @@ class HttpBasedMcpServer(McpServer):
                 logging.error(f"Error during cleanup of server {self.name}: {e}")
             finally:
                 self.session = None
+                self._http_client = None
 
 
 class HttpStreamingServer(HttpBasedMcpServer):

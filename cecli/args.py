@@ -133,6 +133,15 @@ def get_parser(default_config_files, git_root):
         ),
     ).complete = shtab.FILE
     group.add_argument(
+        "--model-providers",
+        metavar="MODEL_PROVIDERS_JSON",
+        help=(
+            "Specify custom OpenAI-compatible model providers as a JSON/YAML string (e.g.,"
+            ' \'{"my-provider": {"api_base": "https://...", "api_key_env": ["MY_KEY"]}}\')'
+        ),
+        default=None,
+    )
+    group.add_argument(
         "--reasoning-effort",
         type=str,
         help="Set the reasoning_effort API parameter (default: not set)",
@@ -1113,7 +1122,7 @@ def get_parser(default_config_files, git_root):
     group.add_argument(
         "--notification-bell",
         action=argparse.BooleanOptionalAction,
-        default=True,
+        default=False,
         help=(
             "Allow notification commands to produce an audible bell. When enabled, command"
             " output is not suppressed so terminal bell escape sequences can ring through"

@@ -166,7 +166,7 @@ def extract_tools_from_pseudo_json(content: str) -> Optional[List[ChatCompletion
     The parser handles nested parentheses and commas inside JSON values.
 
     Example:
-    [Local--ReadRange(show=[{"file_path": "agent.py", "start_text": "class A"}], verbose=true, mode="strict")]
+    [Local--ReadFile(show=[{"file_path": "agent.py", "start_text": "class A"}], verbose=true, mode="strict")]
     """
     from litellm.types.utils import ChatCompletionMessageToolCall, Function  # noqa
 

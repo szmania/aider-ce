@@ -53,7 +53,11 @@ class LazyLiteLLM:
         self._lazy_module.suppress_debug_info = True
         self._lazy_module.set_verbose = False
         self._lazy_module.drop_params = True
-        self._lazy_module._logging._disable_debugging()
+        try:
+            self._lazy_module._logging._disable_debugging()
+        except AttributeError:
+            # litellm >= 1.62.0 removed the _logging module
+            pass
 
         # Make sure JSON-based OpenAI-compatible providers are registered
         ensure_litellm_providers_registered()

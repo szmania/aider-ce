@@ -47,7 +47,7 @@ This loop continues automatically until the `Yield` tool is called, or the maxim
 Agent Mode uses a centralized local tool registry that manages all available tools:
 
 - **File Discovery Tools**: `ExploreCode`, `Ls`, `Grep`
-- **Editing Tools**: `EditText`,
+- **Editing Tools**: `EditFile`,
 - **Context Management Tools**: `ResourceManager`, `GetLines`
 - **Git Tools**: `GitDiff`, `GitLog`, `GitShow`, `GitStatus`
 - **Utility Tools**: `UpdateTodoList`, `UndoChange`, `Yield`
@@ -113,10 +113,10 @@ Files are made editable and modifications are applied:
 Tool Call: MakeEditable
 Arguments: {"file_path": "main.py"}
 
-Tool Call: EditText
+Tool Call: EditFile
 Arguments: {"file_path": "main.py", "find_text": "old_function", "replace_text": "new_function"}
 
-Tool Call: EditText
+Tool Call: EditFile
 Arguments: {"file_path": "main.py", "after_pattern": "import statements", "content": "new_imports"}
 ```
 
@@ -164,13 +164,14 @@ Agent Mode can also be configured directly in your configuration file. See the [
 - **`exclude_context_blocks`**: Array of context block names to exclude from default set
 - **`hot_reload`**: When enabled, skills configuration is hot-reloaded automatically, reflecting changes to skills without requiring a restart (default: false)
 - **`command_timeout`**: Time in seconds to wait for shell commands to finish before automatic backgrounding occurs (default: None)
+- **`diff_colors`**: When enabled, diff output in edit tool responses uses color-coded lines - removed lines in magenta, added lines in light green, and context lines in plain text (default: true)
 
 #### Essential Tools
 
 Certain tools are always available regardless of includelist/excludelist settings:
 
 - `ResourceManager` - Add, drop, and make files editable in the context
-- `edittext` - Basic text replacement
+- `editfile` - Basic text replacement
 - `finished` - Complete the task
 
 The registry also supports **Custom Tools** that can be loaded from specified directories or files using the `tool_paths` configuration option. Custom tools must be Python files containing a `Tool` class that inherits from `BaseTool` and defines a `NORM_NAME` attribute.
@@ -264,7 +265,7 @@ agent: true
 # Agent Mode configuration
 agent-config:
   # Tool configuration
-  tools_includelist: ["resourcemanager", "edittext", "finished"]  # Optional: Whitelist of tools
+  tools_includelist: ["resourcemanager", "editfile", "finished"]  # Optional: Whitelist of tools
   tools_excludelist: ["command", "commandinteractive"]  # Optional: Blacklist of tools
   tools_paths: ["./custom-tools", "~/my-tools"]  # Optional: Directories or files containing custom tools
   
@@ -287,6 +288,7 @@ agent-config:
   allowed_commands: ["wc -l*"]  # Commands matching these glob patterns will not prompt for confirmation
   show_lint_errors: false  # When enabled, linting errors are shown in tool output (default: false)
   hot_reload: false  # When enabled, skills configuration is hot-reloaded automatically (default: false)
+фвδ::  diff_colors: true  # When enabled, diff output uses color-coded lines (default: true)
   # Skills configuration (see Skills documentation for details)
   skills_paths: ["~/my-skills", "./project-skills"]  # Directories to search for skills
   skills_includelist: ["python-refactoring", "react-components"]  # Optional: Whitelist of skills to include

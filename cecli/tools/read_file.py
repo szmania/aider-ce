@@ -15,7 +15,7 @@ from cecli.tools.validations import ToolValidations
 
 
 class Tool(BaseTool):
-    NORM_NAME = "readrange"
+    NORM_NAME = "readfile"
     TRACK_INVOCATIONS = False
     VALIDATIONS = {
         "read": ["coerce_list"],
@@ -26,10 +26,9 @@ class Tool(BaseTool):
     SCHEMA = {
         "type": "function",
         "function": {
-            "name": "ReadRange",
+            "name": "ReadFile",
             "description": (
                 "Get content ID prefixed content between start and end markers in files."
-                " This is useful for files you are attempting to edit and for understanding their structure."
                 " Accepts an array of `read` objects, each with file_path, range_start, range_end."
                 " They can contain up to 3 lines of content. Avoid using singular generic keywords and"
                 " symbols. Special markers @000 and 000@ represent the file boundaries and can be"
@@ -37,10 +36,12 @@ class Tool(BaseTool):
                 " respectively. Line numbers may also be used for range lookups."
                 " It is best to use function names, variable declarations, entire line contents"
                 " and other meaningful identifiers as range_start and range_end values."
+                " Results may be modified from the raw search for semantic relevance."
+                " The returned identifiers will not persist after editing the file."
                 " Do not use the same pattern for the range_start and range_end."
                 " Do not use empty strings for the range_start and range_end."
                 " Do not use content IDs for the range_start and range_end values as they change between edits."
-                " Always use the ReadRange tool instead of cli tools for reading file contents."
+                " Always use the ReadFile tool instead of cli tools for reading file contents."
                 " Line number and special marker ranges greater than 200 lines will return"
                 " preview content for further, more scoped investigation."
                 " Call this tool sequentially on increasingly finer grained searches "
@@ -97,7 +98,7 @@ class Tool(BaseTool):
         """
         from cecli.helpers.conversation import ConversationService
 
-        tool_name = "ReadRange"
+        tool_name = "ReadFile"
         already_up_to_date = []
         new_context_retrieved = []
         error_outputs = []
@@ -212,9 +213,9 @@ class Tool(BaseTool):
                             [
                                 f"File {rel_path} is empty.",
                                 (
-                                    "Next: use EditText with start_line @000 and end_line @000 to"
+                                    "Next: use EditFile with start_line @000 and end_line @000 to"
                                     " write content, or ResourceManager to scaffold — do not call"
-                                    " ReadRange again on this empty file."
+                                    " ReadFile again on this empty file."
                                 ),
                             ]
                         )
@@ -649,7 +650,7 @@ class Tool(BaseTool):
                     )
                 if already_up_to_date and not new_context_retrieved:
                     result_parts.append(
-                        "Do not call `ReadRange` again with these parameters again unless you edit"
+                        "Do not call `ReadFile` again with these parameters again unless you edit"
                         " the relevant files."
                     )
 
@@ -940,7 +941,7 @@ class Tool(BaseTool):
 
     @classmethod
     def format_output(cls, coder, mcp_server, tool_response):
-        """Format output for ReadRange tool."""
+        """Format output for ReadFile tool."""
         color_start, color_end = color_markers(coder)
 
         # Output header
@@ -974,7 +975,7 @@ class Tool(BaseTool):
 
     @classmethod
     def format_error(cls, coder, error_text, file_path, range_start, range_end, operation_index):
-        """Format error output for the ReadRange tool."""
+        """Format error output for the ReadFile tool."""
 
         # Truncate range_start to first line with ellipsis if multiline
         start_line = (range_start or "N/A").split("\n")[0]

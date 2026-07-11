@@ -31,7 +31,8 @@ class TestSkills:
         """Test that SkillsManager initializes correctly."""
         # Test with empty directory paths
         manager = SkillsManager([])
-        assert manager.directory_paths == []
+
+        assert manager.directory_paths == [Path.home() / ".cecli" / "skills"]
         assert manager.include_list is None
         assert manager.exclude_list == set()
         assert manager.git_root is None
@@ -40,7 +41,8 @@ class TestSkills:
 
         # Test with directory paths
         manager = SkillsManager(["/tmp/test"])
-        assert len(manager.directory_paths) == 1
+        # "/tmp/test" + default home dir = 2 paths
+        assert len(manager.directory_paths) == 2
         assert isinstance(manager.directory_paths[0], Path)
         assert manager._loaded_skills == set()
 
@@ -51,6 +53,8 @@ class TestSkills:
             exclude_list=["skill3"],
             git_root="/tmp",
         )
+        # "/tmp/test" + default home dir = 2 paths
+        assert len(manager.directory_paths) == 2
         assert manager.include_list == {"skill1", "skill2"}
         assert manager.exclude_list == {"skill3"}
         assert manager.git_root == Path("/tmp").expanduser().resolve()

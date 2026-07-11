@@ -48,6 +48,36 @@ class McpServerManager:
         if self.io:
             self.io.tool_warning(message)
 
+    @staticmethod
+    def _validate_server_config(config: dict) -> dict:
+        """
+        Validate keepalive_interval in the server configuration.
+
+        Args:
+            config: Server configuration dictionary
+
+        Returns:
+            The validated configuration dictionary
+
+        Raises:
+            ValueError: If keepalive_interval is invalid
+        """
+        keepalive_interval = config.get("keepalive_interval")
+
+        if keepalive_interval is not None:
+            if not isinstance(keepalive_interval, int) or isinstance(keepalive_interval, bool):
+                raise ValueError(
+                    f"keepalive_interval must be an integer, got {type(keepalive_interval).__name__}"
+                )
+
+            if keepalive_interval < 5:
+                raise ValueError(f"keepalive_interval {keepalive_interval} is below minimum of 5")
+
+            if keepalive_interval > 300:
+                raise ValueError(f"keepalive_interval {keepalive_interval} is above maximum of 300")
+
+        return config
+
     @property
     def servers(self) -> list["McpServer"]:
         """Get the list of managed MCP servers."""

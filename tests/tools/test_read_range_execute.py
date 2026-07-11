@@ -1,5 +1,5 @@
 """
-Tests for the execute method of read_range.py.
+Tests for the execute method of read_file.py.
 
 Focuses on the parsing logic for line numbers, special markers (@000, 000@),
 and text strings. Tests cover all combinations of these marker types.
@@ -90,7 +90,7 @@ def create_test_file(content):
 # =============================================================================
 
 
-class TestReadRangeExecute:
+class TestReadFileExecute:
     """Tests for Tool.execute() parsing logic."""
 
     # Class-level patches that apply to all tests
@@ -118,13 +118,13 @@ class TestReadRangeExecute:
         self.patches.append(cs_patch)
 
         # Patch strip_hashline to be identity
-        sh_patch = patch("cecli.tools.read_range.strip_hashline", side_effect=lambda x: x)
+        sh_patch = patch("cecli.tools.read_file.strip_hashline", side_effect=lambda x: x)
         sh_patch.start()
         self.patches.append(sh_patch)
 
         # Patch hashline_formatted to return (text, json)
         hl_patch = patch(
-            "cecli.tools.read_range.hashline_formatted",
+            "cecli.tools.read_file.hashline_formatted",
             side_effect=lambda text, file_name, partial, expanded, start_line=1: (text, "{}"),
         )
         hl_patch.start()
@@ -132,7 +132,7 @@ class TestReadRangeExecute:
 
         # Patch resolve_paths
         rp_patch = patch(
-            "cecli.tools.read_range.resolve_paths",
+            "cecli.tools.read_file.resolve_paths",
             return_value=(self.test_file, _safe_relpath(self.test_file)),
         )
         rp_patch.start()
@@ -140,14 +140,14 @@ class TestReadRangeExecute:
 
         # Patch is_provided
         ip_patch = patch(
-            "cecli.tools.read_range.is_provided",
+            "cecli.tools.read_file.is_provided",
             side_effect=lambda v, **kw: v is not None and v != "",
         )
         ip_patch.start()
         self.patches.append(ip_patch)
 
         # Reset class-level state on Tool
-        from cecli.tools.read_range import Tool
+        from cecli.tools.read_file import Tool
 
         self.Tool = Tool
         Tool._last_invocation = {}
@@ -410,12 +410,12 @@ class TestReadRangeExecute:
         mock_coder.abs_root_path.return_value = abs_path
 
         rp_patch = patch(
-            "cecli.tools.read_range.resolve_paths", return_value=(abs_path, "nonexistent/path.py")
+            "cecli.tools.read_file.resolve_paths", return_value=(abs_path, "nonexistent/path.py")
         )
         rp_patch.start()
         self.patches.append(rp_patch)
 
-        from cecli.tools.read_range import Tool
+        from cecli.tools.read_file import Tool
 
         show = [{"file_path": "nonexistent/path.py", "range_start": "1", "range_end": "10"}]
         result = Tool.execute(mock_coder, show)
@@ -423,7 +423,7 @@ class TestReadRangeExecute:
 
     def test_missing_parameters(self, mock_coder, mock_file_context, mock_chunks, mock_manager):
         """Test with missing range_start and range_end (empty strings)."""
-        from cecli.tools.read_range import Tool
+        from cecli.tools.read_file import Tool
 
         show = [{"file_path": "some_file.py", "range_start": "", "range_end": ""}]
         result = Tool.execute(mock_coder, show)
@@ -443,20 +443,20 @@ class TestReadRangeExecute:
                 return (test_file1, "file1.py")
             return (test_file2, "file2.py")
 
-        rp_patch = patch("cecli.tools.read_range.resolve_paths", side_effect=resolve_side_effect)
+        rp_patch = patch("cecli.tools.read_file.resolve_paths", side_effect=resolve_side_effect)
         rp_patch.start()
 
-        sh_patch = patch("cecli.tools.read_range.strip_hashline", side_effect=lambda x: x)
+        sh_patch = patch("cecli.tools.read_file.strip_hashline", side_effect=lambda x: x)
         sh_patch.start()
 
         hl_patch = patch(
-            "cecli.tools.read_range.hashline_formatted",
+            "cecli.tools.read_file.hashline_formatted",
             side_effect=lambda text, file_name, partial, expanded, start_line=1: (text, "{}"),
         )
         hl_patch.start()
 
         ip_patch = patch(
-            "cecli.tools.read_range.is_provided",
+            "cecli.tools.read_file.is_provided",
             side_effect=lambda v, **kw: v is not None and v != "",
         )
         ip_patch.start()
@@ -472,7 +472,7 @@ class TestReadRangeExecute:
         mock_coder.io.read_text.side_effect = lambda path: content_map.get(path, "")
 
         try:
-            from cecli.tools.read_range import Tool
+            from cecli.tools.read_file import Tool
 
             Tool._last_invocation = {}
             Tool._last_read_turn = {}

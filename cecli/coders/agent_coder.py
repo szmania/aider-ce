@@ -65,7 +65,7 @@ class AgentCoder(Coder):
             "commandinteractive",
             "explorecode",
             "ls",
-            "readrange",
+            "readfile",
             "grep",
             "thinking",
             "updatetodolist",
@@ -73,7 +73,7 @@ class AgentCoder(Coder):
         self.write_tools = {
             "command",
             "commandinteractive",
-            "edittext",
+            "editfile",
             "undochange",
         }
         self.edit_allowed = True
@@ -165,6 +165,7 @@ class AgentCoder(Coder):
         config["command_timeout"] = nested.getter(config, "command_timeout", 30)
         config["allowed_commands"] = nested.getter(config, "allowed_commands", [])
         config["hot_reload"] = nested.getter(config, "hot_reload", False)
+        config["diff_colors"] = nested.getter(config, "diff_colors", True)
         config["allow_nested_delegation"] = nested.getter(config, "allow_nested_delegation", False)
 
         config["tools_paths"] = nested.getter(config, ["tools_paths", "tool_paths"], [])
@@ -828,7 +829,7 @@ class AgentCoder(Coder):
             if lint_errors:
                 lint_errors = lint_errors.replace(
                     "# Fix any linting errors below, if possible.",
-                    "# Fix any linting errors below, if possible and then continue with your task.",
+                    "# Fix the linting errors below, and then continue with your task.",
                     1,
                 )
                 ConversationService.get_manager(self).add_message(
@@ -1138,7 +1139,7 @@ class AgentCoder(Coder):
             context_parts.append("\n\n")
             context_parts.append("## File Editing Tools Disabled")
             context_parts.append(
-                "File editing tools are currently disabled. Use `ReadRange` to determine the"
+                "File editing tools are currently disabled. Use `ReadFile` to determine the"
                 " current content ID prefixes needed to perform an edit and activate them when"
                 " you are ready to edit a file."
             )
