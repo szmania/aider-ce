@@ -171,13 +171,13 @@ class ToolProxy:
             result = self._tool_module.process_response(self._coder, kwargs)
             if asyncio.iscoroutine(result):
                 result = await result
-            return str(result)
+            return result
 
         if self._mcp_server is not None:
             result = await self._coder._execute_mcp_tool(
                 self._mcp_server, self._mcp_tool_name, kwargs
             )
-            return str(result)
+            return result
 
         raise ValueError(f"No executor for tool '{self._tool_name}'")
 
