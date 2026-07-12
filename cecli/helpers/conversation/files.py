@@ -603,11 +603,30 @@ class ConversationFiles:
             ):
                 continue
 
-            _, json_str = hashline_formatted(
-                range_content,
+            # Hash the full content first so that adjacent-line hashes
+            # are computed with proper surrounding context from the complete
+            # file, then extract only the range's lines. This ensures content
+            # IDs are consistent with other tools (e.g., ReadFile) that hash
+            # the full file content.
+            full_prefixed, _ = hashline_formatted(
+                content,
                 file_name=abs_fname,
                 total_lines=len(content_lines),
-                start_line=start_line_adj,
+                start_line=1,
+            )
+            prefixed_lines = full_prefixed.splitlines()
+            range_prefixed_lines = prefixed_lines[start_line_adj - 1 : end_line_adj]
+            range_prefixed_content = "\n".join(range_prefixed_lines)
+
+            json_str = json.dumps(
+                {
+                    "file_name": abs_fname,
+                    "start_line": start_line_adj,
+                    "end_line": end_line_adj,
+                    "total_lines": len(content_lines),
+                    "prefixed_contents": range_prefixed_content,
+                },
+                ensure_ascii=False,
             )
             results.append(json.loads(json_str))
 
