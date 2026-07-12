@@ -97,6 +97,7 @@ class ToolProxy:
         self._coder = coder
         self._tool_module = tool_module
         self._mcp_server = mcp_server
+        self._mcp_tool_name = mcp_tool_name
 
     async def __call__(self, *args: Any, **kwargs: Any):
         """Make the proxy directly callable.
@@ -163,23 +164,82 @@ class ToolProxy:
     async def call(self, **kwargs: Any):
         """Execute the tool with the given keyword arguments.
 
-        Tool results are returned as strings.  Use ``json.loads(result)``
-        on the string to get a dict with ``result``, ``errors``, and
-        ``details`` keys.
+        Tool results are normalized to a dict with ``result`` (list),
+        ``errors`` (list), and ``details`` (list) keys, matching the
+        documented orchestration contract.
         """
+
         if self._tool_module is not None:
             result = self._tool_module.process_response(self._coder, kwargs)
             if asyncio.iscoroutine(result):
                 result = await result
-            return result
+            return self._normalize_result(result)
 
         if self._mcp_server is not None:
             result = await self._coder._execute_mcp_tool(
                 self._mcp_server, self._mcp_tool_name, kwargs
             )
-            return result
+            return self._normalize_result(result)
 
         raise ValueError(f"No executor for tool '{self._tool_name}'")
+
+    @staticmethod
+    def _normalize_result(result: Any) -> dict:
+        """Normalize a tool result into a dict with ``result``, ``errors``, ``details`` keys.
+
+        Handles ``ToolResponse``, error strings, and plain dicts.
+        """
+        from cecli.tools.utils.responses import ToolResponse
+
+        if isinstance(result, ToolResponse):
+            data = result.to_dict()
+            out = {}
+            out["result"] = (
+                data["result"]
+                if isinstance(data["result"], list)
+                else [data["result"]] if data["result"] else []
+            )
+            out["errors"] = data.get("errors", [])
+            out["details"] = data.get("details", [])
+            return out
+
+        if isinstance(result, str):
+            # Error strings from handle_tool_error or plain string results
+            if result.startswith("Error in "):
+                return {
+                    "result": [],
+                    "errors": [result],
+                    "details": [],
+                }
+            return {
+                "result": [result],
+                "errors": [],
+                "details": [],
+            }
+
+        if isinstance(result, dict):
+            # Already a dict - ensure it has the expected keys
+            out = dict(result)
+            if "result" not in out:
+                out["result"] = []
+            if "errors" not in out:
+                out["errors"] = []
+            if "details" not in out:
+                out["details"] = []
+            if not isinstance(out["result"], list):
+                out["result"] = [out["result"]] if out["result"] else []
+            if not isinstance(out["errors"], list):
+                out["errors"] = [out["errors"]]
+            if not isinstance(out["details"], list):
+                out["details"] = [out["details"]]
+            return out
+
+        # Fallback: wrap anything else
+        return {
+            "result": [str(result)] if result is not None else [],
+            "errors": [],
+            "details": [],
+        }
 
 
 class AgentProxy:

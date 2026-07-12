@@ -656,9 +656,10 @@ async def test_tool_proxy_mcp_dispatch():
     proxy = AgentProxy(coder)
     tool = proxy.get_tool("MockServer--MockTool")
     result = await tool.call(param1="value1")
-    assert "mcp-result" in result
-    assert "MockTool" in result
-    assert "param1" in result
+    assert "result" in result
+    assert "mcp-result" in result["result"][0]
+    assert "MockTool" in result["result"][0]
+    assert "param1" in result["result"][0]
 
 
 def test_agent_proxy_includelist_filters():
