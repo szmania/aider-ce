@@ -70,6 +70,9 @@ class HashPos:
     # Regex for a raw 3-character fragment
     FRAGMENT_RE = re.compile(rf"^[{_B1024_REGEX_SET}]{{3}}$")
 
+    # Looser pattern: any 3 chars with at least one non-ASCII followed by ::
+    _LOOSE_PREFIX_RE = re.compile(r"^(?=.{0,2}[^\x00-\x7f]).{3}::")
+
     def __init__(self, source_text: str = ""):
         self.lines = source_text.splitlines()
         self.total = len(self.lines)
@@ -201,11 +204,14 @@ class HashPos:
     def strip_prefix(text: str) -> str:
         """
         Remove HashPos prefixes from the start of every line.
+        Also strips any 3-char sequence with at least one non-ASCII char followed by ::.
         """
         lines = text.splitlines(keepends=True)
         result_lines = []
         for line in lines:
             stripped_line = HashPos.HASH_PREFIX_RE.sub("", line, count=1)
+            if stripped_line == line:
+                stripped_line = HashPos._LOOSE_PREFIX_RE.sub("", line, count=1)
             result_lines.append(stripped_line)
 
         return "".join(result_lines)

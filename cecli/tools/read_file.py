@@ -1,3 +1,4 @@
+import json
 import os
 from typing import Dict, List
 
@@ -33,12 +34,24 @@ class Tool(BaseTool):
                 " They can contain up to 3 lines of content. Avoid using singular generic keywords and"
                 " symbols. Special markers @000 and 000@ represent the file boundaries and can be"
                 " used for range_start and range_end for the first and last lines of the file"
-                " respectively. Line numbers may also be used for range lookups."
-                " It is best to use function names, variable declarations, entire line contents"
-                " and other meaningful identifiers as range_start and range_end values."
-                " Results may be modified from the raw search for semantic relevance."
+                " respectively. Use '@L' followed by a line number (e.g., '@L10', '@L25')"
+                " for structured line-range lookups."
+                ""
+                " Contextual range_end markers (@C, @P, @N) expand around a unique range_start match:"
+                " '@C{number}' includes number lines before AND after the match (symmetric context)."
+                " '@P{number}' includes number lines PREVIOUS to (before) the match — the match"
+                " itself becomes the end of the range. '@N{number}' includes number lines NEXT"
+                " (after) the match — the match itself becomes the start of the range."
+                " These markers require range_start to match exactly one location."
+                ""
+                " Line hints: append ' @L<num>' to any text pattern (e.g., 'my_func @L1506')"
+                " to disambiguate which match is intended when a pattern matches in many places."
+                " The @L hint is a proximity guide, not a strict line number."
+                ""
+                " It is best to use function names,"
+                " variable declarations, entire line contents and other meaningful identifiers"
                 " The returned identifiers will not persist after editing the file."
-                " Do not use the same pattern for the range_start and range_end."
+                " Only use the same pattern for range_start and range_end when fetching full method definitions."
                 " Do not use empty strings for the range_start and range_end."
                 " Do not use content IDs for the range_start and range_end values as they change between edits."
                 " Always use the ReadFile tool instead of cli tools for reading file contents."
@@ -64,6 +77,8 @@ class Tool(BaseTool):
                                     "description": (
                                         "The text marking the beginning of the range."
                                         " Use '@000' for the first line on empty files."
+                                        " Append ' @L<num>' (e.g., 'my_func @L1506') as a"
+                                        " proximity hint to help select among multiple matches."
                                     ),
                                 },
                                 "range_end": {
@@ -71,6 +86,12 @@ class Tool(BaseTool):
                                     "description": (
                                         "The text marking the end of the range."
                                         " Use '000@' for the last line on empty files."
+                                        " When range_start uniquely matches one location, you"
+                                        " may use contextual markers: '@C{number}' (e.g., '@C5')"
+                                        " for lines on both sides of the match, '@P{number}'"
+                                        " for lines BEFORE the match (the match is the range"
+                                        " end), or '@N{number}' for lines AFTER the match"
+                                        " (the match is the range start)."
                                     ),
                                 },
                             },
@@ -173,6 +194,11 @@ class Tool(BaseTool):
                 range_start = strip_hashline(range_start).strip()
                 range_end = strip_hashline(range_end).strip()
 
+                start_hint = None
+                end_hint = None
+                range_start, start_hint = cls._extract_l_hint(range_start)
+                range_end, end_hint = cls._extract_l_hint(range_end)
+
                 # 2. Resolve path
                 abs_path, rel_path = resolve_paths(coder, file_path)
                 if not os.path.exists(abs_path):
@@ -228,222 +254,80 @@ class Tool(BaseTool):
                 start_line_idx = -1
                 end_line_idx = -1
                 both_structured = False
-                # found_by = ""
 
                 if range_start is not None and range_end is not None:
+                    # Step 1: Classify the search type
+                    rt = cls._classify_search_type(range_start, range_end)
 
-                    def _is_valid_int(s):
-                        try:
-                            int(s)
-                            return True
-                        except ValueError:
-                            return False
+                    # Step 2: Find start and end indices
+                    start_indices = cls._find_start_indices(lines, range_start, rt, num_lines)
+                    end_indices = cls._find_end_indices(lines, range_end, rt, num_lines)
 
-                    start_is_digit = _is_valid_int(range_start)
-                    end_is_digit = _is_valid_int(range_end)
-                    start_is_special = range_start in ("@000", "000@")
-                    end_is_special = range_end in ("@000", "000@")
-                    both_structured = (start_is_digit or start_is_special) and (
-                        end_is_digit or end_is_special
-                    )
-                    start_is_text = not start_is_digit and not start_is_special
-                    end_is_text = not end_is_digit and not end_is_special
-                    mixed_special_search = (start_is_special and end_is_text) or (
-                        end_is_special and start_is_text
-                    )
-                    start_indices = []
-                    end_indices = []
-
-                    if both_structured:
-                        if start_is_digit:
-                            start_line_num = int(range_start) - 1
-                            start_line_num = max(0, min(start_line_num, num_lines - 1))
-                            start_indices = [start_line_num]
-                        else:
-                            start_indices = [0]
-
-                        if end_is_digit:
-                            end_line_num = int(range_end) - 1
-                            end_line_num = max(0, min(end_line_num, num_lines - 1))
-                            end_indices = [end_line_num]
-                        else:
-                            end_indices = [num_lines - 1]
-
-                    elif mixed_special_search:
-                        if start_is_special:
-                            # Start is special marker, end is text pattern
-                            if range_start == "@000":
-                                start_indices = [0]
-                            else:  # 000@
-                                start_indices = [num_lines - 1]
-                            # Search for end pattern as text
-                            end_pattern_lines = range_end.split("\n")
-                            end_indices = []
-                            for i in range(len(lines) - len(end_pattern_lines) + 1):
-                                if all(
-                                    p_line in lines[i + j]
-                                    for j, p_line in enumerate(end_pattern_lines)
-                                ):
-                                    end_indices.append(i + len(end_pattern_lines) - 1)
-                        else:
-                            # Start is text pattern, end is special marker
-                            start_pattern_lines = range_start.split("\n")
-                            start_indices = []
-                            for i in range(len(lines) - len(start_pattern_lines) + 1):
-                                if all(
-                                    p_line in lines[i + j]
-                                    for j, p_line in enumerate(start_pattern_lines)
-                                ):
-                                    start_indices.append(i)
-                            if range_end == "@000":
-                                end_indices = [0]
-                            else:  # 000@
-                                end_indices = [num_lines - 1]
-                    else:
-                        start_pattern_lines = range_start.split("\n")
-                        start_indices = []
-                        for i in range(len(lines) - len(start_pattern_lines) + 1):
-                            if all(
-                                p_line in lines[i + j]
-                                for j, p_line in enumerate(start_pattern_lines)
-                            ):
-                                start_indices.append(i)
-
-                        end_pattern_lines = range_end.split("\n")
-                        end_indices = []
-                        for i in range(len(lines) - len(end_pattern_lines) + 1):
-                            if all(
-                                p_line in lines[i + j] for j, p_line in enumerate(end_pattern_lines)
-                            ):
-                                # For multiline end patterns, we want the index of the LAST line of the match
-                                end_indices.append(i + len(end_pattern_lines) - 1)
-
-                    if len(start_indices) > 5:
-                        # Too many matches - use _last_invocation to disambiguate
-                        last = cls._last_invocation.get(abs_path)
-                        if last is None:
-                            error_outputs.append(
-                                cls.format_error(
-                                    coder,
-                                    (
-                                        f"Start pattern '{range_start}' too broad."
-                                        " Refine your search. Be more specific."
-                                    ),
-                                    file_path,
-                                    range_start,
-                                    range_end,
-                                    read_index,
-                                )
-                            )
-                            continue
-
-                        # Find the best match: smallest sum of absolute distances to last start/end
-                        # that comes after the range, with tie-breaking by smallest sum
-                        last_s, last_e = last["start_idx"], last["end_idx"]
-                        candidates = []
-                        for s in start_indices:
-                            for e in [idx for idx in end_indices if idx >= s]:
-                                dist_sum = abs(s - last_s) + abs(e - last_e)
-                                candidates.append((dist_sum, s, e))
-                        # Sort by distance sum, then prefer ranges after the last range
-                        candidates.sort(key=lambda x: (x[0], x[1] < last_s, x[1], x[2]))
-                        if candidates:
-                            best_pair = (candidates[0][1], candidates[0][2])
-                        else:
-                            best_pair = None
-                    else:
-                        best_pair = None
-                        min_dist = float("inf")
-
-                        for s in start_indices:
-                            for e in [idx for idx in end_indices if idx >= s]:
-                                dist = e - s
-                                if dist < min_dist:
-                                    min_dist = dist
-                                    best_pair = (s, e)
-
-                        # If no valid pair found and one side has exactly one match,
-                        # try inverted matching in case LLM got the order of methods wrong
-                        if best_pair is None and (len(start_indices) == 1 or len(end_indices) == 1):
-                            for s in start_indices:
-                                for e in end_indices:
-                                    if e < s:  # end pattern match is before start pattern match
-                                        dist = s - e
-                                        if dist < min_dist:
-                                            min_dist = dist
-                                            best_pair = (e, s)
-
-                        if not start_indices:
-                            error_outputs.append(
-                                cls.format_error(
-                                    coder,
-                                    (
-                                        f"Start pattern '{range_start}' not found in {file_path}."
-                                        " Refine your search."
-                                    ),
-                                    file_path,
-                                    range_start,
-                                    range_end,
-                                    read_index,
-                                )
-                            )
-                            continue
-
-                        if not end_indices:
-                            error_outputs.append(
-                                cls.format_error(
-                                    coder,
-                                    (
-                                        f"End pattern '{range_end}' not found in {file_path}."
-                                        " Refine your search."
-                                    ),
-                                    file_path,
-                                    range_start,
-                                    range_end,
-                                    read_index,
-                                )
-                            )
-                            continue
-
-                        if best_pair is None:
-                            error_outputs.append(
-                                cls.format_error(
-                                    coder,
-                                    (
-                                        f"End pattern '{range_end}' not found after start pattern in"
-                                        f" {file_path}."
-                                    ),
-                                    file_path,
-                                    range_start,
-                                    range_end,
-                                    read_index,
-                                )
-                            )
-                            continue
-
-                    if best_pair is None:
-                        error_outputs.append(
-                            cls.format_error(
-                                coder,
-                                (
-                                    f"End pattern '{range_end}' not found after start pattern in"
-                                    f" {file_path}."
-                                ),
-                                file_path,
-                                range_start,
-                                range_end,
-                                read_index,
-                            )
+                    # Step 3: Apply contextual marker (@C/@P/@N)
+                    if rt["end_is_contextual"]:
+                        result, ctx_error = cls._apply_contextual_marker(
+                            start_indices,
+                            range_start,
+                            range_end,
+                            num_lines,
+                            coder,
+                            file_path,
+                            read_index,
                         )
+                        if ctx_error:
+                            error_outputs.append(ctx_error)
+                            continue
+                        start_indices, end_indices = result
+
+                    # Step 4: Disambiguate if too many matches
+                    start_indices = cls._disambiguate_start_indices(
+                        start_indices,
+                        end_indices,
+                        abs_path,
+                        range_start,
+                        num_lines,
+                        rel_path,
+                        read_index,
+                        coder,
+                        response,
+                        start_hint=start_hint,
+                    )
+
+                    # Step 5: Resolve to final indices with pair selection + fallbacks
+                    s_idx, e_idx, resolve_errors = cls._resolve_to_final_indices(
+                        start_indices,
+                        end_indices,
+                        num_lines,
+                        coder,
+                        abs_path,
+                        range_start,
+                        range_end,
+                        file_path,
+                        read_index,
+                    )
+                    if resolve_errors:
+                        for err in resolve_errors:
+                            error_outputs.append(err)
                         continue
 
-                    s_idx, e_idx = best_pair
-                    s_idx, e_idx = cls._extend_range_with_stub(
-                        coder, abs_path, s_idx, e_idx, num_lines
-                    )
+                    both_structured = rt["both_structured"]
+                    mixed_special_search = rt["mixed_special"]
+
+                # Check for repeat patterns BEFORE overwriting _last_invocation
+                last = cls._last_invocation.get(abs_path)
+                skip_truncation = (
+                    last is not None
+                    and last.get("range_start") == range_start
+                    and last.get("range_end") == range_end
+                )
 
                 # Store the found indices for future disambiguation
-                cls._last_invocation[abs_path] = {"start_idx": s_idx, "end_idx": e_idx}
+                cls._last_invocation[abs_path] = {
+                    "start_idx": s_idx,
+                    "end_idx": e_idx,
+                    "range_start": range_start,
+                    "range_end": range_end,
+                }
 
                 # For structured searches (line numbers, special markers) or mixed searches
                 # (one special marker, one text pattern), cap large ranges with preview
@@ -451,8 +335,8 @@ class Tool(BaseTool):
                 sliced_contents = "\n".join(content.splitlines()[s_idx:e_idx])
                 token_count = coder.main_model.token_count(content)
                 sliced_token_count = coder.main_model.token_count(sliced_contents)
-                is_small_file = token_count <= min(coder.large_file_token_threshold / 4, 2048)
-                is_small_range = sliced_token_count <= min(
+                is_small_file = token_count <= max(coder.large_file_token_threshold / 4, 2048)
+                is_small_range = sliced_token_count <= max(
                     coder.large_file_token_threshold / 8, 1024
                 )
                 if (
@@ -475,11 +359,25 @@ class Tool(BaseTool):
                                 if abs_path in coder.abs_read_only_fnames:
                                     coder.abs_read_only_fnames.remove(abs_path)
 
-                    if preview not in all_outputs_set:
-                        all_outputs_set.add(preview)
+                    preview_key = (
+                        json.dumps(preview, sort_keys=True)
+                        if isinstance(preview, dict)
+                        else preview
+                    )
+                    if preview_key not in all_outputs_set:
+                        all_outputs_set.add(preview_key)
                         if len(all_outputs):
                             all_outputs.append("")
                         all_outputs.append(preview)
+
+                    # If the range was large and we're showing a preview, add explicit guidance
+                    range_lines = e_idx - s_idx + 1
+                    if not has_stub:
+                        response.append_result(
+                            f"read operation {read_index + 1}: {rel_path} range "
+                            f"({range_lines} lines) is large. "
+                            f"Use @L ranges (e.g., @L{s_idx + 1}, @L{e_idx + 1}) for precise reads."
+                        )
 
                     continue
 
@@ -513,9 +411,7 @@ class Tool(BaseTool):
                 # output_lines = [f"Displaying context around {found_by} in {rel_path}:"]
 
                 # Generate hashline for the entire file
-                hashed_content, _ = hashline_formatted(
-                    content, file_name=abs_path, partial=False, expanded=False
-                )
+                hashed_content, _ = hashline_formatted(content, file_name=abs_path)
                 hashed_lines = hashed_content.splitlines()
 
                 # Extract the context window from hashed lines
@@ -580,7 +476,13 @@ class Tool(BaseTool):
                 ):
                     # hashed_slice = hashed_lines[s_idx : e_idx + 1]
                     model_response = cls.format_model_response(
-                        coder, rel_path, s_idx, e_idx, hashed_lines, current=is_already_up_to_date
+                        coder,
+                        rel_path,
+                        s_idx,
+                        e_idx,
+                        hashed_lines,
+                        current=is_already_up_to_date,
+                        skip_truncation=skip_truncation,
                     )
 
                     if is_already_up_to_date:
@@ -628,6 +530,7 @@ class Tool(BaseTool):
                     response.append_result(
                         f"Retrieved context for {len(new_context_details)} operation(s). "
                         "Full results for these reads will be given in a follow up message."
+                        "Note: Full contents contain aggregated content across multiple reads."
                     )
                     for d in new_context_details:
                         response.append_result(d)
@@ -679,73 +582,15 @@ class Tool(BaseTool):
             return response
 
     @classmethod
-    def format_model_response(cls, coder, rel_path, s_idx, e_idx, hashed_lines, current=False):
+    def format_model_response(
+        cls, coder, rel_path, s_idx, e_idx, hashed_lines, current=False, skip_truncation=False
+    ):
         """Format a file's context range as hash-prefixed lines for the model."""
-        # Read file content for stub lookups
-        try:
-            from cecli.tools.utils.helpers import resolve_paths
-
-            abs_path, _ = resolve_paths(coder, rel_path)
-            last_turn = cls._last_read_turn[abs_path] or 0
-        except Exception:
-            pass
-
-        # Try to return structural stub information instead of raw hashed lines
-        try:
-            if hashed_lines and current and coder.turn_count - last_turn <= 2:
-                num_lines = len(hashed_lines)
-
-                start_stub_s, start_stub_e = cls._extend_range_with_stub(
-                    coder, abs_path, s_idx, s_idx, num_lines
-                )
-                end_stub_s, end_stub_e = cls._extend_range_with_stub(
-                    coder, abs_path, e_idx, e_idx, num_lines
-                )
-
-                # start_stub_s, start_stub_e = cls._reposition_indices(s_idx, start_stub_s, start_stub_e)
-                # end_stub_s, end_stub_e = cls._reposition_indices(e_idx, end_stub_s, end_stub_e)
-
-                start_found = start_stub_s != s_idx or start_stub_e != s_idx
-                end_found = end_stub_s != e_idx or end_stub_e != e_idx
-
-                if end_stub_s != start_stub_s or end_stub_e != start_stub_e:
-                    start_stub_s = end_stub_s
-                    start_stub_e = end_stub_e
-                    start_found = True
-                    end_found = False
-
-                if start_found or end_found:
-                    snapshot_parts = []
-                    if start_found:
-                        snapshot_parts.extend(hashed_lines[start_stub_s:start_stub_e])
-
-                    has_second_range = (
-                        end_found
-                        and start_stub_s != end_stub_s
-                        and start_stub_e != end_stub_e
-                        and end_stub_e != e_idx
-                    )
-                    if has_second_range:
-                        snapshot_parts.append("...⋮...\n")
-                        snapshot_parts.extend(hashed_lines[end_stub_s:end_stub_e])
-
-                    prefixed = "\n".join(snapshot_parts)
-                    result = {
-                        "file_path": rel_path,
-                        "start_line": start_stub_s + 1,
-                        "end_line": end_stub_e if has_second_range else start_stub_e,
-                        "partial": True,
-                        "expanded": True,
-                        "prefixed_contents": prefixed,
-                    }
-                    return result
-        except Exception:
-            pass
 
         hashed_content = "\n".join(hashed_lines[s_idx : e_idx + 1])
         token_count = coder.main_model.token_count(hashed_content)
 
-        if token_count <= min(coder.large_file_token_threshold / 16, 512):
+        if skip_truncation or token_count <= min(coder.large_file_token_threshold / 16, 512):
             prefixed = hashed_content
         else:
             total = e_idx - s_idx
@@ -758,8 +603,7 @@ class Tool(BaseTool):
             "file_path": rel_path,
             "start_line": s_idx + 1,
             "end_line": e_idx + 1,
-            "partial": True,
-            "expanded": False,
+            "total_lines": len(hashed_lines),
             "prefixed_contents": prefixed,
         }
         return result
@@ -857,7 +701,12 @@ class Tool(BaseTool):
         output_lines = []
         for chunk_idx, chunk in enumerate(output_parts):
             if chunk_idx > 0:
-                output_lines.append("...⋮...")
+                prev_end = output_parts[chunk_idx - 1][-1] + 1
+                next_start = chunk[0] + 1
+                omitted = next_start - prev_end - 1
+                output_lines.append(
+                    f"...⋮... [{omitted} lines omitted (L{prev_end + 1}–L{next_start - 1})]"
+                )
             for idx in chunk:
                 output_lines.append(hashed_lines[idx])
 
@@ -1055,6 +904,443 @@ class Tool(BaseTool):
             return s_idx, e_idx
 
     @classmethod
+    def _try_fuzzy_narrow_indices(
+        cls, coder, abs_path, start_indices, num_lines, search_pattern=None
+    ):
+        """Try to narrow down ambiguous pattern matches using structural features.
+
+        First attempts exact structural proximity (indices near def/class/import
+        lines). If that fails, falls back to rapidfuzz fuzzy matching the search
+        pattern against tag names from the repo map outline.
+
+        Returns narrowed list of indices, or None if narrowing wasn't possible.
+        """
+        try:
+            from cecli.repomap import RepoMap
+
+            if not hasattr(RepoMap, "_stub_instance"):
+                RepoMap._stub_instance = RepoMap(map_tokens=0, io=coder.io)
+            rm = RepoMap._stub_instance
+            rel_fname = rm.get_rel_fname(abs_path)
+            tags = rm.get_tags(abs_path, rel_fname)
+
+            if not tags:
+                return None
+
+            # Build structural line set for proximity matching
+            structural_lines = {
+                tag.line for tag in tags if tag.kind == "def" or tag.specific_kind == "import"
+            }
+
+            if structural_lines:
+                narrowed = []
+                for si in start_indices:
+                    for sl in structural_lines:
+                        if abs(si - sl) <= 3:
+                            narrowed.append(si)
+                            break
+
+                if narrowed:
+                    return sorted(set(narrowed))
+
+            # Structural proximity didn't narrow — try fuzzy name matching
+            if search_pattern:
+                from rapidfuzz import fuzz
+
+                # Collect def tags with their names and lines
+                def_tags = [
+                    (tag.name, tag.line)
+                    for tag in tags
+                    if tag.kind == "def" and getattr(tag, "name", None)
+                ]
+
+                if def_tags:
+                    # Fuzzy match the search pattern against each tag name
+                    matched_lines = []
+                    for tag_name, tag_line in def_tags:
+                        score = fuzz.partial_ratio(search_pattern.lower(), tag_name.lower())
+                        if score >= 70:
+                            matched_lines.append(tag_line)
+
+                    if matched_lines:
+                        # Return start_indices that are near fuzzy-matched structural lines
+                        narrowed = []
+                        for si in start_indices:
+                            for ml in matched_lines:
+                                if abs(si - ml) <= 5:
+                                    narrowed.append(si)
+                                    break
+
+                        if narrowed:
+                            return sorted(set(narrowed))
+
+                        # No start_indices near fuzzy-matched lines —
+                        # return the matched lines themselves as anchors
+                        return sorted(set(matched_lines))
+
+            return None
+        except Exception:
+            return None
+
+    @classmethod
+    def _classify_search_type(cls, range_start, range_end):
+        """Classify range markers into structured, text, mixed, or contextual search types."""
+
+        def _is_line_ref(s):
+            return s.startswith("@L") and s[2:].isdigit() and len(s) > 2
+
+        start_is_lr = _is_line_ref(range_start)
+        end_is_lr = _is_line_ref(range_end)
+        start_is_sp = range_start in ("@000", "000@")
+        end_is_sp = range_end in ("@000", "000@")
+
+        return {
+            "start_is_line_ref": start_is_lr,
+            "end_is_line_ref": end_is_lr,
+            "start_is_special": start_is_sp,
+            "end_is_special": end_is_sp,
+            "start_is_text": not start_is_lr and not start_is_sp,
+            "end_is_text": not end_is_lr and not end_is_sp,
+            "both_structured": (start_is_lr or start_is_sp) and (end_is_lr or end_is_sp),
+            "mixed_special": (
+                (start_is_sp and not end_is_lr and not end_is_sp)
+                or (end_is_sp and not start_is_lr and not start_is_sp)
+            ),
+            "end_is_contextual": (
+                range_end.startswith(("@C", "@P", "@N"))
+                and len(range_end) > 2
+                and range_end[2:].isdigit()
+            ),
+        }
+
+    @classmethod
+    def _extract_l_hint(cls, pattern):
+        """Extract @L line hint suffix from a pattern string.
+
+        Supports patterns like 'my_function @L1506' where the @L suffix
+        provides a proximity hint for disambiguation.
+
+        Returns (stripped_pattern, line_hint) where line_hint is a 0-based
+        line number or None if no @L suffix is found.
+        """
+        import re
+
+        m = re.search(r"[ \t]+@L([0-9]+)[ \t]*$", pattern)
+        if m:
+            return pattern[: m.start()], int(m.group(1)) - 1
+        return pattern, None
+
+    @classmethod
+    def _search_in_lines(cls, lines, pattern, return_last_line=False):
+        """Search for a multiline pattern in lines.
+
+        Returns list of matching indices. When return_last_line is True,
+        returns the index of the last line of each match instead of the first.
+        """
+        pattern_lines = pattern.split("\n")
+        indices = []
+        offset = len(pattern_lines) - 1 if return_last_line else 0
+        for i in range(len(lines) - len(pattern_lines) + 1):
+            if all(p_line in lines[i + j] for j, p_line in enumerate(pattern_lines)):
+                indices.append(i + offset)
+        return indices
+
+    @classmethod
+    def _find_start_indices(cls, lines, range_start, classification, num_lines):
+        """Resolve start indices based on the classified search type."""
+        if classification["start_is_line_ref"]:
+            line_num = int(range_start[2:]) - 1
+            return [max(0, min(line_num, num_lines - 1))]
+
+        if classification["start_is_special"]:
+            return [0] if range_start == "@000" else [num_lines - 1]
+
+        return cls._search_in_lines(lines, range_start)
+
+    @classmethod
+    def _find_end_indices(cls, lines, range_end, classification, num_lines):
+        """Resolve end indices based on the classified search type."""
+        if classification["end_is_line_ref"]:
+            line_num = int(range_end[2:]) - 1
+            return [max(0, min(line_num, num_lines - 1))]
+
+        if classification["end_is_special"]:
+            return [0] if range_end == "@000" else [num_lines - 1]
+
+        return cls._search_in_lines(lines, range_end, return_last_line=True)
+
+    @classmethod
+    def _apply_contextual_marker(
+        cls,
+        start_indices,
+        range_start,
+        range_end,
+        num_lines,
+        coder,
+        file_path,
+        read_index,
+    ):
+        """Expand range using @C/@P/@N contextual markers.
+
+        Returns ((new_start_indices, new_end_indices), error).
+        Error is None on success, or a formatted error string on failure.
+        """
+        if len(start_indices) != 1:
+            error = cls.format_error(
+                coder,
+                (
+                    f"Start pattern '{range_start}' must match exactly one"
+                    f" location when using @C/@P/@N end markers."
+                    f" Found {len(start_indices)} matches."
+                ),
+                file_path,
+                range_start,
+                range_end,
+                read_index,
+            )
+            return None, error
+
+        ctx_s_idx = start_indices[0]
+        ctx_num = int(range_end[2:])
+        marker_type = range_end[1]
+
+        if marker_type == "C":
+            s_idx = max(0, ctx_s_idx - ctx_num)
+            e_idx = min(num_lines - 1, ctx_s_idx + ctx_num)
+        elif marker_type == "P":
+            s_idx = max(0, ctx_s_idx - ctx_num)
+            e_idx = ctx_s_idx
+        else:  # 'N'
+            s_idx = ctx_s_idx
+            e_idx = min(num_lines - 1, ctx_s_idx + ctx_num)
+
+        return ([s_idx], [e_idx]), None
+
+    @classmethod
+    def _disambiguate_start_indices(
+        cls,
+        start_indices,
+        end_indices,
+        abs_path,
+        range_start,
+        num_lines,
+        rel_path,
+        read_index,
+        coder,
+        response,
+        start_hint=None,
+    ):
+        """Narrow ambiguous start_indices when there are too many matches.
+
+        Tries @L hint proximity narrowing first, then fuzzy structural
+        narrowing, falls back to first 5 with a warning listing
+        line numbers. Last-invocation disambiguation is handled separately
+        in _resolve_to_final_indices.
+        """
+
+        if len(start_indices) <= 5:
+            return start_indices
+
+        last = cls._last_invocation.get(abs_path)
+        if last is not None:
+            # Last-invocation disambiguation happens in _resolve_to_final_indices
+            return start_indices
+
+        # @L hint: filter to indices closest to the hinted line
+        if start_hint is not None:
+            proximity_narrowed = cls._narrow_by_proximity(start_indices, start_hint, max_results=5)
+            if proximity_narrowed and len(proximity_narrowed) <= 5:
+                line_nums = [str(i + 1) for i in sorted(proximity_narrowed)]
+                response.append_result(
+                    f"read operation {read_index + 1}: start pattern "
+                    f"'{range_start}' matched many locations in {rel_path}; "
+                    f"narrowed to {len(proximity_narrowed)} closest to @L hint "
+                    f"at lines {', '.join(line_nums)}. "
+                    f"Tip: append ' @L<num>' to any pattern (e.g., "
+                    f"'{range_start} @L{start_hint + 1}') to target a specific match."
+                )
+                return proximity_narrowed
+
+        narrowed = cls._try_fuzzy_narrow_indices(
+            coder,
+            abs_path,
+            start_indices,
+            num_lines,
+            search_pattern=range_start,
+        )
+
+        if narrowed and len(narrowed) <= 5:
+            line_nums = [str(i + 1) for i in sorted(narrowed)]
+            response.append_result(
+                f"read operation {read_index + 1}: start pattern "
+                f"'{range_start}' matched many locations in {rel_path}; "
+                f"narrowed to {len(narrowed)} structural match(es) "
+                f"at lines {', '.join(line_nums)}. "
+                f"Tip: append ' @L<num>' to a pattern (e.g., "
+                f"'{range_start} @L{line_nums[0]}') to target a specific match."
+            )
+            return narrowed
+
+        line_nums = [str(i + 1) for i in sorted(start_indices[:5])]
+        response.append_result(
+            f"read operation {read_index + 1}: start pattern "
+            f"'{range_start}' too broad ({len(start_indices)} matches) "
+            f"in {rel_path}. Using first 5 (lines {', '.join(line_nums)}). "
+            f"Refine with specific names or @L ranges for precision."
+        )
+        return start_indices[:5]
+
+    @classmethod
+    def _narrow_by_proximity(cls, indices, target, max_results=5):
+        """Narrow a list of indices to those closest to a target index.
+
+        Returns up to max_results indices sorted by ascending distance
+        from the target (0-based line number).
+        """
+        if not indices:
+            return []
+
+        scored = [(abs(i - target), i) for i in indices]
+        scored.sort(key=lambda x: x[0])
+        return [idx for _, idx in scored[:max_results]]
+
+    @classmethod
+    def _resolve_to_final_indices(
+        cls,
+        start_indices,
+        end_indices,
+        num_lines,
+        coder,
+        abs_path,
+        range_start,
+        range_end,
+        file_path,
+        read_index,
+    ):
+        """Find the best (start, end) pair and handle fallbacks.
+
+        Returns (s_idx, e_idx, errors) where errors is a list of formatted
+        error strings. On success, errors is empty and s_idx/e_idx are set.
+        """
+        errors = []
+        last = cls._last_invocation.get(abs_path)
+
+        # Find best pair (with last-invocation disambiguation if available)
+        if last and len(start_indices) > 5:
+            last_s, last_e = last["start_idx"], last["end_idx"]
+            candidates = []
+            for s in start_indices:
+                for e in [idx for idx in end_indices if idx >= s]:
+                    dist_sum = abs(s - last_s) + abs(e - last_e)
+                    candidates.append((dist_sum, s, e))
+            candidates.sort(key=lambda x: (x[0], x[1] < last_s, x[1], x[2]))
+            best_pair = (candidates[0][1], candidates[0][2]) if candidates else None
+        else:
+            best_pair = cls._compute_best_pair(start_indices, end_indices)
+
+        # Inverted matching: LLM may have swapped start/end pattern order
+        if best_pair is None and (len(start_indices) == 1 or len(end_indices) == 1):
+            best_pair = cls._compute_best_pair(start_indices, end_indices, allow_inverted=True)
+
+        # Error: start pattern not found
+        if not start_indices:
+            errors.append(
+                cls.format_error(
+                    coder,
+                    f"Start pattern '{range_start}' not found in {file_path}. Refine your search.",
+                    file_path,
+                    range_start,
+                    range_end,
+                    read_index,
+                )
+            )
+            return None, None, errors
+
+        # Error: end pattern not found — expand from start
+        if not end_indices:
+            if start_indices:
+                s_idx = start_indices[0]
+                try:
+                    s_idx, e_idx = cls._extend_range_with_stub(
+                        coder,
+                        abs_path,
+                        s_idx,
+                        num_lines - 1,
+                        num_lines,
+                    )
+                except Exception:
+                    e_idx = num_lines - 1
+                return s_idx, e_idx, []
+            else:
+                errors.append(
+                    cls.format_error(
+                        coder,
+                        f"End pattern '{range_end}' not found in {file_path}. Refine your search.",
+                        file_path,
+                        range_start,
+                        range_end,
+                        read_index,
+                    )
+                )
+                return None, None, errors
+
+        # Both matched but no valid pair — expand from start
+        if best_pair is None:
+            if start_indices:
+                s_idx = start_indices[0]
+                try:
+                    s_idx, e_idx = cls._extend_range_with_stub(
+                        coder,
+                        abs_path,
+                        s_idx,
+                        num_lines - 1,
+                        num_lines,
+                    )
+                except Exception:
+                    e_idx = num_lines - 1
+                return s_idx, e_idx, []
+            else:
+                errors.append(
+                    cls.format_error(
+                        coder,
+                        (
+                            f"End pattern '{range_end}' not found after start pattern"
+                            f" in {file_path}."
+                        ),
+                        file_path,
+                        range_start,
+                        range_end,
+                        read_index,
+                    )
+                )
+                return None, None, errors
+
+        return best_pair[0], best_pair[1], []
+
+    @classmethod
+    def _compute_best_pair(cls, start_indices, end_indices, allow_inverted=False):
+        """Find the smallest-range valid (start, end) pair.
+
+        When allow_inverted is True, also considers pairs where end < start
+        (LLM swapped the order) and returns them in correct order.
+        """
+        min_dist = float("inf")
+        best_pair = None
+
+        for s in start_indices:
+            valid_ends = end_indices if allow_inverted else [e for e in end_indices if e >= s]
+            for e in valid_ends:
+                dist = abs(e - s)
+                if dist < min_dist:
+                    min_dist = dist
+                    best_pair = (s, e)
+
+        if allow_inverted and best_pair and best_pair[1] < best_pair[0]:
+            best_pair = (best_pair[1], best_pair[0])
+
+        return best_pair
+
+    @classmethod
     def _get_range_preview(cls, coder, abs_path, start_idx, end_idx, line_numbers=True):
         """Get a preview of a large file range between start_idx and end_idx.
 
@@ -1087,6 +1373,10 @@ class Tool(BaseTool):
             return {
                 "file_path": rel_path,
                 "outline": stub,
+                "note": (
+                    f"Large File. Tip: use @L ranges for precise reads"
+                    f" (e.g., @L{start_idx + 1}, @L{end_idx + 1})."
+                ),
             }, True
 
         content = io.read_text(abs_path)
@@ -1122,13 +1412,15 @@ class Tool(BaseTool):
             if sample_lines and sample_lines[-1][0] != actual_end:
                 sample_lines.append((actual_end, lines[actual_end]))
 
-        # Format the output
         parts = [
             f"File range too large ({total_lines} lines).",
+            (
+                f"Tip: use @L ranges for precise reads"
+                f" (e.g., @L{actual_start + 1}, @L{actual_end + 1})."
+            ),
             f"Showing {len(sample_lines)} equally-spaced lines from the range:",
             "",
         ]
-
         file_contents = []
         for idx, line_content in sample_lines:
             line_num = idx + 1

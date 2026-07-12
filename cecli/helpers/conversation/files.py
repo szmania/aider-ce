@@ -116,9 +116,7 @@ class ConversationFiles:
                 try:
                     content = coder.io.read_text(abs_fname, silent=True)
                     if coder.hashlines:
-                        content, json_str = hashline_formatted(
-                            content, file_name=abs_fname, partial=False, expanded=False
-                        )
+                        content, json_str = hashline_formatted(content, file_name=abs_fname)
                         self._file_json_contents[abs_fname] = json_str
                 except Exception:
                     content = ""  # Empty content for unreadable files
@@ -236,9 +234,7 @@ class ConversationFiles:
         try:
             current_content = coder.io.read_text(abs_fname, silent=True)
             if coder.hashlines:
-                current_content, _ = hashline_formatted(
-                    current_content, file_name=abs_fname, partial=False, expanded=False
-                )
+                current_content, _ = hashline_formatted(current_content, file_name=abs_fname)
         except Exception:
             return None
 
@@ -610,8 +606,7 @@ class ConversationFiles:
             _, json_str = hashline_formatted(
                 range_content,
                 file_name=abs_fname,
-                partial=True,
-                expanded=False,
+                total_lines=len(content_lines),
                 start_line=start_line_adj,
             )
             results.append(json.loads(json_str))
