@@ -4,142 +4,150 @@ import xxhash
 
 
 class HashPos:
-    # -------------------------------------------------------------------------
-    # TOKEN-OPTIMIZED PREFIX-FREE ENCODING SETUP
-    # -------------------------------------------------------------------------
-    # flake8: noqa
-    # fmt: off
-    _TOKEN_LIST =   [
-        '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f', #noqa
-        'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', #noqa
-        'w', 'x', 'y', 'z', 'A', 'B', 'C', 'D', 'E', 'F', 'GA', 'GB', 'GC', 'GD', 'Ge', 'Gl', #noqa
-        'Go', 'Gr', 'Gu', 'HA', 'HD', 'HE', 'HO', 'HP', 'HR', 'HT', 'Ha', 'He', 'Hi', 'Hy', 'IC', 'ID', #noqa
-        'IE', 'IF', 'II', 'IL', 'IM', 'IN', 'IO', 'IP', 'IR', 'IS', 'IT', 'IV', 'IX', 'Id', 'If', 'Il', #noqa
-        'Im', 'In', 'Ir', 'Is', 'It', 'JO', 'JS', 'Jo', 'Ke', 'Kn', 'LA', 'LE', 'LI', 'LL', 'LO', 'LP', #noqa
-        'La', 'Le', 'Li', 'Lo', 'MA', 'MB', 'MC', 'MD', 'ME', 'MI', 'ML', 'MO', 'MP', 'MR', 'MS', 'MT', #noqa
-        'MY', 'Ma', 'Mc', 'Me', 'Mi', 'Mo', 'Mr', 'Ms', 'My', 'NA', 'NC', 'NE', 'NL', 'NO', 'NS', 'NT', #noqa
-        'NV', 'NY', 'Na', 'Ne', 'No', 'OB', 'OF', 'OK', 'ON', 'OP', 'OR', 'OS', 'Ob', 'Of', 'Oh', 'Ok', #noqa
-        'On', 'Op', 'Or', 'Os', 'PA', 'PC', 'PD', 'PE', 'PG', 'PH', 'PI', 'PK', 'PL', 'PM', 'PO', 'PP', #noqa
-        'PR', 'PS', 'PT', 'Pa', 'Pe', 'Ph', 'Pi', 'Pl', 'Po', 'Pr', 'Py', 'Qt', 'Qu', 'RC', 'RE', 'RF', #noqa
-        'RO', 'RT', 'Ra', 'Re', 'Ro', 'SA', 'SB', 'SC', 'SD', 'SE', 'SF', 'SH', 'SI', 'SK', 'SL', 'SM', #noqa
-        'SN', 'SO', 'SP', 'SR', 'SS', 'ST', 'SU', 'SW', 'SY', 'Sc', 'Se', 'Sh', 'Si', 'Sk', 'Sl', 'Sm', #noqa
-        'Sn', 'So', 'Sp', 'St', 'Su', 'Sw', 'TD', 'TE', 'TF', 'TH', 'TL', 'TO', 'TR', 'TV', 'TX', 'Te', #noqa
-        'Th', 'To', 'Tr', 'Tw', 'Ty', 'UE', 'UI', 'UK', 'UN', 'UP', 'US', 'UV', 'Un', 'Up', 'Ur', 'Us', #noqa
-        'VA', 'VI', 'VM', 'VT', 'Va', 'Ve', 'WA', 'WE', 'WH', 'WM', 'WR', 'We', 'Wh', 'Wr', 'XX', 'Ye', #noqa
-    ]
-    # fmt: on
-    # flake8: qa
+    # 1024-character Base1024 corpus
+    B1024 = (
+        "0123456789ABCDEFGHIJ"
+        "KLMNOPQRSTUVWXYZabcd"
+        "efghijklmnopqrstuvwx"
+        "yz¡£§©«®°±·»¿×ßæðøĐđ"
+        "ıłœəαβγδεηθικλμνοπρς"
+        "στυφχωАБВГДЕЗИКЛМНОП"
+        "РСТУФЦЧЭЯабвгдежзикл"
+        "мнопрстуфхцчшщъыьэюя"
+        "іאבדהוחילמנערשת،ابةت"
+        "ثجحخدذرزسشصضطظعغفقكل"
+        "منهوىيپکگیकतनपमरलसहন"
+        "রกขคงจชณดตถทนบปผพมยร"
+        "ลวสหอะาเแใไ‐–—―‘’“”„"
+        "†•′※€←→−─│█■●★☆♥♪、。《"
+        "》「」『』【】〜あいうえおかきくけこさし"
+        "すせそたちっつてとなにのはまみめもやよら"
+        "りるれろわをんアィイウェエオカキクコサシ"
+        "スセタチッテトナニフマムメャュョラリルレ"
+        "ロン・ー一万三上下不与专业东两个中为主么"
+        "义之也书了事二于五些交产享京人亿今介从他"
+        "付代以们件价任份企会传但位体何余作你使例"
+        "供価保信修倍值停像元先入全公共关其具内円"
+        "册再写出击分列则初利别到制前力功加务动動"
+        "包化北区十午华单南即历原去县参及友反发取"
+        "变口只可台右号司合同名后向否含听启告员周"
+        "命和品哈商問器四回因国图土在地场型城基報"
+        "場增声处备复外多大天失头女好如始子字存学"
+        "安完定实客家容密对导将小少尔就局展山岁州"
+        "工左已市布常平年并广序库应店度建开式引张"
+        "当录形影径待後得微心必志态思性总息您情意"
+        "感成我或户所手打技投报拉持指按换据排接推"
+        "提播支收改放政效数整文料断新方族无日时明"
+        "易星是時景更最月有服期木未本机权束条来板"
+        "构果查标样格案模次款止正此步歳段每比民気"
+        "水求江没治法注活流海消清游源火点無然片版"
+        "物特率环现球理生用由电男画界番登的目直相"
+        "省看県真知码确示社票私种科秒称移程税空立"
+        "站章端笑符第等简算管米类系素索约级线组经"
+        "结给统编网置美老考者而联能自至色节英藏行"
+        "表装西要見见规视角解言計記話読计认议记论"
+        "设证评试话该语误说请读调象责败货费资起超"
+        "路身车转载辑输达过运近还这进连述退送选通"
+        "速造連道部都配释里重量金错长開間関门闭问"
+        "间队阳陆限院除雅集雷需非面音页项题首验高"
+        "黑가간개거게결경고공과구그글기나내는능니"
+        "다당대도동되된드든들디라래러력로록료류른"
+        "를름리만메면명목문미버번보복부분비사산상"
+        "색생서성세션소수스습시식신아야어에여열오"
+        "와요용우운원위으은을음의이인일임입자작장"
+        "재적전정제져조주지진째체출치크태터턴트하"
+        "한할함해호화환회�ª²³´µ¹º¼½ÀÁ"
+        "ÂÃÄÇ"
+    )
 
-    # Quick lookups for the 256 bytes
-    ENCODE_MAP = {i: token for i, token in enumerate(_TOKEN_LIST)}
-    DECODE_MAP = {token: i for i, token in enumerate(_TOKEN_LIST)}
+    # We escape every individual character just to be completely safe from regex metacharacters
+    _B1024_REGEX_SET = "".join(re.escape(c) for c in B1024)
 
-    # Because all 2-char tokens start with uppercase G-Y, which are never used as standalone
-    # 1-char tokens, we can cleanly split them.
-    _PREFIX_CHARS = set("GHIJKLMNOPQRSTUVWXY")
-
-    # Regex building blocks dynamically matching the list logic.
-    # Single chars are 0-9, A-F, and a-z. Two-char tokens start with G-Y followed by any letter.
-    _BYTE_REGEX = r"(?:[0-9a-zA-F]|[GHIJKLMNOPQRSTUVWXY][A-Za-z])"
-    # Regex for HashPos format: {3 encoded bytes}::
-    HASH_PREFIX_RE = re.compile(rf"^({_BYTE_REGEX}{{3}})::")
-    # Regex for normalization: 3 encoded bytes optionally followed by '::'
-    NORMALIZE_RE = re.compile(rf"^({_BYTE_REGEX}{{3}})(?:::.*)?$")
-    # Regex for a raw 3-byte encoded fragment
-    FRAGMENT_RE = re.compile(rf"^{_BYTE_REGEX}{{3}}$")
+    # Regex pattern for HashPos format: {3-char-hash}::
+    HASH_PREFIX_RE = re.compile(rf"^([{_B1024_REGEX_SET}]{{3}})::")
+    # Regex for normalization: 3 hash chars optionally followed by '::'
+    NORMALIZE_RE = re.compile(rf"^([{_B1024_REGEX_SET}]{{3}})(?:)?::")
+    # Regex for a raw 3-character fragment
+    FRAGMENT_RE = re.compile(rf"^[{_B1024_REGEX_SET}]{{3}}$")
 
     def __init__(self, source_text: str = ""):
         self.lines = source_text.splitlines()
         self.total = len(self.lines)
 
-    def _get_region_val(self, line_idx: int) -> int:
+    def _get_line_hash(self, text: str) -> int:
         """
-        Maps the line to one of 16 proportional vertical buckets (4 bits).
-        This acts as a binary space partition:
-        - bit 3 is top/bottom half
-        - bit 2 is top/bottom quarter
-        - bit 1 is top/bottom eighth
-        - bit 0 is top/bottom sixteenth
+        Creates a 20-bit digest of the current line's text.
         """
-        if self.total == 0:
-            return 0
+        return xxhash.xxh3_64_intdigest(text.encode("utf-8")) & 0xFFFFF
 
-        # Calculate which 16th of the file the line falls into
-        region = (line_idx * 16) // self.total
-
-        # Clamp to 15 to handle edge cases safely
-        return min(region, 15)
-
-    def _get_neighborhood_hash(self, line_idx: int) -> int:
+    def _get_file_fraction(self, line_idx: int) -> int:
         """
-        Creates a 20-bit digest using the current line and the 2 lines
-        before and after it.
+        Returns which 16th of the file the line is in (4 bits: 0-15).
         """
-        start = max(0, line_idx - 2)
-        end = min(self.total, line_idx + 3)
+        return line_idx % 16
 
-        context_window = "\n".join(self.lines[start:end])
-        full_hash = xxhash.xxh3_64_intdigest(context_window.encode("utf-8"))
+    def _get_adjacent_hash(self, line_idx: int) -> int:
+        """Creates a 6-bit digest of the two lines before and two lines after (skipping current line)."""
+        start_idx = max(0, line_idx - 3)
+        end_idx = min(self.total, line_idx + 4)
 
-        # Isolate exactly 20 bits
-        return full_hash & 0xFFFFF
+        # Concatenate up to 2 lines before and up to 2 lines after
+        adjacent_lines = self.lines[start_idx:line_idx] + self.lines[line_idx + 1 : end_idx]
+
+        context = "\n".join(adjacent_lines)
+        return xxhash.xxh3_64_intdigest(context.encode("utf-8")) & 0x3F
+
+    def generate_private_id(self, text: str) -> str:
+        """
+        Generates a fast 12-bit (3 hex chars) hash based purely on the line text.
+        """
+        bits = xxhash.xxh3_64_intdigest(text.encode("utf-8")) & 0xFFF
+        return f"{bits:03x}"
 
     def generate_public_id(self, text: str, line_idx: int) -> str:
         """
-        Generates a 3-to-6 char ID using the token-optimized prefix-free encoding.
-        Layout: [20-bit Neighborhood Hash] [4-bit Region] = 24 bits total.
+        Generates a 3-character Base1024 ID.
+        Layout: [20-bit Line Hash] [4-bit File Fraction] [6-bit Adjacent Hash] = 30 bits total.
+        Each Base1024 character holds 10 bits.
         """
-        neighborhood_hash = self._get_neighborhood_hash(line_idx)
-        region_val = self._get_region_val(line_idx)
+        line_hash = self._get_line_hash(text)
+        fraction = self._get_file_fraction(line_idx)
+        adj_hash = self._get_adjacent_hash(line_idx)
 
-        # Pack the 24-bit integer
-        packed = (neighborhood_hash << 4) | region_val
+        # Pack the 30-bit integer
+        packed = (line_hash << 10) | (fraction << 6) | adj_hash
 
-        # Encode 3 bytes using the prefix-free map
         res = ""
         for _ in range(3):
-            byte_segment = packed % 256
-            res += self.ENCODE_MAP[byte_segment]
-            packed //= 256
-
+            # Extract 10 bits at a time using modulo 1024
+            res += self.B1024[packed % 1024]
+            packed //= 1024
         return res
 
-    def unpack_public_id(self, public_id: str) -> tuple[int, int]:
+    def unpack_public_id(self, public_id: str) -> tuple[int, int, int]:
         """
-        Reverses the Public ID back into its (Neighborhood Hash, Region Value) values.
-        Reads the prefix-free string left-to-right to unambiguously decode the bytes.
+        Reverses the Public ID back into its (Line Hash, Fraction, Adjacent Hash) values.
         """
         packed = 0
-        byte_shift = 0
-        i = 0
+        for i, char in enumerate(public_id):
+            # Each character restores 10 bits
+            packed |= self.B1024.index(char) << (10 * i)
 
-        while i < len(public_id):
-            char = public_id[i]
+        # Extract bits based on layout
+        line_hash = (packed >> 10) & 0xFFFFF
+        fraction = (packed >> 6) & 0xF
+        adj_hash = packed & 0x3F
 
-            # The G-Y characters explicitly signal a two-character sequence
-            if char in self._PREFIX_CHARS:
-                seq = public_id[i : i + 2]
-                i += 2
-            else:
-                seq = char
-                i += 1
+        return line_hash, fraction, adj_hash
 
-            byte_val = self.DECODE_MAP[seq]
-            packed |= byte_val << byte_shift
-            byte_shift += 8
-
-        # Extract the 20-bit hash (shift right by 4, mask 0xFFFFF)
-        neighborhood_hash = (packed >> 4) & 0xFFFFF
-
-        # Extract the 4-bit region from the lowest bits
-        region_val = packed & 0xF
-
-        return neighborhood_hash, region_val
-
-    def format_content(self, start_line: int = 1) -> str:
+    def format_content(self, use_private_ids: bool = False, start_line: int = 1) -> str:
         formatted_lines = []
         for i, line in enumerate(self.lines):
-            prefix = self.generate_public_id(line, i)
+            prefix = (
+                self.generate_private_id(line)
+                if use_private_ids
+                else self.generate_public_id(line, i)
+            )
             if line.strip():
                 formatted_lines.append(f"{prefix}::{line}")
             else:
@@ -148,29 +156,35 @@ class HashPos:
         return "\n".join(formatted_lines)
 
     def resolve_to_lines(self, public_id: str, start_line: int = 1) -> list[int]:
-        target_hash, target_region = self.unpack_public_id(public_id)
+        target_line_hash, target_fraction, target_adj_hash = self.unpack_public_id(public_id)
         matches = []
 
-        # Find all lines whose neighborhood hash matches our target
+        # 1. Primary Filter: Find all lines whose 20-bit line content hash matches
         for i, line in enumerate(self.lines):
-            if self._get_neighborhood_hash(i) == target_hash:
+            if self._get_line_hash(line) == target_line_hash:
                 matches.append(i)
 
         if not matches:
             return []
 
-        # If perfectly unique, return it immediately
+        # If perfectly unique (highly likely given 20 bits of line entropy), return immediately
         if len(matches) == 1:
             return matches
 
-        # Distance Heuristic: If multiple matches exist (e.g. repeated code blocks),
-        # prioritize the one whose current binary region is closest to the target region.
-        def region_distance(idx: int) -> int:
-            current_region = self._get_region_val(idx)
-            # Linear distance because proportional regions don't wrap around
-            return abs(current_region - target_region)
+        # 2. Tie-Breaking Heuristic:
+        # If multiple identical lines exist, score them based on adjacency match and fraction distance.
+        def score_match(idx: int) -> tuple[int, int]:
+            # Adjacency match: 0 means exact match, 1 means mismatch (we want lower scores)
+            adj_score = 0 if self._get_adjacent_hash(idx) == target_adj_hash else 1
 
-        matches.sort(key=region_distance)
+            # Fraction distance: Calculate how many 16ths away we are
+            current_fraction = self._get_file_fraction(idx)
+            fraction_dist = abs(current_fraction - target_fraction)
+
+            # Sort by adjacency match first, then by closest spatial block
+            return (adj_score, fraction_dist)
+
+        matches.sort(key=score_match)
 
         return matches
 
@@ -219,7 +233,7 @@ class HashPos:
     @staticmethod
     def normalize(hashpos_str: str) -> str:
         """
-        Normalize a HashPos string to the exact matched prefix fragment.
+        Normalize a HashPos string to the 3-character hash fragment.
         """
         if hashpos_str is None:
             raise ValueError("HashPos string cannot be None")
@@ -233,5 +247,5 @@ class HashPos:
 
         raise ValueError(
             f"Invalid HashPos format '{hashpos_str}'. "
-            r"Expected a valid content ID followed by `::`"
+            r"Expected a 3-character string from the Base1024 character set."
         )
