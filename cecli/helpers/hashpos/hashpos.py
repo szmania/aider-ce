@@ -80,22 +80,21 @@ class HashPos:
         """
         return xxhash.xxh3_64_intdigest(text.encode("utf-8")) & 0xFFFFF
 
-    def _get_file_fraction(self, line_idx: int) -> int:
-        """
-        Returns which 16th of the file the line is in (4 bits: 0-15).
-        """
-        return line_idx % 16
-
     def _get_adjacent_hash(self, line_idx: int) -> int:
-        """Creates a 6-bit digest of the two lines before and two lines after (skipping current line)."""
-        start_idx = max(0, line_idx - 3)
-        end_idx = min(self.total, line_idx + 4)
+        """
+        Creates a 10-bit digest of specific surrounding lines at offsets
+        -7, -5, -3, -2, +2, +3, +5, +7 to provide local context.
+        """
+        offsets = [-7, -5, -3, -2, 2, 3, 5, 7]
+        adjacent_lines = []
 
-        # Concatenate up to 2 lines before and up to 2 lines after
-        adjacent_lines = self.lines[start_idx:line_idx] + self.lines[line_idx + 1 : end_idx]
+        for offset in offsets:
+            target_idx = line_idx + offset
+            if 0 <= target_idx < self.total:
+                adjacent_lines.append(self.lines[target_idx])
 
         context = "\n".join(adjacent_lines)
-        return xxhash.xxh3_64_intdigest(context.encode("utf-8")) & 0x3F
+        return xxhash.xxh3_64_intdigest(context.encode("utf-8")) & 0x3FF
 
     def generate_private_id(self, text: str) -> str:
         """
@@ -107,15 +106,14 @@ class HashPos:
     def generate_public_id(self, text: str, line_idx: int) -> str:
         """
         Generates a 3-character Base1024 ID.
-        Layout: [20-bit Line Hash] [4-bit File Fraction] [6-bit Adjacent Hash] = 30 bits total.
+        Layout: [20-bit Line Hash] [10-bit Adjacent Hash] = 30 bits total.
         Each Base1024 character holds 10 bits.
         """
         line_hash = self._get_line_hash(text)
-        fraction = self._get_file_fraction(line_idx)
         adj_hash = self._get_adjacent_hash(line_idx)
 
         # Pack the 30-bit integer
-        packed = (line_hash << 10) | (fraction << 6) | adj_hash
+        packed = (line_hash << 10) | adj_hash
 
         res = ""
         for _ in range(3):
@@ -124,9 +122,9 @@ class HashPos:
             packed //= 1024
         return res
 
-    def unpack_public_id(self, public_id: str) -> tuple[int, int, int]:
+    def unpack_public_id(self, public_id: str) -> tuple[int, int]:
         """
-        Reverses the Public ID back into its (Line Hash, Fraction, Adjacent Hash) values.
+        Reverses the Public ID back into its (Line Hash, Adjacent Hash) values.
         """
         packed = 0
         for i, char in enumerate(public_id):
@@ -135,10 +133,9 @@ class HashPos:
 
         # Extract bits based on layout
         line_hash = (packed >> 10) & 0xFFFFF
-        fraction = (packed >> 6) & 0xF
-        adj_hash = packed & 0x3F
+        adj_hash = packed & 0x3FF
 
-        return line_hash, fraction, adj_hash
+        return line_hash, adj_hash
 
     def format_content(self, use_private_ids: bool = False, start_line: int = 1) -> str:
         formatted_lines = []
@@ -156,7 +153,7 @@ class HashPos:
         return "\n".join(formatted_lines)
 
     def resolve_to_lines(self, public_id: str, start_line: int = 1) -> list[int]:
-        target_line_hash, target_fraction, target_adj_hash = self.unpack_public_id(public_id)
+        target_line_hash, target_adj_hash = self.unpack_public_id(public_id)
         matches = []
 
         # 1. Primary Filter: Find all lines whose 20-bit line content hash matches
@@ -172,17 +169,10 @@ class HashPos:
             return matches
 
         # 2. Tie-Breaking Heuristic:
-        # If multiple identical lines exist, score them based on adjacency match and fraction distance.
-        def score_match(idx: int) -> tuple[int, int]:
+        # If multiple identical lines exist, score them based on adjacency match.
+        def score_match(idx: int) -> int:
             # Adjacency match: 0 means exact match, 1 means mismatch (we want lower scores)
-            adj_score = 0 if self._get_adjacent_hash(idx) == target_adj_hash else 1
-
-            # Fraction distance: Calculate how many 16ths away we are
-            current_fraction = self._get_file_fraction(idx)
-            fraction_dist = abs(current_fraction - target_fraction)
-
-            # Sort by adjacency match first, then by closest spatial block
-            return (adj_score, fraction_dist)
+            return 0 if self._get_adjacent_hash(idx) == target_adj_hash else 1
 
         matches.sort(key=score_match)
 
