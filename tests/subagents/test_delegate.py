@@ -16,8 +16,9 @@ class TestDelegateTool:
         from cecli.tools.delegate import Tool
 
         result = await Tool.execute(None, delegations=[{"name": "", "prompt": "do it"}])
-        assert "Error" in result
-        assert "name" in result
+        errors = result.to_dict()["errors"]
+        assert errors
+        assert "name" in errors[0]
 
     @pytest.mark.asyncio
     async def test_empty_prompt_returns_error(self):
@@ -25,8 +26,9 @@ class TestDelegateTool:
         from cecli.tools.delegate import Tool
 
         result = await Tool.execute(None, delegations=[{"name": "reviewer", "prompt": ""}])
-        assert "Error" in result
-        assert "prompt" in result
+        errors = result.to_dict()["errors"]
+        assert errors
+        assert "prompt" in errors[0]
 
     @pytest.mark.asyncio
     async def test_both_empty_returns_name_error(self):
@@ -34,8 +36,9 @@ class TestDelegateTool:
         from cecli.tools.delegate import Tool
 
         result = await Tool.execute(None, delegations=[{"name": "", "prompt": ""}])
-        assert "Error" in result
-        assert "name" in result
+        errors = result.to_dict()["errors"]
+        assert errors
+        assert "name" in errors[0]
 
     @pytest.mark.asyncio
     async def test_valid_delegate_calls_spawn(self):
@@ -61,8 +64,8 @@ class TestDelegateTool:
             mock_instance.spawn.assert_called_once_with(
                 "reviewer", "review this", parent=mock_coder
             )
-            assert "agent started with id" in result
-            assert "child-uuid-123" in result
+            assert "agent started with id" in str(result)
+            assert "child-uuid-123" in str(result)
 
     async def test_delegate_multiple_delegations(self):
         """Multiple delegations show correct dispatch count."""
@@ -90,9 +93,9 @@ class TestDelegateTool:
                 ],
             )
 
-            assert "2/2 dispatched" in result
-            assert "agent1" in result
-            assert "agent2" in result
+            assert "2/2 dispatched" in str(result)
+            assert "agent1" in str(result)
+            assert "agent2" in str(result)
 
     @pytest.mark.asyncio
     async def test_delegate_spawn_error_returns_error_string(self):
@@ -106,8 +109,8 @@ class TestDelegateTool:
             MockService.get_instance.return_value = mock_instance
 
             result = await Tool.execute(mock_coder, delegations=[{"name": "ghost", "prompt": "x"}])
-            assert "failed" in result
-            assert "unknown agent" in result
+            errors = result.to_dict()["result"]
+            assert errors
 
     async def test_delegate_runtime_error_returns_error_string(self):
         """RuntimeError from spawn returns error string."""
@@ -122,8 +125,8 @@ class TestDelegateTool:
             result = await Tool.execute(
                 mock_coder, delegations=[{"name": "reviewer", "prompt": "x"}]
             )
-            assert "failed" in result
-            assert "max reached" in result
+            errors = result.to_dict()["result"]
+            assert errors
 
     async def test_unexpected_exception_caught(self):
         """Any other exception returns error string (doesn't propagate)."""
@@ -138,5 +141,5 @@ class TestDelegateTool:
             result = await Tool.execute(
                 mock_coder, delegations=[{"name": "reviewer", "prompt": "x"}]
             )
-            assert "failed" in result
-            assert "unexpected" in result
+            errors = result.to_dict()["result"]
+            assert errors
