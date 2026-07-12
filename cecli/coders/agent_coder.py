@@ -98,7 +98,7 @@ class AgentCoder(Coder):
         self.skip_cli_confirmations = False
         self.agent_finished = False
         self.agent_config = self._get_agent_config()
-        self.max_sub_agents = self.agent_config.get("max_sub_agents", 3)
+        self.max_sub_agents = self.agent_config.get("max_sub_agents", 30)
         self.sub_agent_paths = self.agent_config.get("subagent_paths", [])
         self._setup_agent()
 
@@ -167,6 +167,11 @@ class AgentCoder(Coder):
         config["hot_reload"] = nested.getter(config, "hot_reload", False)
         config["diff_colors"] = nested.getter(config, "diff_colors", True)
         config["allow_nested_delegation"] = nested.getter(config, "allow_nested_delegation", False)
+        config["allow_orchestration"] = nested.getter(config, "allow_orchestration", True)
+        config["max_sub_agents"] = nested.getter(config, "max_sub_agents", 30)
+
+        if config["max_sub_agents"] == -1:
+            config["max_sub_agents"] = 2 ^ 31 - 1
 
         config["tools_paths"] = nested.getter(config, ["tools_paths", "tool_paths"], [])
         config["tools_includelist"] = nested.getter(
@@ -184,7 +189,6 @@ class AgentCoder(Coder):
         config["servers_excludelist"] = nested.getter(
             config, ["servers_excludelist", "servers_blacklist"], []
         )
-        config["allow_orchestration"] = nested.getter(config, "allow_orchestration", True)
 
         config["include_context_blocks"] = set(
             nested.getter(

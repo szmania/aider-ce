@@ -228,7 +228,7 @@ class AgentService:
     @property
     def max_sub_agents(self) -> int:
         """Return the max number of sub-agents allowed for this coder."""
-        return getattr(self.coder, "max_sub_agents", 3)
+        return getattr(self.coder, "max_sub_agents", 30)
 
     # ------------------------------------------------------------------ #
     # Internal helpers
@@ -495,7 +495,7 @@ class AgentService:
             )
 
         new_coder = await Coder.create(**kwargs)
-        new_coder.max_sub_agents = getattr(self.coder, "max_sub_agents", 3)
+        new_coder.max_sub_agents = getattr(self.coder, "max_sub_agents", 30)
         # IOProxy wrapping is handled by base_coder.py's Coder.__init__
 
         # Re-acquire the lock to register — we must re-check max agents since

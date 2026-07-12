@@ -275,7 +275,7 @@ agent-config:
   
   # Sub-agent configuration
   subagent_paths: [".cecli/subagents"]  # Optional: Directories to search for sub-agent definitions
-  max_sub_agents: 3  # Optional: Maximum concurrent sub-agents (default: 3)
+  max_sub_agents: 30  # Optional: Maximum concurrent sub-agents (default: 3)
   allow_nested_delegation: false  # Optional: Allow sub-agents to delegate further (default: false)
 
   # Context blocks configuration
