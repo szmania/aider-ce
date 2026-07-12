@@ -163,8 +163,9 @@ class ToolProxy:
     async def call(self, **kwargs: Any):
         """Execute the tool with the given keyword arguments.
 
-        Tool results are returned as strings.  Use ``import json`` and
-        ``json.loads(result)`` to parse structured responses when needed.
+        Tool results are returned as strings.  Use ``json.loads(result)``
+        on the string to get a dict with ``result``, ``errors``, and
+        ``details`` keys.
         """
         if self._tool_module is not None:
             result = self._tool_module.process_response(self._coder, kwargs)
@@ -500,20 +501,22 @@ This is much more efficient than making individual tool calls for loop-heavy wor
 
 **Sequential calls:**
 ```python
-read_tool = Agent.get_tool("ReadFile")
-a = await read_tool.call(file_path="foo.py", range_start="@000", range_end="000@")
-b = await read_tool.call(file_path="bar.py", range_start="@000", range_end="000@")
-f"Read {len(a)} and {len(b)} chars"
+delegate = Agent.get_tool("Delegate")
+a = await delegate.call(delegations=[{"name": "worker", "prompt": "Analyze foo.py"}])
+b = await delegate.call(delegations=[{"name": "worker", "prompt": "Analyze bar.py"}])
+f"Results: {a} and {b}"
 ```
 
 **Parallel calls:**
 ```python
-read_tool = Agent.get_tool("ReadFile")
-files = ["a.py", "b.py", "c.py"]
-tasks = [read_tool.call(file_path=f, range_start="@000", range_end="000@") for f in files]
+delegate = Agent.get_tool("Delegate")
+tasks = [
+    delegate.call(delegations=[{"name": "worker", "prompt": "Analyze a.py"}]),
+    delegate.call(delegations=[{"name": "worker", "prompt": "Analyze b.py"}]),
+    delegate.call(delegations=[{"name": "worker", "prompt": "Analyze c.py"}]),
+]
 results = await gather(*tasks)
-state["contents"] = dict(zip(files, results))
-f"Read {len(files)} files in parallel"
+f"Got {len(results)} results"
 ```
 
 **Accumulating state across calls:**
@@ -522,12 +525,21 @@ state["count"] = state.get("count", 0) + len(some_result)
 f"Total so far: {state['count']}"
 ```
 
-**Parsing JSON tool results:**
+**Structured tool responses:**
+All tool calls return a dict has three keys:
+- `result` — a list of result entries from the tool
+- `errors` — a list of error strings (empty when successful)
+- `details` — a list of extra contextual detail strings
+
 ```python
-read_tool = Agent.get_tool("ReadFile")
-raw = await read_tool.call(file_path="data.json", range_start="@000", range_end="000@")
-data = json.loads(raw)
-f"Found {len(data)} entries"
+grep = Agent.get_tool("Grep")
+response = await grep.call(searches=[{"pattern": "TODO", "directory": "cecli/tools"}])
+
+for entry in response["result"]:
+    print(f"Match: {entry}")
+for err in response["errors"]:
+    print(f"Error: {err}")
+f"Found {len(response['result'])} matching files, {len(response['errors'])} errors"
 ```
 
 ### Tool Parameters
