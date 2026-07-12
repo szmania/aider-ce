@@ -5,11 +5,13 @@ import asyncio
 from cecli.tools.utils.base_tool import BaseTool
 from cecli.tools.utils.helpers import ToolError
 from cecli.tools.utils.output import color_markers, tool_footer, tool_header
+from cecli.tools.utils.responses import ToolResponse
 from cecli.tools.validations import ToolValidations
 
 
 class Tool(BaseTool):
     NORM_NAME = "delegate"
+    RESULT_TYPE = "list"
     TRACK_INVOCATIONS = True
     VALIDATIONS = {
         "delegations": ["coerce_list"],
@@ -53,19 +55,26 @@ class Tool(BaseTool):
     @classmethod
     async def execute(cls, coder, **kwargs):
         """Delegate one or more sub-agents to work on sub-tasks in parallel."""
+        response = ToolResponse(cls.NORM_NAME, result_type=cls.RESULT_TYPE)
         delegations = kwargs.get("delegations", [])
 
         if not delegations or not isinstance(delegations, list):
-            return "Error: 'delegations' parameter must be a non-empty array of {name, prompt} objects."
+            response.append_error(
+                "'delegations' parameter must be a non-empty array of {name, prompt} objects."
+            )
+            return response
 
         # Validate each delegation item has the required fields
         for i, d in enumerate(delegations):
             if not isinstance(d, dict):
-                return f"Error: delegations[{i}] is not an object."
+                response.append_error(f"delegations[{i}] is not an object.")
+                return response
             if "name" not in d or not d["name"]:
-                return f"Error: delegations[{i}] is missing a 'name'."
+                response.append_error(f"delegations[{i}] is missing a 'name'.")
+                return response
             if "prompt" not in d or not d["prompt"]:
-                return f"Error: delegations[{i}] is missing a 'prompt'."
+                response.append_error(f"delegations[{i}] is missing a 'prompt'.")
+                return response
 
         from cecli.helpers.agents.service import AgentService
 
@@ -97,7 +106,8 @@ class Tool(BaseTool):
         n_total = len(started_agents)
         n_ok = sum(1 for _, r in started_agents if not r.startswith("failed:"))
         combined = "\n".join(lines)
-        return f"📋 Delegation results ({n_ok}/{n_total} dispatched):\n{combined}"
+        response.append_result(f"📋 Delegation results ({n_ok}/{n_total} dispatched):\n{combined}")
+        return response
 
     @classmethod
     def format_output(cls, coder, mcp_server, tool_response):

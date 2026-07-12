@@ -1,4 +1,3 @@
-import json
 import os
 from typing import Dict, List
 
@@ -6,16 +5,17 @@ from cecli.helpers.hashline import hashline_formatted, strip_hashline
 from cecli.tools.utils.base_tool import BaseTool
 from cecli.tools.utils.helpers import (
     ToolError,
-    handle_tool_error,
     is_provided,
     resolve_paths,
 )
 from cecli.tools.utils.output import color_markers, tool_footer, tool_header
+from cecli.tools.utils.responses import ToolResponse
 from cecli.tools.validations import ToolValidations
 
 
 class Tool(BaseTool):
     NORM_NAME = "readfile"
+    RESULT_TYPE = "list"
     TRACK_INVOCATIONS = False
     VALIDATIONS = {
         "read": ["coerce_list"],
@@ -98,10 +98,11 @@ class Tool(BaseTool):
         """
         from cecli.helpers.conversation import ConversationService
 
-        tool_name = "ReadFile"
         already_up_to_date = []
         new_context_retrieved = []
         error_outputs = []
+
+        response = ToolResponse(cls.NORM_NAME, result_type=cls.RESULT_TYPE)
 
         try:
             # 1. Validate read parameter
@@ -583,12 +584,12 @@ class Tool(BaseTool):
                     )
 
                     if is_already_up_to_date:
-                        if model_response not in already_up_to_set:
-                            already_up_to_set.add(model_response)
+                        if str(model_response) not in already_up_to_set:
+                            already_up_to_set.add(str(model_response))
                             already_up_to_details.append(model_response)
                     else:
-                        if model_response not in new_context_set:
-                            new_context_set.add(model_response)
+                        if str(model_response) not in new_context_set:
+                            new_context_set.add(str(model_response))
                             new_context_details.append(model_response)
 
                 # Conditionally remove old file context messages
@@ -617,8 +618,6 @@ class Tool(BaseTool):
             # Log success and return the formatted context directly
             coder.edit_allowed = True
 
-            result_parts = [f"File Context Turn {coder.turn_count}"]
-
             if already_up_to_details or new_context_details:
                 if new_context_details:
                     coder.io.tool_output(
@@ -626,12 +625,12 @@ class Tool(BaseTool):
                         type="tool-result",
                     )
 
-                    detail_str = "\n".join(new_context_details)
-                    result_parts.append(
-                        f"Retrieved context for {len(new_context_details)} operation(s):\n\n"
-                        f"{detail_str}\n"
-                        "Full results for these reads will be given in a follow up message.\n"
+                    response.append_result(
+                        f"Retrieved context for {len(new_context_details)} operation(s). "
+                        "Full results for these reads will be given in a follow up message."
                     )
+                    for d in new_context_details:
+                        response.append_result(d)
                 if already_up_to_details:
                     coder.io.tool_output(
                         (
@@ -641,41 +640,43 @@ class Tool(BaseTool):
                         type="tool-result",
                     )
 
-                    detail_str = "\n".join(already_up_to_details)
-                    result_parts.append(
+                    response.append_result(
                         "Earlier contents still valid from previous read for "
-                        f"{len(already_up_to_details)} operation(s):\n\n"
-                        f"{detail_str}\n"
+                        f"{len(already_up_to_details)} operation(s). "
                         "Relevant contents for these reads available in previous message."
                     )
+                    for d in already_up_to_details:
+                        response.append_result(d)
                 if already_up_to_date and not new_context_retrieved:
-                    result_parts.append(
+                    response.append_result(
                         "Do not call `ReadFile` again with these parameters again unless you edit"
                         " the relevant files."
                     )
 
             if all_outputs:
-                result_parts.append("\n".join(all_outputs))
-                result_parts.append("\nUse these outlines to refine your search.\n")
+                for output in all_outputs:
+                    response.append_result(output)
+                response.append_result("Use these outlines to refine your search.")
 
             if error_outputs:
                 coder.io.tool_error(
                     f"Errors encountered for {len(error_outputs)} operation(s)", type="tool-result"
                 )
 
-                result_parts.append("Errors:\n" + "\n".join(error_outputs))
+                for err in error_outputs:
+                    response.append_error(err)
 
-            if not result_parts:
-                return "No files could be processed."
-
-            return "\n---\n".join(result_parts)
+            response.append_result(f"File Context Turn {coder.turn_count}")
+            return response
 
         except ToolError as e:
             # Handle expected errors raised by utility functions or validation
-            return handle_tool_error(coder, tool_name, e, add_traceback=False)
+            response.append_error(str(e))
+            return response
         except Exception as e:
             # Handle unexpected errors during processing
-            return handle_tool_error(coder, tool_name, e)
+            response.append_error(str(e))
+            return response
 
     @classmethod
     def format_model_response(cls, coder, rel_path, s_idx, e_idx, hashed_lines, current=False):
@@ -728,7 +729,7 @@ class Tool(BaseTool):
                         snapshot_parts.append("...⋮...\n")
                         snapshot_parts.extend(hashed_lines[end_stub_s:end_stub_e])
 
-                    prefixed = "".join(snapshot_parts)
+                    prefixed = "\n".join(snapshot_parts)
                     result = {
                         "file_path": rel_path,
                         "start_line": start_stub_s + 1,
@@ -737,7 +738,7 @@ class Tool(BaseTool):
                         "expanded": True,
                         "prefixed_contents": prefixed,
                     }
-                    return json.dumps(result, ensure_ascii=False)
+                    return result
         except Exception:
             pass
 
@@ -761,7 +762,7 @@ class Tool(BaseTool):
             "expanded": False,
             "prefixed_contents": prefixed,
         }
-        return json.dumps(result, ensure_ascii=False)
+        return result
 
     @classmethod
     def content_splitter(cls, coder, hashed_lines, s_idx, e_idx):
@@ -1083,14 +1084,10 @@ class Tool(BaseTool):
 
         # If get_file_stub returned a useful structural outline, wrap it as JSON
         if stub and stub != "# No outline available":
-            result = json.dumps(
-                {
-                    "file_path": rel_path,
-                    "outline": stub,
-                },
-                ensure_ascii=False,
-            )
-            return result, True
+            return {
+                "file_path": rel_path,
+                "outline": stub,
+            }, True
 
         content = io.read_text(abs_path)
         if not content:
@@ -1138,14 +1135,8 @@ class Tool(BaseTool):
             file_contents.append(f"{line_num}|{line_content}")
             file_contents.append("...")
 
-        parts.append(
-            json.dumps(
-                {
-                    "file_path": rel_path,
-                    "truncated": "\n".join(file_contents),
-                },
-                ensure_ascii=False,
-            )
-        )
+        parts.append(f"file_path: {rel_path}")
+        parts.append("truncated:")
+        parts.append("\n".join(file_contents))
 
         return "\n".join(parts), False

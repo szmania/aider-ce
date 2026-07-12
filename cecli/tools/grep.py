@@ -1,4 +1,3 @@
-import json
 import os
 import re
 import shutil
@@ -11,6 +10,7 @@ from cecli.run_cmd import run_cmd_subprocess
 from cecli.tools.utils.base_tool import BaseTool
 from cecli.tools.utils.helpers import ToolError
 from cecli.tools.utils.output import color_markers, tool_footer, tool_header
+from cecli.tools.utils.responses import ToolResponse
 from cecli.tools.validations import ToolValidations
 
 # Default directories to exclude from search results across various languages
@@ -160,8 +160,8 @@ def _parse_content_into_files(output):
 
 class Tool(BaseTool):
     NORM_NAME = "grep"
+    RESULT_TYPE = "list"
     VALIDATIONS = {
-        "searches": ["coerce_list"],
         "searches[]": ["coerce_dict"],
     }
     SCHEMA = {
@@ -309,17 +309,23 @@ class Tool(BaseTool):
         match counts, and summary metadata.
         """
         if not isinstance(searches, list):
-            return json.dumps({"error": "'searches' parameter must be an array."})
+            response = ToolResponse(cls.NORM_NAME, result_type=cls.RESULT_TYPE)
+            response.append_error("'searches' parameter must be an array.")
+            return response
 
         repo = coder.repo
         if not repo:
             coder.io.tool_error("Not in a git repository.")
-            return json.dumps({"error": "Not in a git repository."})
+            response = ToolResponse(cls.NORM_NAME, result_type=cls.RESULT_TYPE)
+            response.append_error("Not in a git repository.")
+            return response
 
         tool_name, tool_path = cls._find_search_tool()
         if not tool_path:
             coder.io.tool_error("No search tool (rg, ag, grep) found in PATH.")
-            return json.dumps({"error": "No search tool (rg, ag, grep) found."})
+            response = ToolResponse(cls.NORM_NAME, result_type=cls.RESULT_TYPE)
+            response.append_error("No search tool (rg, ag, grep) found.")
+            return response
 
         all_operation_results = []
 
@@ -520,8 +526,6 @@ class Tool(BaseTool):
 
             all_operation_results.append(op_result)
 
-        final_result = {"operations": all_operation_results}
-
         # TUI summary
         if coder.tui and coder.tui():
             ui_summaries = []
@@ -539,7 +543,10 @@ class Tool(BaseTool):
             ui_message = "\n".join(ui_summaries)
             coder.io.tool_output(ui_message, type="tool-result")
 
-        return json.dumps(final_result)
+        response = ToolResponse(cls.NORM_NAME, result_type=cls.RESULT_TYPE)
+        for op_result in all_operation_results:
+            response.append_result(op_result)
+        return response
 
     @classmethod
     def format_output(cls, coder, mcp_server, tool_response):

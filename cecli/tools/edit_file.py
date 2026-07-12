@@ -10,11 +10,10 @@ from cecli.tools.utils.base_tool import BaseTool
 from cecli.tools.utils.helpers import (
     ToolError,
     apply_change,
-    format_tool_result,
-    handle_tool_error,
     validate_file_for_edit,
 )
 from cecli.tools.utils.output import color_markers, tool_footer, tool_header
+from cecli.tools.utils.responses import ToolResponse
 from cecli.tools.validations import ToolValidations
 
 VALID_OPERATIONS = {"replace", "delete", "insert"}
@@ -34,6 +33,7 @@ USER_EDIT_CATEGORIES = {
 
 class Tool(BaseTool):
     NORM_NAME = "editfile"
+    RESULT_TYPE = "list"
     TRACK_INVOCATIONS = False
     VALIDATIONS = {
         "edits": ["coerce_list"],
@@ -153,7 +153,8 @@ class Tool(BaseTool):
                 force=True,
             )
 
-        tool_name = "EditFile"
+        # tool_name = "EditFile"
+        response = ToolResponse(cls.NORM_NAME, result_type=cls.RESULT_TYPE)
         try:
             # 1. Validate edits parameter
             if not isinstance(edits, list):
@@ -397,13 +398,8 @@ class Tool(BaseTool):
             # If dry run, return all results
             if dry_run:
                 dry_run_messages = "\n".join(r.get("dry_run_message", "") for r in all_results)
-                return format_tool_result(
-                    coder,
-                    tool_name,
-                    "",
-                    dry_run=True,
-                    dry_run_message=dry_run_messages or "Dry run: No changes would be made",
-                )
+                response.append_result(dry_run_messages or "Dry run: No changes would be made")
+                return response
 
             # 4. Check if any edits succeeded overall
             if total_successful_edits == 0:
@@ -437,19 +433,20 @@ class Tool(BaseTool):
 
             cls.clear_invocation_cache()
 
-            return format_tool_result(
-                coder,
-                tool_name,
-                success_message,
-                change_id=change_id_to_return,
+            response.append_result(
+                f"\u2713 {success_message}"
+                + (f" (change_id: {change_id_to_return})" if change_id_to_return else "")
             )
+            return response
 
         except ToolError as e:
             coder.edit_allowed = False
-            return handle_tool_error(coder, tool_name, e, add_traceback=False)
+            response.append_error(str(e))
+            return response
         except Exception as e:
             coder.edit_allowed = False
-            return handle_tool_error(coder, tool_name, e)
+            response.append_error(str(e))
+            return response
 
     @classmethod
     def format_output(cls, coder, mcp_server, tool_response):

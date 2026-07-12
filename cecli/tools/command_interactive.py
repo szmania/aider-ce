@@ -6,6 +6,7 @@ import xxhash
 
 from cecli.run_cmd import run_cmd
 from cecli.tools.utils.base_tool import BaseTool
+from cecli.tools.utils.responses import ToolResponse
 
 
 class Tool(BaseTool):
@@ -101,9 +102,11 @@ class Tool(BaseTool):
         Execute an interactive shell command using run_cmd (which uses pexpect/PTY).
         """
         try:
+            response = ToolResponse(cls.NORM_NAME)
             confirmed = await cls._get_confirmation(coder, command_string)
             if not confirmed:
-                return "Shell command execution skipped by user."
+                response.append_result("Shell command execution skipped by user.")
+                return response
 
             command_string = coder.format_command_with_prefix(command_string)
 
@@ -154,15 +157,17 @@ class Tool(BaseTool):
             cls.clear_invocation_cache()
 
             if exit_status == 0:
-                return (
+                response.append_result(
                     "Interactive command finished successfully (exit code 0)."
                     f" Output:\n{output_content}"
                 )
+                return response
             else:
-                return (
+                response.append_result(
                     f"Interactive command finished with exit code {exit_status}."
                     f" Output:\n{output_content}"
                 )
+                return response
 
         except Exception as e:
             coder.io.tool_error(
@@ -171,4 +176,6 @@ class Tool(BaseTool):
             # Optionally include traceback for debugging if verbose
             # if coder.verbose:
             #     coder.io.tool_error(traceback.format_exc())
-            return f"Error executing interactive command: {str(e)}"
+            response = ToolResponse(cls.NORM_NAME)
+            response.append_result(f"Error executing interactive command: {str(e)}")
+            return response

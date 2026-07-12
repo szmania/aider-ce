@@ -19,6 +19,7 @@ from cecli.run_cmd import run_cmd_subprocess
 from cecli.tools.utils.base_tool import BaseTool
 from cecli.tools.utils.helpers import ToolError
 from cecli.tools.utils.output import color_markers, tool_footer, tool_header
+from cecli.tools.utils.responses import ToolResponse
 from cecli.tools.validations import ToolValidations
 
 
@@ -112,33 +113,47 @@ class Tool(BaseTool):
 
         Commands run with timeout based on agent_config['command_timeout'] (default: 30 seconds).
         """
+        response = ToolResponse(
+            "command",
+            result_type=cls.RESULT_TYPE if hasattr(cls, "RESULT_TYPE") else "str",
+        )
         # Handle interactions with an existing background command
         if background_key:
             if action == "stdin":
                 if not stdin:
-                    return "Error: 'stdin' is required when action='stdin'."
+                    response.append_error("'stdin' is required when action='stdin'.")
+                    return response
                 cls.clear_invocation_cache()
                 success = BackgroundCommandManager.send_command_input(background_key, stdin)
                 if success:
-                    return f"Sent input to background command {background_key}: {stdin}"
+                    response.append_result(
+                        f"Sent input to background command {background_key}: {stdin}"
+                    )
+                    return response
                 else:
-                    return f"Error: Background command {background_key} not found or not running."
+                    response.append_error(
+                        f"Background command {background_key} not found or not running."
+                    )
+                    return response
 
             elif action == "stop":
                 return await cls._stop_background_command(coder, background_key)
 
             else:
-                return f"Error: Unknown action '{action}'. " "Use one of: stdin, stop."
+                response.append_error(f"Unknown action '{action}'. Use one of: stdin, stop.")
+                return response
 
         if not command:
-            return "Error: 'command' must be provided."
+            response.append_error("'command' must be provided.")
+            return response
 
         # Check for implicit background (trailing & on Linux)
         if ".cecli/agents" in command:
-            return (
-                "Error: Do not attempt to access internal files with "
+            response.append_error(
+                "Do not attempt to access internal files with "
                 "standard cli tools. Please use the tools you have been provided."
             )
+            return response
 
         if not background and command.strip().endswith("&"):
             background = True
@@ -147,7 +162,8 @@ class Tool(BaseTool):
         # Get user confirmation
         confirmed = await cls._get_confirmation(coder, command, background)
         if not confirmed:
-            return "Command execution skipped by user."
+            response.append_result("Command execution skipped by user.")
+            return response
 
         command = coder.format_command_with_prefix(command)
 
@@ -240,11 +256,13 @@ class Tool(BaseTool):
         if stdin:
             BackgroundCommandManager.send_command_input(command_key, stdin)
 
-        return (
+        response = ToolResponse(cls.NORM_NAME)
+        response.append_result(
             f"Background command started: {command_string}\n"
             f"Command key: {command_key}\n"
             "Output will be injected into chat stream."
         )
+        return response
 
     @classmethod
     async def _execute_with_timeout(cls, coder, command_string, timeout, use_pty=None):
@@ -260,6 +278,8 @@ class Tool(BaseTool):
         import time
 
         from cecli.helpers.background_commands import CircularBuffer
+
+        response = ToolResponse(cls.NORM_NAME)
 
         coder.io.tool_output(
             f"⛭ Executing shell command with {timeout}s timeout.", type="tool-result"
@@ -342,7 +362,8 @@ class Tool(BaseTool):
                 except subprocess.TimeoutExpired:
                     process.kill()
                 BackgroundCommandManager.stop_background_command(command_key)
-                return "Command execution interrupted by user."
+                response.append_result("Command execution interrupted by user.")
+                return response
 
             # Check if process has completed
             exit_code = process.poll()
@@ -387,15 +408,17 @@ class Tool(BaseTool):
                     coder.io.tool_output(output_content, type="tool-result")
 
                 if exit_code == 0:
-                    return (
+                    response.append_result(
                         f"Shell command completed within {timeout}s timeout (exit code 0)."
                         f" Output:\n{output_content}"
                     )
+                    return response
                 else:
-                    return (
+                    response.append_result(
                         f"Shell command completed within {timeout}s timeout with exit code"
                         f" {exit_code}. Output:\n{output_content}"
                     )
+                    return response
 
             # Check if timeout has expired
             elapsed = time.time() - start_time
@@ -409,11 +432,12 @@ class Tool(BaseTool):
                 # Get any output captured so far
                 current_output = buffer.get_all(clear=False)
 
-                return (
+                response.append_result(
                     f"Command exceeded {timeout}s timeout and is continuing in background.\n"
                     f"Command key: {command_key}\n"
                     f"Output captured so far:\n{current_output}\n"
                 )
+                return response
 
             # Wait a bit before checking again
             await asyncio.sleep(1)
@@ -423,6 +447,7 @@ class Tool(BaseTool):
         """
         Execute command in foreground (blocking).
         """
+        response = ToolResponse(cls.NORM_NAME)
         should_print = True
         tui = None
         if coder.tui and coder.tui():
@@ -470,9 +495,15 @@ class Tool(BaseTool):
             coder.io.tool_output(output_content, type="tool-result")
 
         if exit_status == 0:
-            return f"Shell command executed successfully (exit code 0). Output:\n{output_content}"
+            response.append_result(
+                f"Shell command executed successfully (exit code 0). Output:\n{output_content}"
+            )
+            return response
         else:
-            return f"Shell command failed with exit code {exit_status}. Output:\n{output_content}"
+            response.append_result(
+                f"Shell command failed with exit code {exit_status}. Output:\n{output_content}"
+            )
+            return response
 
     @classmethod
     async def _stop_background_command(cls, coder, command_key):
@@ -482,19 +513,25 @@ class Tool(BaseTool):
         success, output, exit_code = BackgroundCommandManager.stop_background_command(command_key)
 
         if success:
-            return (
+            response = ToolResponse(cls.NORM_NAME)
+            response.append_result(
                 f"Background command stopped: {command_key}\n"
                 f"Exit code: {exit_code}\n"
                 f"Final output:\n{output}"
             )
+            return response
         else:
-            return output  # Error message from manager
+            response = ToolResponse(cls.NORM_NAME)
+            response.append_result(output)
+            return response
 
     @classmethod
     async def _handle_errors(cls, coder, command_string, e):
         """Handle errors during command execution."""
         coder.io.tool_error(f"Error executing shell command: {str(e)}")
-        return f"Error executing command: {str(e)}"
+        response = ToolResponse(cls.NORM_NAME)
+        response.append_error(f"Error executing command: {str(e)}")
+        return response
 
     @classmethod
     def format_output(cls, coder, mcp_server, tool_response):

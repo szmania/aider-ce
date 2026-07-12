@@ -298,6 +298,7 @@ class AgentCoder(Coder):
 
     async def _execute_mcp_tool(self, server, tool_name, params):
         """Helper to execute a single MCP tool call, created from legacy format."""
+        from cecli.tools.utils.responses import ToolResponse
 
         async def _exec_async():
             function_dict = {"name": tool_name, "arguments": json.dumps(params)}
@@ -337,9 +338,14 @@ class AgentCoder(Coder):
 
         result, interrupted = await interruptible(_exec_async(), self.interrupt_event)
 
+        response = ToolResponse(tool_name)
         if interrupted:
-            return "Tool execution interrupted by user."
-        return result
+            response.append_error("Tool execution interrupted by user.")
+        elif isinstance(result, str) and result.startswith("Error executing tool call"):
+            response.append_error(result)
+        else:
+            response.append_result(result)
+        return response
 
     def _calculate_context_block_tokens(self, force=False):
         """
@@ -887,7 +893,7 @@ class AgentCoder(Coder):
                 {
                     "role": "tool",
                     "tool_call_id": tool_call.id,
-                    "content": result,
+                    "content": str(result),
                 }
             )
         return tool_responses

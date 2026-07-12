@@ -97,7 +97,68 @@ class ToolProxy:
         self._coder = coder
         self._tool_module = tool_module
         self._mcp_server = mcp_server
-        self._mcp_tool_name = mcp_tool_name
+
+    async def __call__(self, *args: Any, **kwargs: Any):
+        """Make the proxy directly callable.
+
+        Supports both ``await tool(key=val)`` and ``await tool("val")``.
+        Positional arguments are mapped to parameter names using the
+        tool's schema (when available).
+        """
+        if args and kwargs:
+            raise TypeError(
+                f"Tool '{self._tool_name}': cannot mix positional and keyword arguments"
+            )
+
+        if args:
+            param_names = self._get_param_names()
+            if not param_names:
+                if len(args) == 1:
+                    # Fallback: try common first-param names
+                    for guess in (
+                        "path",
+                        "read",
+                        "searches",
+                        "edits",
+                        "queries",
+                        "tasks",
+                        "delegations",
+                        "code",
+                        "command_string",
+                        "command",
+                        "summary",
+                    ):
+                        kwargs = {guess: args[0]}
+                        break
+                    else:
+                        raise TypeError(
+                            f"Tool '{self._tool_name}': cannot resolve positional "
+                            f"argument – no schema available"
+                        )
+                else:
+                    raise TypeError(
+                        f"Tool '{self._tool_name}': cannot resolve positional "
+                        f"arguments – no schema available"
+                    )
+            elif len(args) > len(param_names):
+                raise TypeError(
+                    f"Tool '{self._tool_name}': too many positional arguments "
+                    f"({len(args)} for {len(param_names)} parameter(s): {param_names})"
+                )
+            else:
+                kwargs = dict(zip(param_names, args))
+
+        return await self.call(**kwargs)
+
+    def _get_param_names(self) -> list:
+        """Extract ordered parameter names from the tool's JSON Schema."""
+        if self._tool_module is None:
+            return []
+        try:
+            props = self._tool_module.SCHEMA["function"]["parameters"]["properties"]
+            return list(props.keys())
+        except (KeyError, TypeError, AttributeError):
+            return []
 
     async def call(self, **kwargs: Any):
         """Execute the tool with the given keyword arguments.
@@ -112,9 +173,10 @@ class ToolProxy:
             return str(result)
 
         if self._mcp_server is not None:
-            return await self._coder._execute_mcp_tool(
+            result = await self._coder._execute_mcp_tool(
                 self._mcp_server, self._mcp_tool_name, kwargs
             )
+            return str(result)
 
         raise ValueError(f"No executor for tool '{self._tool_name}'")
 

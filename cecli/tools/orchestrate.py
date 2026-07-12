@@ -1,10 +1,10 @@
-import json
 import logging
 
 from cecli.helpers.orchestration.service import OrchestrationService
 from cecli.tools.utils.base_tool import BaseTool
 from cecli.tools.utils.helpers import ToolError
 from cecli.tools.utils.output import color_markers, tool_footer, tool_header
+from cecli.tools.utils.responses import ToolResponse
 from cecli.tools.validations import ToolValidations
 
 logger = logging.getLogger(__name__)
@@ -46,7 +46,9 @@ class Tool(BaseTool):
         BaseTool.clear_invocation_cache()
         env = OrchestrationService.get_instance(coder)
         result = await env.execute(code)
-        return json.dumps(result)
+        response = ToolResponse(cls.NORM_NAME)
+        response.append_result(result)
+        return response
 
     @classmethod
     def format_output(cls, coder, mcp_server, tool_response):
