@@ -8,6 +8,7 @@ BaseCommand pattern for modular, testable command execution.
 from .add import AddCommand
 from .agent import AgentCommand
 from .agent_model import AgentModelCommand
+from .agent_tree import AgentTreeCommand
 from .architect import ArchitectCommand
 from .ask import AskCommand
 from .clear import ClearCommand
@@ -92,6 +93,7 @@ from .workspace import WorkspaceCommand
 
 # Register commands
 CommandRegistry.register(AddCommand)
+CommandRegistry.register(AgentTreeCommand)
 CommandRegistry.register(AgentCommand)
 CommandRegistry.register(AgentModelCommand)
 CommandRegistry.register(ArchitectCommand)
@@ -167,6 +169,7 @@ CommandRegistry.register(WorkspaceCommand)
 
 __all__ = [
     "AddCommand",
+    "AgentTreeCommand",
     "AgentCommand",
     "AgentModelCommand",
     "ArchitectCommand",
