@@ -73,7 +73,7 @@ def test_env(mocker, temp_cwd, temp_home):
         test_env_vars["HOME"] = temp_home
     mocker.patch.dict(os.environ, test_env_vars)
     mocker.patch("builtins.input", return_value=None)
-    mocker.patch("cecli.io.webbrowser.open")
+    mocker.patch("webbrowser.open")
 
 
 @pytest.fixture

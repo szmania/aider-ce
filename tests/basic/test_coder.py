@@ -34,7 +34,7 @@ class TestCoder:
     def setup(self, gpt35_model):
         self.uuid = str(uuid.uuid4())
         self.GPT35 = gpt35_model
-        self.webbrowser_patcher = patch("cecli.io.webbrowser.open")
+        self.webbrowser_patcher = patch("webbrowser.open")
         self.mock_webbrowser = self.webbrowser_patcher.start()
         # Reset conversation system before each test
         ConversationService.get_chunks(self).reset()
