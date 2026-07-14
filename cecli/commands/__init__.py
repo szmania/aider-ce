@@ -1,7 +1,9 @@
+"""
 Command system for cecli.
 
 This package contains individual command implementations that follow the
 BaseCommand pattern for modular, testable command execution.
+"""
 
 from .add import AddCommand
 from .agent import AgentCommand
