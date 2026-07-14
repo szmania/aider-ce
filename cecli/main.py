@@ -10,23 +10,19 @@ except Exception:
 
 try:
     if not os.getenv("CECLI_DEFAULT_TLS"):
-        import truststore
+        from truststore import inject_into_ssl
 
-        truststore.inject_into_ssl()
+        inject_into_ssl()
 except Exception as e:
     print(e)
     pass
 
 import asyncio
 import json
-import os
 import re
 import shutil
-import threading
 import time
 import traceback
-import webbrowser
-from dataclasses import fields
 from pathlib import Path
 
 try:
@@ -40,7 +36,6 @@ from dotenv import load_dotenv
 if sys.platform == "win32":
     if hasattr(asyncio, "set_event_loop_policy"):
         asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
-from prompt_toolkit.enums import EditingMode
 
 from .dump import dump  # noqa
 
@@ -476,8 +471,7 @@ def custom_tracer(frame, event, arg):
 
 
 def main(argv=None, input=None, output=None, force_git_root=None, return_coder=False):
-    from cecli.commands import ReloadProgramSignal
-    from cecli.hooks import HookService
+    from cecli.signals import ReloadProgramSignal
 
     # Tracks the coder instance from a ReloadProgramSignal so the new
     # main_async() can pass it as from_coder to Coder.create(), preserving
@@ -515,6 +509,8 @@ def main(argv=None, input=None, output=None, force_git_root=None, return_coder=F
             # The old HookManager and HookRegistry instances are cached by UUID and
             # would be reused by the new coder, causing hook registration failures.
             if reload_from_coder:
+                from cecli.hooks import HookService
+
                 HookService.destroy_instances(reload_from_coder.uuid)
             continue
 
@@ -678,7 +674,7 @@ async def main_async(
         args.yes_always = True
     if args.yes_always_commands:
         args.yes_always = True
-    editing_mode = EditingMode.VI if args.vim else EditingMode.EMACS
+    editing_mode = "VI" if args.vim else "EMACS"
 
     def get_io(pretty):
         return InputOutput(
@@ -1015,6 +1011,8 @@ async def main_async(
         if main_model.edit_format in ("diff", "whole", "diff-fenced"):
             main_model.edit_format = "editor-" + main_model.edit_format
     if args.verbose:
+        from dataclasses import fields
+
         io.tool_output("Model metadata:")
         io.tool_output(json.dumps(main_model.info, indent=4))
         io.tool_output("Model settings:")
@@ -1256,6 +1254,8 @@ async def main_async(
         args.edit_format = main_model.editor_edit_format
         args.message = "/paste"
     if args.show_release_notes is True:
+        import webbrowser
+
         pre_init_io.tool_output(f"Opening release notes: {urls.release_notes}")
         pre_init_io.tool_output()
         webbrowser.open(urls.release_notes)
@@ -1457,6 +1457,8 @@ async def check_and_load_imports(io, is_first_run, verbose=False):
         else:
             if verbose:
                 io.tool_output("Not first run, loading imports in background thread")
+            import threading
+
             thread = threading.Thread(target=load_slow_imports)
             thread.daemon = True
             thread.start()

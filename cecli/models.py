@@ -1,12 +1,8 @@
 import asyncio
-import difflib
-import hashlib
 import importlib.resources
 import json
-import math
 import os
 import platform
-import random
 import sys
 import time
 from dataclasses import dataclass, fields
@@ -975,6 +971,8 @@ class Model(ModelSettings):
         :param fname: The filename of the image.
         :return: The token cost for the image.
         """
+        import math
+
         width, height = self.get_image_size(fname)
         max_dimension = max(width, height)
         if max_dimension > 2048:
@@ -1224,6 +1222,10 @@ class Model(ModelSettings):
         override_kwargs={},
         interrupt_event=None,
     ):
+        import random
+
+        import xxhash
+
         if os.environ.get("CECLI_SANITY_CHECK_TURNS"):
             sanity_check_messages(messages)
         messages = model_request_parser(self, messages, tools)
@@ -1305,7 +1307,7 @@ class Model(ModelSettings):
                 num_ctx = int(self.token_count(messages) * 1.25) + 8192
                 kwargs["num_ctx"] = num_ctx
         key = json.dumps(kwargs, sort_keys=True).encode()
-        hash_object = hashlib.sha1(key)
+        hash_object = xxhash.xxh64(key)
         if "timeout" not in kwargs:
             kwargs["timeout"] = request_timeout
         if self.verbose:
@@ -1713,6 +1715,7 @@ def get_chat_model_names(query: str = "") -> list:
 
 
 def fuzzy_match_models(name):
+    import difflib
     import fnmatch
 
     # Handle empty string case - return all models

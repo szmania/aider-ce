@@ -25,6 +25,19 @@ from contextlib import contextmanager
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
+import psutil
+
+# Track the initial baseline memory at module load time
+_BASELINE_MEM = psutil.Process(os.getpid()).memory_info().rss / (1024 * 1024)
+
+
+def check_memory(label="Current"):
+    """Prints absolute memory usage and growth since the script started."""
+    current_mem = psutil.Process(os.getpid()).memory_info().rss / (1024 * 1024)
+    growth = current_mem - _BASELINE_MEM
+    print(f"[{label}] Total: {current_mem:.2f} MB | Growth: +{growth:.2f} MB")
+
+
 # ── Optional dependency wrappers ──
 
 

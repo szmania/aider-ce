@@ -1,6 +1,3 @@
-import numpy as np
-
-
 def normalize_vector(vector):
     """Normalize a vector to unit length (L2 norm).
 
@@ -10,6 +7,8 @@ def normalize_vector(vector):
     Returns:
         np.ndarray: Normalized vector with length 1
     """
+    import numpy as np
+
     vector = np.asarray(vector, dtype=np.float64)
     magnitude = np.linalg.norm(vector)
     if magnitude == 0:
@@ -27,6 +26,8 @@ def cosine_similarity(vector1, vector2):
     Returns:
         float: Cosine similarity between the vectors (range: -1 to 1)
     """
+    import numpy as np
+
     vector1 = np.asarray(vector1, dtype=np.float64)
     vector2 = np.asarray(vector2, dtype=np.float64)
 
@@ -56,6 +57,8 @@ def create_bigram_vector(texts):
     Returns:
         np.ndarray: Vector of bigram frequencies
     """
+    import numpy as np
+
     # Pre-compute bigram indices (0 for 'aa', 1 for 'ab', ..., 675 for 'zz')
     bigram_indices = {}
     idx = 0
