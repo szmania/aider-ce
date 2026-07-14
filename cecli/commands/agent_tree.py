@@ -1,4 +1,4 @@
-from typing import List, Optional, Any
+from typing import List
 
 from cecli.commands.utils.base_command import BaseCommand
 from cecli.helpers.agents.service import AgentService, SubAgentInfo, SubAgentStatus
@@ -79,7 +79,11 @@ class AgentTreeCommand(BaseCommand):
 
         def render_node(node: TreeNode, prefix: str = "", is_last: bool = True):
             connector = "└── " if is_last else "├── "
-            output.append(f"{prefix}{connector}{node.agent_info.name} ({node.agent_info.status.value}) - {node.agent_info.coder.uuid}")
+            output.append(
+                f"{prefix}{connector}{node.agent_info.name}"
+                f" ({node.agent_info.status.value})"
+                f" - {node.agent_info.coder.uuid}"
+            )
 
             child_prefix = prefix + ("    " if is_last else "│   ")
             for i, child in enumerate(node.children):
