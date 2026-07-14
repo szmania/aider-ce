@@ -191,8 +191,13 @@ class AgentService:
 
         from .config import parse_subagent_file
 
+        # Always check the default sub-agents directory in the user's home
+        default_dir = str(Path.home() / ".cecli" / "subagents")
+        if default_dir not in paths:
+            paths = [default_dir] + list(paths)
+
         for directory in paths:
-            dir_path = Path(directory)
+            dir_path = Path(directory).expanduser()
             if not dir_path.is_dir():
                 continue
             for md_file in sorted(dir_path.glob("*.md")):

@@ -83,7 +83,7 @@ async def test_compact_context_with_observations():
     # 2. check_and_trigger: count_tokens(observations)
     # 3. compact_context_if_needed: done_tokens
     # 4. compact_context_if_needed: cur_tokens
-    coder.summarizer.count_tokens.side_effect = [100, 100, 1000, 0, 50]
+    coder.summarizer.count_tokens.side_effect = [100, 100, 1000, 0, 50, 100]
     coder.summarizer.summarize_all_as_text = AsyncMock(return_value="Summary Text")
 
     # Mock manager
@@ -94,7 +94,14 @@ async def test_compact_context_with_observations():
     # 3. compact (CUR)
     # 4. compact (DIFFS)
     # 5. compact (ALL)
-    mock_conv_manager.get_messages_dict.side_effect = [cur_messages, [], cur_messages, [], []]
+    mock_conv_manager.get_messages_dict.side_effect = [
+        cur_messages,
+        [],
+        cur_messages,
+        [],
+        [],
+        cur_messages,
+    ]
     with patch(
         "cecli.coders.base_coder.ConversationService.get_manager", return_value=mock_conv_manager
     ):
@@ -107,15 +114,17 @@ async def test_compact_context_with_observations():
         # Verify observations were prepended to the summary
         expected_content = "HISTORICAL OBSERVATIONS:\nObservation 1\n\nSummary Text"
 
-        # Check that add_message was called with the expected prepended content
-        all_calls = mock_conv_manager.add_message.call_args_list
+        # Check that queue_message was called with the expected prepended content
+        all_calls = mock_conv_manager.queue_message.call_args_list
         found = False
         for c in all_calls:
-            msg_dict = c[0][0] if c[0] else c[1].get("message_dict")
+            msg_dict = c[1].get("message_dict") if len(c.args) <= 1 else c[0][0]
+            if not msg_dict:
+                continue
             if msg_dict and expected_content in msg_dict.get("content", ""):
                 found = True
                 break
-        assert found, "Expected summary with observations not found in add_message calls"
+        assert found, "Expected summary with observations not found in queue_message calls"
 
 
 @pytest.mark.asyncio
@@ -144,7 +153,7 @@ async def test_compact_context_with_observations_integration():
     # 2. check_and_trigger: obs
     # 3. compact: done
     # 4. compact: cur
-    coder.summarizer.count_tokens.side_effect = [100, 100, 1000, 0, 50]
+    coder.summarizer.count_tokens.side_effect = [100, 100, 1000, 0, 50, 100]
     coder.summarizer.summarize_all_as_text = AsyncMock(return_value="Summary Text")
 
     # Mock manager
@@ -155,7 +164,14 @@ async def test_compact_context_with_observations_integration():
     # 3. compact (CUR)
     # 4. compact (DIFFS)
     # 5. compact (ALL)
-    mock_conv_manager.get_messages_dict.side_effect = [cur_messages, [], cur_messages, [], []]
+    mock_conv_manager.get_messages_dict.side_effect = [
+        cur_messages,
+        [],
+        cur_messages,
+        [],
+        [],
+        cur_messages,
+    ]
     with patch(
         "cecli.coders.base_coder.ConversationService.get_manager", return_value=mock_conv_manager
     ):
@@ -168,12 +184,14 @@ async def test_compact_context_with_observations_integration():
         # Verify observations were prepended to the summary
         expected_content = "HISTORICAL OBSERVATIONS:\nObservation 1\n\nSummary Text"
 
-        # Check that add_message was called with the expected prepended content
-        all_calls = mock_conv_manager.add_message.call_args_list
+        # Check that queue_message was called with the expected prepended content
+        all_calls = mock_conv_manager.queue_message.call_args_list
         found = False
         for c in all_calls:
-            msg_dict = c[0][0] if c[0] else c[1].get("message_dict")
+            msg_dict = c[1].get("message_dict") if len(c.args) <= 1 else c[0][0]
+            if not msg_dict:
+                continue
             if msg_dict and expected_content in msg_dict.get("content", ""):
                 found = True
                 break
-        assert found, "Expected summary with observations not found in add_message calls"
+        assert found, "Expected summary with observations not found in queue_message calls"

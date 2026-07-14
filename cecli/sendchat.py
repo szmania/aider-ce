@@ -196,7 +196,7 @@ def ensure_alternating_roles(messages):
                 result.append(tool_msg)
 
             # Update prev_role to assistant after processing tool sequence
-            prev_role = "assistant"
+            prev_role = "tool"
             continue
 
         # Handle normal message alternation

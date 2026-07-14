@@ -367,7 +367,7 @@ class InputOutput:
         root=".",
         notifications=False,
         notifications_command=None,
-        notification_bell=True,
+        notification_bell=False,
         verbose=False,
     ):
         self.console = Console()
@@ -386,6 +386,7 @@ class InputOutput:
         self.bell_on_next_input = False
         self.notifications = notifications
         self.notification_bell = notification_bell
+        self.custom_notification_command = False
         self.verbose = verbose
         self.profile_start_time = None
         self.profile_last_time = None
@@ -404,10 +405,19 @@ class InputOutput:
         self.confirmation_input_active = False
         self.saved_input_text = ""
 
-        if notifications and notifications_command is None:
-            self.notifications_command = self.get_default_notification_command()
-        else:
+        if notifications_command is not None:
+            # Custom notification command overrides everything
             self.notifications_command = notifications_command
+            self.custom_notification_command = True
+        elif notification_bell and not notifications:
+            # Bell only mode - no command needed, _send_notification will fallback to bell
+            self.notifications_command = None
+        elif notifications:
+            # Generate default notification command based on notification_bell flag
+            include_bell = notification_bell is not False
+            self.notifications_command = self.get_default_notification_command(bell=include_bell)
+        else:
+            self.notifications_command = None
 
         no_color = os.environ.get("NO_COLOR")
         if no_color is not None and no_color != "":
@@ -1693,8 +1703,8 @@ class InputOutput:
         """Mark that the LLM has started processing, so we should ring the bell on next input"""
         self.bell_on_next_input = True
 
-    def get_default_notification_command(self):
-        """Return a command that triggers a system bell followed by a notification."""
+    def get_default_notification_command(self, bell=True):
+        """Return a command that triggers a notification, optionally with a bell."""
         import platform
         import shutil
 
@@ -1744,13 +1754,18 @@ class InputOutput:
             )
             notif_cmd = f"powershell -WindowStyle Hidden -Command {ps_body}"
 
-        # 3. Concatenate them
+        # 3. Concatenate them based on bell preference
         if notif_cmd:
-            # Using ';' as a command separator works for both shell=True on Unix and Windows
-            return f"{bell_cmd} ; {notif_cmd}"
+            if bell:
+                # Using ';' as a command separator works for both shell=True on Unix and Windows
+                return f"{bell_cmd} ; {notif_cmd}"
+            return notif_cmd
 
         # Fallback if no notification tool is found
-        return bell_cmd
+        if bell:
+            return bell_cmd
+
+        return None
 
     def _send_notification(self):
         # Cooldown to prevent notification spam
@@ -1787,18 +1802,33 @@ class InputOutput:
 
             except Exception as e:
                 self.tool_warning(f"Failed to run notifications command: {e}")
-        else:
-            print("\a", end="", flush=True)  # Ring the bell
+        elif self.notification_bell is not False:
+            bell_cmd = self.get_default_notification_command(bell=True)
+            if bell_cmd:
+                try:
+                    kwargs = {
+                        "shell": True,
+                    }
+
+                    if platform.system() == "Windows":
+                        kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
+                    else:
+                        kwargs["start_new_session"] = True
+
+                    subprocess.Popen(bell_cmd, **kwargs)
+                except Exception as e:
+                    self.tool_warning(f"Failed to run bell command: {e}")
 
     def notify_user_input_required(self):
         """Send a notification that user input is required."""
-        if self.notifications:
+        if self.notifications or self.notification_bell or self.custom_notification_command:
             self._send_notification()
 
     def ring_bell(self):
         """Ring the terminal bell if needed and clear the flag"""
-        if self.bell_on_next_input and self.notifications:
-            self._send_notification()
+        if self.bell_on_next_input:
+            if self.notifications or self.notification_bell or self.custom_notification_command:
+                self._send_notification()
             self.bell_on_next_input = False
 
     def toggle_multiline_mode(self):

@@ -29,7 +29,7 @@ class ResetCommand(BaseCommand):
 
             # Clear TUI output if available
             if coder.tui and coder.tui():
-                coder.tui().action_clear_output()
+                coder.tui().call_later(coder.tui().action_clear_output)
             else:
                 io.tool_output("All files dropped and chat history cleared.")
 

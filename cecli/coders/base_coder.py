@@ -1748,7 +1748,27 @@ class Coder(metaclass=UsageMeta):
                 # Compacting is wasteful since /clear will clear everything
                 # and /exit will exit the application
                 stripped = user_message.strip()
-                if stripped not in ("/clear", "/reset", "/exit", "/quit"):
+                is_command = self.commands.is_command(stripped)
+                is_allowed_command = False
+
+                if is_command:
+                    res = self.commands.matching_commands(user_message)
+                    if res is not None:
+                        matching_commands, first_word, rest_inp = res
+                        if len(matching_commands) == 1:
+                            command = matching_commands[0]
+                            splits = (rest_inp or "").split()
+                            split_map = {
+                                "/agent": 1,
+                                "/architect": 1,
+                                "/ask": 1,
+                                "/code": 1,
+                                "/model": 2,
+                            }
+                            if command in split_map and len(splits) >= split_map.get(command, 0):
+                                is_allowed_command = True
+
+                if not is_command or is_allowed_command:
                     self.compact_context_completed = False
                     await self.compact_context_if_needed()
                     self.compact_context_completed = True
@@ -1992,27 +2012,34 @@ class Coder(metaclass=UsageMeta):
         done_messages = manager.get_messages_dict(MessageTag.DONE)
         cur_messages = manager.get_messages_dict(MessageTag.CUR)
         diff_messages = manager.get_messages_dict(MessageTag.DIFFS)
+        file_context_messages = manager.get_messages_dict(MessageTag.FILE_CONTEXTS)
         all_messages = manager.get_messages_dict()
 
         # Exclude first cur_message since that's the user's initial input
         done_tokens = self.summarizer.count_tokens(done_messages)
         cur_tokens = self.summarizer.count_tokens(cur_messages[1:] if len(cur_messages) > 1 else [])
         diff_tokens = self.summarizer.count_tokens(diff_messages)
+        file_context_tokens = self.summarizer.count_tokens(file_context_messages)
         all_tokens = self.summarizer.count_tokens(all_messages)
 
-        combined_tokens = done_tokens + cur_tokens + diff_tokens
+        message_tokens = done_tokens + cur_tokens
+        file_tokens = diff_tokens + file_context_tokens
+        combined_tokens = done_tokens + cur_tokens + diff_tokens + file_context_tokens
 
         self.context_compaction_current_ratio = all_tokens / self.context_compaction_max_tokens
 
         if force or (
             all_tokens >= self.context_compaction_max_tokens * 0.9
             and ConversationService.get_chunks(self).last_clear_count > 20
+            and file_tokens / max(message_tokens, 1) > 2
         ):
             manager.clear_tag(MessageTag.LINT, ratio=0.33)
             manager.clear_tag(MessageTag.DIFFS, ratio=0.33)
             manager.clear_tag(MessageTag.FILE_CONTEXTS, ratio=0.33)
             ConversationService.get_files(self).clear_file_cache()
             ConversationService.get_chunks(self).flush_removals()
+            ConversationService.get_chunks(self).reset_clear_count()
+            ObservationService.get_instance(self).reset_index()
 
         if not force and combined_tokens < self.context_compaction_max_tokens:
             return
@@ -2046,9 +2073,9 @@ class Coder(metaclass=UsageMeta):
                 manager.clear_tag(tag)
 
                 if tag == MessageTag.DONE:
-                    manager.add_message({"role": "user", "content": text}, tag=tag)
-                    manager.add_message(
-                        {
+                    manager.queue_message(message_dict={"role": "user", "content": text}, tag=tag)
+                    manager.queue_message(
+                        message_dict={
                             "role": "assistant",
                             "content": (
                                 "Ok, I will use this summary and the observations as context for"
@@ -2059,12 +2086,13 @@ class Coder(metaclass=UsageMeta):
                     )
                 else:
                     if self.last_user_message:
-                        manager.add_message(
-                            {"role": "user", "content": self.last_user_message}, tag=tag
+                        manager.queue_message(
+                            message_dict={"role": "user", "content": self.last_user_message},
+                            tag=tag,
                         )
 
-                    manager.add_message(
-                        {
+                    manager.queue_message(
+                        message_dict={
                             "role": "assistant",
                             "content": "Ok. I am awaiting your summary of our goals to proceed.",
                         },
@@ -2072,8 +2100,8 @@ class Coder(metaclass=UsageMeta):
                         force=True,
                     )
 
-                    manager.add_message(
-                        {
+                    manager.queue_message(
+                        message_dict={
                             "role": "user",
                             "content": (
                                 "Here is a summary of our current goals and historical"
@@ -2083,8 +2111,8 @@ class Coder(metaclass=UsageMeta):
                         tag=tag,
                     )
 
-                    manager.add_message(
-                        {
+                    manager.queue_message(
+                        message_dict={
                             "role": "assistant",
                             "content": (
                                 "Ok, I will use this summary and proceed with our task. I will"
@@ -2117,6 +2145,9 @@ class Coder(metaclass=UsageMeta):
             manager.clear_tag(MessageTag.FILE_CONTEXTS)
             ConversationService.get_files(self).clear_file_cache()
             ConversationService.get_chunks(self).flush_removals()
+            ConversationService.get_chunks(self).reset_clear_count()
+            ObservationService.get_instance(self).reset_index()
+            self.format_chat_chunks()
 
         except Exception as e:
             self.io.tool_warning(f"Context compaction failed: {e}")

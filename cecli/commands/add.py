@@ -125,10 +125,11 @@ class AddCommand(BaseCommand):
                 else:
                     io.tool_error(f"Cannot add {matched_file} as it's not part of the repository")
             else:
-                if is_image_file(matched_file) and not coder.main_model.info.get("supports_vision"):
+                active_model = coder.get_active_model()
+                if is_image_file(matched_file) and not active_model.info.get("supports_vision"):
                     io.tool_error(
                         f"Cannot add image file {matched_file} as the"
-                        f" {coder.main_model.name} does not support images."
+                        f" {active_model.name} does not support images."
                     )
                     continue
                 content = io.read_text(abs_file_path)

@@ -56,6 +56,7 @@ def create_tui_io(args, editing_mode):
         multiline_mode=args.multiline,
         notifications=args.notifications,
         notifications_command=args.notifications_command,
+        notification_bell=args.notification_bell,
         verbose=args.verbose,
     )
 

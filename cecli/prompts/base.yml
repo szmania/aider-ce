@@ -112,6 +112,7 @@ observation_prompt: |
   Focus on "what happened" rather than a narrative summary.
   Use a bulleted list of concise, factual statements.
   Document the sequence of **outcomes and milestones** reached. 
+  Do not describe or focus on what you need to do. Focus on what you have already done.
   Do not describe tool syntax; describe what was learned or changed in one sentence per bullet.
   Do not call any tools in your response. Just generate your summary.
 

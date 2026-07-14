@@ -19,7 +19,7 @@ class ToolRegistry:
     """Registry for tool discovery and management."""
 
     _tools: Dict[str, Type] = {}  # normalized name -> Tool class
-    _essential_tools: Set[str] = {"resourcemanager", "edittext", "yield"}
+    _essential_tools: Set[str] = {"resourcemanager", "editfile", "yield"}
     _registry: Dict[str, Type] = {}  # cached filtered registry
     loaded_custom_tools: List[str] = []
 

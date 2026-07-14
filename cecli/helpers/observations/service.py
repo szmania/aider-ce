@@ -3,7 +3,6 @@ import weakref
 from datetime import datetime
 
 from cecli.helpers.conversation.service import ConversationService
-from cecli.helpers.conversation.tags import MessageTag
 
 
 class ObservationService:
@@ -53,7 +52,7 @@ class ObservationService:
         if coder is None:
             return
 
-        cur_messages = ConversationService.get_manager(coder).get_messages_dict(MessageTag.CUR)
+        cur_messages = ConversationService.get_manager(coder).get_messages_dict()
 
         # Calculate unobserved tokens
         unobserved = cur_messages[self._last_observed_index :]
@@ -80,6 +79,10 @@ class ObservationService:
         try:
             all_messages = ConversationService.get_manager(coder).get_messages_dict()
             prompt = coder.gpt_prompts.observation_prompt
+            if self.observations:
+                prompt += "\n\n---\nCURRENT OBSERVATIONS (Do not duplicate):\n\n"
+                prompt += "\n".join(self.observations)
+
             observation = await coder.summarizer.summarize_all_as_text(
                 all_messages, prompt, max_tokens=8192, coder=coder
             )
@@ -139,6 +142,9 @@ class ObservationService:
         self.observations = []
         self._last_observed_index = 0
 
+    def reset_index(self):
+        self._last_observed_index = 0
+
     def format_observation(self, text):
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M")
-        return f"[{timestamp}] {text}"
+        return f"[{timestamp}]\n{text}"

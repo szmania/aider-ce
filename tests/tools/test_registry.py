@@ -28,7 +28,7 @@ class TestToolRegistry:
         assert len(tools) > 0, "Registry should have tools after initialization"
 
         # Check that essential tools are registered
-        essential_tools = {"resourcemanager", "edittext", "yield"}
+        essential_tools = {"resourcemanager", "editfile", "yield"}
         for tool in essential_tools:
             assert tool in tools, f"Essential tool {tool} should be registered"
 
@@ -53,18 +53,18 @@ class TestToolRegistry:
 
         # Essential tools should always be included
         assert "resourcemanager" in registry, "Essential tool should be included"
-        assert "edittext" in registry, "Essential tool should be included"
+        assert "editfile" in registry, "Essential tool should be included"
         assert "yield" in registry, "Essential tool should be included"
 
     def test_build_registry_with_includelist(self):
         """Test filtering with tools_includelist"""
-        config = {"tools_includelist": ["resourcemanager", "edittext"]}
+        config = {"tools_includelist": ["resourcemanager", "editfile"]}
         registry = ToolRegistry.build_registry(config)
 
         # Should only include tools from includelist, plus essential tools
         assert len(registry) == 3, "Should include 2 from list + 1 essential"
         assert "resourcemanager" in registry
-        assert "edittext" in registry
+        assert "editfile" in registry
         assert "yield" in registry  # Essential
         assert "command" not in registry, "Should not include tools not in includelist"
 
@@ -80,19 +80,19 @@ class TestToolRegistry:
 
     def test_build_registry_exclude_essential(self):
         """Test that essential tools cannot be excluded"""
-        config = {"tools_excludelist": ["resourcemanager", "edittext", "finished", "command"]}
+        config = {"tools_excludelist": ["resourcemanager", "editfile", "finished", "command"]}
         registry = ToolRegistry.build_registry(config)
 
         # Essential tools should still be included despite excludelist
         assert "resourcemanager" in registry, "Essential tool cannot be excluded"
-        assert "edittext" in registry, "Essential tool cannot be excluded"
+        assert "editfile" in registry, "Essential tool cannot be excluded"
         assert "yield" in registry, "Essential tool cannot be excluded"
         assert "command" not in registry, "Non-essential tool should be excluded"
 
     def test_build_registry_combined_filters(self):
         """Test combined filtering with includelist and excludelist"""
         config = {
-            "tools_includelist": ["resourcemanager", "edittext", "command"],
+            "tools_includelist": ["resourcemanager", "editfile", "command"],
             "tools_excludelist": ["commandinteractive"],
         }
         registry = ToolRegistry.build_registry(config)
@@ -100,36 +100,36 @@ class TestToolRegistry:
         # Should respect all filters
         assert len(registry) == 4, "Should include exactly 4 tools (3 from list + yield)"
         assert "resourcemanager" in registry
-        assert "edittext" in registry
+        assert "editfile" in registry
         assert "yield" in registry
         assert "command" in registry
         assert "commandinteractive" not in registry
 
     def test_get_filtered_tools(self):
         """Test get_filtered_tools method"""
-        config = {"tools_includelist": ["resourcemanager", "edittext"]}
+        config = {"tools_includelist": ["resourcemanager", "editfile"]}
         ToolRegistry.build_registry(config)
         tool_names = ToolRegistry.get_registered_tools()
 
         # Should return list of tool names
         assert isinstance(tool_names, list)
-        # Should include resourcemanager, edittext, and finished (essential)
+        # Should include resourcemanager, editfile, and finished (essential)
         assert len(tool_names) == 3
         assert "resourcemanager" in tool_names
-        assert "edittext" in tool_names
+        assert "editfile" in tool_names
         assert "yield" in tool_names  # Essential tool always included
 
     def test_legacy_config_names(self):
         """Test backward compatibility with legacy config names (whitelist/blacklist)"""
         config = {
-            "tools_whitelist": ["resourcemanager", "edittext"],
+            "tools_whitelist": ["resourcemanager", "editfile"],
             "tools_blacklist": ["command"],
         }
         registry = ToolRegistry.build_registry(config)
 
         # Should work with legacy names
         assert "resourcemanager" in registry
-        assert "edittext" in registry
+        assert "editfile" in registry
         assert "command" not in registry
 
     def test_config_precedence(self):
@@ -152,7 +152,7 @@ class TestToolRegistry:
 
     def test_registry_consistency(self):
         """Test that registry methods return consistent results"""
-        config = {"tools_includelist": ["resourcemanager", "edittext"]}
+        config = {"tools_includelist": ["resourcemanager", "editfile"]}
 
         # build_registry should return consistent results
         registry = ToolRegistry.build_registry(config)

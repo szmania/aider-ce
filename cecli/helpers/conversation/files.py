@@ -252,6 +252,7 @@ class ConversationFiles:
         )
 
         if not snapshot_content:
+            self.add_file(abs_fname, content=current_content)
             return None
 
         # Generate diff between snapshot and current content using hashline helper

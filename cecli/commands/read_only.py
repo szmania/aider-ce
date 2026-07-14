@@ -156,10 +156,11 @@ class ReadOnlyCommand(BaseCommand):
         source_mode="read-only",
         target_mode="read-only",
     ):
-        if is_image_file(original_name) and not coder.main_model.info.get("supports_vision"):
+        active_model = coder.get_active_model()
+        if is_image_file(original_name) and not active_model.info.get("supports_vision"):
             io.tool_error(
                 f"Cannot add image file {original_name} as the"
-                f" {coder.main_model.name} does not support images."
+                f" {active_model.name} does not support images."
             )
             return
 

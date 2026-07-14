@@ -25,10 +25,9 @@ class ClearCommand(BaseCommand):
 
         # Clear TUI output if available
         if coder.tui and coder.tui():
-            coder.tui().action_clear_output()
+            coder.tui().call_later(coder.tui().action_clear_output)
 
-        io.tool_output("All chat history cleared.")
-        return format_command_result(io, "clear", "Cleared chat history")
+        return format_command_result(io, "clear", "All chat history cleared.")
 
     @classmethod
     def get_completions(cls, io, coder, args) -> List[str]:

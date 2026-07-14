@@ -65,7 +65,7 @@ class Tool(BaseTool):
                 try:
                     with os.scandir(abs_path) as entries:
                         for entry in entries:
-                            if entry.is_file() and not entry.name.startswith("."):
+                            if not entry.name.startswith("."):
                                 rel_path = os.path.relpath(entry.path, coder.root)
                                 contents.append(rel_path)
                 except OSError as e:
@@ -80,9 +80,11 @@ class Tool(BaseTool):
                     f"🗐  Listed {len(contents)} file(s) in '{dir_path}'", type="tool-result"
                 )
                 sorted_contents = sorted(contents)
-                if len(sorted_contents) > 10:
+                if len(sorted_contents) > 500:
                     return (
-                        f"Found {len(sorted_contents)} files: {', '.join(sorted_contents[:10])}..."
+                        f"Found {len(sorted_contents)} files:"
+                        f" {', '.join(sorted_contents[:500])}"
+                        f"\n... and {len(sorted_contents) - 500} more"
                     )
                 else:
                     return f"Found {len(sorted_contents)} files: {', '.join(sorted_contents)}"
