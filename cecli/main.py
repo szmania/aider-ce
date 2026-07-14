@@ -1470,9 +1470,7 @@ async def check_and_load_imports(io, is_first_run, verbose=False):
 
 def load_slow_imports(swallow=True):
     try:
-        import httpx  # noqa
-        import litellm  # noqa
-        import numpy  # noqa
+        import cecli.llm  # noqa
     except Exception as e:
         if not swallow:
             raise e
