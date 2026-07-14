@@ -37,7 +37,7 @@ class AgentTreeCommand(BaseCommand):
         primary_info = SubAgentInfo(
             name="primary",
             coder=primary_coder,
-            parent_uuid=primary_coder.parent_uuid or "",
+            parent_uuid=str(primary_coder.parent_uuid or ""),
             status=SubAgentStatus.RUNNING,
         )
         all_infos.append(primary_info)
@@ -58,17 +58,17 @@ class AgentTreeCommand(BaseCommand):
     @classmethod
     def _build_tree(cls, all_agents: List[SubAgentInfo]) -> List[TreeNode]:
         """Build the agent tree from a flat list of agents."""
-        nodes = {agent.coder.uuid: TreeNode(agent) for agent in all_agents}
+        nodes = {str(agent.coder.uuid): TreeNode(agent) for agent in all_agents}
         root_nodes = []
 
         for agent in all_agents:
-            parent_uuid = agent.coder.parent_uuid
+            parent_uuid = str(agent.coder.parent_uuid)
             if parent_uuid and parent_uuid in nodes:
                 parent_node = nodes[parent_uuid]
-                child_node = nodes[agent.coder.uuid]
+                child_node = nodes[str(agent.coder.uuid)]
                 parent_node.add_child(child_node)
             else:
-                root_nodes.append(nodes[agent.coder.uuid])
+                root_nodes.append(nodes[str(agent.coder.uuid)])
 
         return root_nodes
 
@@ -82,7 +82,7 @@ class AgentTreeCommand(BaseCommand):
             output.append(
                 f"{prefix}{connector}{node.agent_info.name}"
                 f" ({node.agent_info.status.value})"
-                f" - {node.agent_info.coder.uuid}"
+                f" - {str(node.agent_info.coder.uuid)}"
             )
 
             child_prefix = prefix + ("    " if is_last else "│   ")
