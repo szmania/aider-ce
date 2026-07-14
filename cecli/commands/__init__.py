@@ -1,13 +1,12 @@
-"""
 Command system for cecli.
 
 This package contains individual command implementations that follow the
 BaseCommand pattern for modular, testable command execution.
-"""
 
 from .add import AddCommand
 from .agent import AgentCommand
 from .agent_model import AgentModelCommand
+from .agent_tree import AgentTreeCommand
 from .architect import ArchitectCommand
 from .ask import AskCommand
 from .clear import ClearCommand
@@ -94,6 +93,7 @@ from .workspace import WorkspaceCommand
 CommandRegistry.register(AddCommand)
 CommandRegistry.register(AgentCommand)
 CommandRegistry.register(AgentModelCommand)
+CommandRegistry.register(AgentTreeCommand)
 CommandRegistry.register(ArchitectCommand)
 CommandRegistry.register(AskCommand)
 CommandRegistry.register(ClearCommand)
@@ -169,6 +169,7 @@ __all__ = [
     "AddCommand",
     "AgentCommand",
     "AgentModelCommand",
+    "AgentTreeCommand",
     "ArchitectCommand",
     "AskCommand",
     "BaseCommand",
