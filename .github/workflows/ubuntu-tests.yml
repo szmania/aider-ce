@@ -55,6 +55,8 @@ jobs:
           -r requirements/requirements-help.in \
           -r requirements/requirements-playwright.in \
           ".[help,playwright]"
+      env:
+        PYO3_USE_ABI3_FORWARD_COMPATIBILITY: "1"
 
     - name: Configure Git for tests
       run: |
@@ -67,3 +69,4 @@ jobs:
         pytest
       env:
         CECLI_TUI: "false"
+        PYO3_USE_ABI3_FORWARD_COMPATIBILITY: "1"
