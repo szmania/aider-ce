@@ -18,8 +18,19 @@ from io import StringIO
 from pathlib import Path
 
 from prompt_toolkit.completion import Completer, Completion, ThreadedCompleter
+from prompt_toolkit.cursor_shapes import ModalCursorShapeConfig
+from prompt_toolkit.enums import EditingMode
+from prompt_toolkit.filters import Condition, is_searching
 from prompt_toolkit.history import FileHistory
+from prompt_toolkit.key_binding import KeyBindings
+from prompt_toolkit.key_binding.vi_state import InputMode
+from prompt_toolkit.keys import Keys
+from prompt_toolkit.lexers import PygmentsLexer
 from prompt_toolkit.output.vt100 import is_dumb_terminal
+from prompt_toolkit.shortcuts import CompleteStyle, PromptSession
+from prompt_toolkit.styles import Style
+from pygments.lexers import MarkdownLexer, guess_lexer_for_filename
+from pygments.token import Token
 from rich.color import ColorParseError
 from rich.columns import Columns
 from rich.console import Console
@@ -170,9 +181,6 @@ class AutoCompleter(Completer):
         self.tokenized = False
 
     def tokenize(self):
-        from pygments.lexers import guess_lexer_for_filename
-        from pygments.token import Token
-
         if self.tokenized:
             return
         self.tokenized = True
@@ -351,7 +359,7 @@ class InputOutput:
         encoding="utf-8",
         line_endings="platform",
         dry_run=False,
-        editingmode="EMACS",
+        editingmode=EditingMode.EMACS,
         fancy_input=True,
         file_watcher=None,
         multiline_mode=False,
@@ -503,9 +511,6 @@ class InputOutput:
         self.interruptible_input = None
 
         if fancy_input:
-            from prompt_toolkit.lexers import PygmentsLexer
-            from pygments.lexers import MarkdownLexer
-
             # If unicode is supported, use the rich 'dots2' spinner, otherwise an ascii fallback
             if self._spinner_supports_unicode():
                 self.spinner_frames = SPINNERS["dots2"]["frames"]
@@ -521,15 +526,11 @@ class InputOutput:
                 "editing_mode": self.editingmode,
                 "bottom_toolbar": self.get_bottom_toolbar,
             }
-            if self.editingmode == "VI":
-                from prompt_toolkit.cursor_shapes import ModalCursorShapeConfig
-
+            if self.editingmode == EditingMode.VI:
                 session_kwargs["cursor"] = ModalCursorShapeConfig()
             if self.input_history_file is not None:
                 session_kwargs["history"] = FileHistory(self.input_history_file)
             try:
-                from prompt_toolkit.shortcuts import PromptSession
-
                 self.prompt_session = PromptSession(**session_kwargs)
                 self.console = Console()  # pretty console
             except Exception as err:
@@ -637,8 +638,6 @@ class InputOutput:
                     setattr(self, attr_name, None)  # Reset invalid color to None
 
     def _get_style(self):
-        from prompt_toolkit.styles import Style
-
         style_dict = {}
         if not self.pretty:
             return Style.from_dict(style_dict)
@@ -829,11 +828,6 @@ class InputOutput:
         edit_format=None,
         **kwargs,
     ):
-        from prompt_toolkit.filters import Condition, is_searching
-        from prompt_toolkit.key_binding import KeyBindings
-        from prompt_toolkit.keys import Keys
-        from prompt_toolkit.shortcuts import CompleteStyle
-
         self.rule()
         if commands.last_command_show_notification:
             self.notify_user_input_required()
@@ -945,10 +939,9 @@ class InputOutput:
         @kb.add("enter", eager=True, filter=~is_searching)
         def _(event):
             "Handle Enter key press"
-            from prompt_toolkit.key_binding.vi_state import InputMode
-
             if self.multiline_mode and not (
-                self.editingmode == "VI" and event.app.vi_state.input_mode == InputMode.NAVIGATION
+                self.editingmode == EditingMode.VI
+                and event.app.vi_state.input_mode == InputMode.NAVIGATION
             ):
                 # In multiline mode and if not in vi-mode or vi navigation/normal mode,
                 # Enter adds a newline
