@@ -1416,6 +1416,7 @@ class Model(ModelSettings):
                         return hash_object, self.model_error_response()
 
                 print(f"Retrying in {retry_delay:.1f} seconds...")
+                print(f"LiteLLM API Error: {str(err)}")
                 if interrupt_event:
                     _res, interrupted = await coroutines.interruptible(
                         asyncio.sleep(retry_delay), interrupt_event

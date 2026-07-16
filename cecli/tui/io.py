@@ -646,7 +646,6 @@ class TextualInputOutput(InputOutput):
         except asyncio.CancelledError:
             return False
 
-
     def request_exit(self):
         """Request the TUI to exit gracefully.
 
