@@ -50,7 +50,9 @@ class Tool(BaseTool):
                 "1. Start and end content IDs are INCLUSIVE. Both will be modified or deleted. "
                 "2. Content IDs MUST include the `::` demarcator. "
                 "3. Edits within the same file MUST NOT be adjacent or overlapping. "
-                "4. For empty files, you MUST use '@000' as the content ID reference."
+                "4. For empty files, you MUST use '@000' as the content ID reference. "
+                "5. After an edit, only IDs within ~5 lines of the change are regenerated. "
+                "IDs farther from the edit site remain usable."
             ),
             "parameters": {
                 "type": "object",
