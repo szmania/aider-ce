@@ -15,6 +15,7 @@ async def test_run_parallel_first_completed():
     coder = create_test_coder()
     coder.input_running = True
     coder.output_running = True
+    coder.interrupt_event = asyncio.Event()
     coder.interrupt_event = MagicMock()
 
     # Create mock tasks
@@ -52,7 +53,7 @@ async def test_run_parallel_interrupt_event_cleared():
     coder = create_test_coder()
     coder.input_running = True
     coder.output_running = True
-    coder.interrupt_event = MagicMock()
+    coder.interrupt_event = asyncio.Event()
 
     # Create mock tasks that both complete quickly
     input_task = AsyncMock()
@@ -81,7 +82,7 @@ async def test_run_parallel_sets_running_flags():
     coder = create_test_coder()
     coder.input_running = False
     coder.output_running = False
-    coder.interrupt_event = MagicMock()
+    coder.interrupt_event = asyncio.Event()
     coder.interrupt_event.clear()
 
     # Create mock tasks
@@ -94,8 +95,14 @@ async def test_run_parallel_sets_running_flags():
     coder.run_one = MagicMock(return_value="test_result")
 
     # Mock asyncio.wait to return when first task completes
-    with patch("asyncio.wait") as mock_wait:
+    with (
+        patch("asyncio.wait") as mock_wait,
+        patch("cecli.helpers.agents.service.AgentService") as mock_agent_service,
+    ):
         mock_wait.return_value = ({input_task}, {output_task})
+        mock_instance = MagicMock()
+        mock_instance.foreground_coder.return_value = coder
+        mock_agent_service.get_instance.return_value = mock_instance
 
         # Call _run_parallel
         await coder._run_parallel(with_message="test message")

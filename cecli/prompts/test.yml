@@ -1,0 +1,14 @@
+# Test prompts - inherits from base.yaml
+_inherits: [base]
+
+# Minimal system prompt for testing purposes
+main_system: |
+  You are a test assistant. Your only goal is to assist in running tests.
+  {final_reminders}
+
+system_reminder: |
+  <context name="critical_reminders">
+  - You are in test mode. Focus on test execution and reporting.
+  {lazy_prompt}
+  {shell_cmd_reminder}
+  </context>

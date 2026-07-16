@@ -26,7 +26,7 @@ def test_worker_interrupt_sets_both_flags_false():
     worker = CoderWorker(target_coder, MagicMock(), MagicMock())
 
     with (
-        patch("cecli.tui.worker.AgentService") as mock_agent_service,
+        patch("cecli.helpers.agents.service.AgentService") as mock_agent_service,
         patch(
             "cecli.prompts.utils.registry.PromptRegistry.get_prompt",
             return_value={"system": "dummy"},
@@ -59,7 +59,7 @@ def test_worker_interrupt_with_missing_input_running_attribute():
 
     # Mock AgentService and PromptRegistry
     with (
-        patch("cecli.tui.worker.AgentService") as mock_agent_service,
+        patch("cecli.helpers.agents.service.AgentService") as mock_agent_service,
         patch(
             "cecli.prompts.utils.registry.PromptRegistry.get_prompt",
             return_value={"system": "dummy_prompt"},
@@ -85,7 +85,7 @@ def test_worker_interrupt_cancels_output_task():
     worker = CoderWorker(target_coder, MagicMock(), MagicMock())
 
     with (
-        patch("cecli.tui.worker.AgentService") as mock_agent_service,
+        patch("cecli.helpers.agents.service.AgentService") as mock_agent_service,
         patch(
             "cecli.prompts.utils.registry.PromptRegistry.get_prompt",
             return_value={"system": "dummy"},
@@ -110,7 +110,7 @@ def test_worker_interrupt_sets_interrupt_event():
 
     # Mock AgentService and PromptRegistry
     with (
-        patch("cecli.tui.worker.AgentService") as mock_agent_service,
+        patch("cecli.helpers.agents.service.AgentService") as mock_agent_service,
         patch(
             "cecli.prompts.utils.registry.PromptRegistry.get_prompt",
             return_value={"system": "dummy_prompt"},
