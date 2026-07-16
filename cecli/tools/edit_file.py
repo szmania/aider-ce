@@ -219,7 +219,13 @@ class Tool(BaseTool):
                                 edit_start_line = "@000"
                                 edit_end_line = "@000"
 
-                            # 3. Auto-sanitize malformed boundaries (strip accidentally appended code)
+                            # 3. Resolve non-hashline content values to content IDs first
+                            # (before normalize_hashline which would fail on arbitrary content)
+                            edit_start_line, edit_end_line = resolve_content_to_hashline_ids(
+                                original_content, edit_start_line, edit_end_line
+                            )
+
+                            # 4. Auto-sanitize malformed boundaries (strip accidentally appended code)
                             if isinstance(edit_start_line, str) and "::" in edit_start_line:
                                 edit_start_line = normalize_hashline(edit_start_line)
                             if isinstance(edit_end_line, str) and "::" in edit_end_line:
@@ -235,11 +241,6 @@ class Tool(BaseTool):
                                     edit_file = strip_hashline(edit_file)
 
                             edit_file = edit_file_raw
-
-                            # Try to resolve line content values to content IDs
-                            edit_start_line, edit_end_line = resolve_content_to_hashline_ids(
-                                original_content, edit_start_line, edit_end_line
-                            )
 
                             # Validate required fields based on operation type
                             # (Note: The check for 'edit_file is None' will now be safely
