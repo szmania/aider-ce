@@ -6,6 +6,7 @@ import copy
 import hashlib
 import json
 import locale
+import logging
 import math
 import mimetypes
 import os
@@ -68,6 +69,7 @@ from ..dump import dump  # noqa: F401
 from ..prompts.utils.registry import PromptObject, PromptRegistry
 
 GLOBAL_DATE = date.today().isoformat()
+logger = logging.getLogger(__name__)
 
 
 class UnknownEditFormat(ValueError):
@@ -719,7 +721,8 @@ class Coder(metaclass=UsageMeta):
             customizations = dict()
             pass
 
-        self.custom = customizations
+        self.custom = customizations or {}
+        self.prompt_format = nested.getter(self.custom, "prompt_format", "default")
         self.file_diffs = nested.getter(self.args, "file_diffs", True)
 
         if nested.getter(self.custom, "prompt_map.all", None):
@@ -1560,8 +1563,18 @@ class Coder(metaclass=UsageMeta):
 
             try:
                 # Wait for both tasks to complete or for one to raise an exception
+                # Wait for either task to complete. FIRST_COMPLETED provides
+                # faster interrupt response and robustness against asymmetric
+                # state bugs (e.g., if only one running flag is set to False).
+                # In normal operation both tasks run indefinitely (while-loops),
+                # so neither completes first — behavior is identical to
+                # FIRST_EXCEPTION in the absence of exceptions.
+                logger.debug(
+                    "_run_parallel: Waiting for tasks "
+                    f"(input_task.done={input_task.done()}, output_task.done={output_task.done()})"
+                )
                 done, pending = await asyncio.wait(
-                    [input_task, output_task], return_when=asyncio.FIRST_EXCEPTION
+                    [input_task, output_task], return_when=asyncio.FIRST_COMPLETED
                 )
 
                 # Check for exceptions
@@ -1576,6 +1589,17 @@ class Coder(metaclass=UsageMeta):
                 # Signal tasks to stop
                 self.input_running = False
                 self.output_running = False
+                # Clear interrupt_event to prevent state leakage between
+                # interrupt cycles. Without this, a stale interrupt_event can
+                # cause the next generate() call to immediately abort.
+                # ThreadSafeEvent.clear() is thread-safe and idempotent.
+                self.interrupt_event.clear()
+
+                # Log state before cancelling tasks
+                logger.debug(
+                    "_run_parallel finally: "
+                    f"input_running={self.input_running}, output_running={self.output_running}"
+                )
 
                 # Cancel tasks
                 input_task.cancel()
@@ -1602,11 +1626,22 @@ class Coder(metaclass=UsageMeta):
         This task manages the input loop and coordinates with output_task.
         """
         while self.input_running:
+            logger.debug(f"input_task loop: input_running={self.input_running}")
             try:
                 # Wait for commands to finish
                 if not self.commands.cmd_running_event.is_set():
-                    await self.commands.cmd_running_event.wait()
+                    logger.debug("input_task: Waiting for commands to finish")
+                    # Use interruptible wait with timeout to allow checking input_running
+                    while not self.commands.cmd_running_event.is_set() and self.input_running:
+                        try:
+                            await asyncio.wait_for(
+                                self.commands.cmd_running_event.wait(), timeout=0.1
+                            )
+                        except asyncio.TimeoutError:
+                            continue
                     continue
+                # This duplicate check is now handled by the interruptible wait above
+                pass
 
                 # Wait for input task completion
                 if self.io.input_task and self.io.input_task.done():
@@ -1668,11 +1703,22 @@ class Coder(metaclass=UsageMeta):
         This task manages the output loop and coordinates with input_task.
         """
         while self.output_running:
+            logger.debug(f"output_task loop: output_running={self.output_running}")
             try:
                 # Wait for commands to finish
                 if not self.commands.cmd_running_event.is_set():
-                    await self.commands.cmd_running_event.wait()
+                    logger.debug("output_task: Waiting for commands to finish")
+                    # Use interruptible wait with timeout to allow checking output_running
+                    while not self.commands.cmd_running_event.is_set() and self.output_running:
+                        try:
+                            await asyncio.wait_for(
+                                self.commands.cmd_running_event.wait(), timeout=0.1
+                            )
+                        except asyncio.TimeoutError:
+                            continue
                     continue
+                    # This duplicate check is now handled by the interruptible wait above
+                    pass
 
                 # Check if we have a user message to process
                 if self.user_message and not self.io.get_confirmation_acknowledgement():

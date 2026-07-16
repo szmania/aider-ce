@@ -646,21 +646,6 @@ class TextualInputOutput(InputOutput):
         except asyncio.CancelledError:
             return False
 
-    async def stop_task_streams(self):
-        """Override to avoid asyncio issues in worker thread.
-
-        TUI doesn't use the same parallel streaming, so this is a no-op.
-        """
-        pass
-
-    async def stop_input_task(self):
-        """Override to avoid asyncio issues in worker thread."""
-        pass
-
-    async def stop_output_task(self):
-        """Override to avoid asyncio issues in worker thread."""
-        pass
-
     def request_exit(self):
         """Request the TUI to exit gracefully.
 
