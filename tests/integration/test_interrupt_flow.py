@@ -33,26 +33,27 @@ async def test_single_interrupt_scenario():
 
     coder.generate = mock_generate
 
-    # Mock AgentService to return our test coder as foreground
-    with patch("cecli.helpers.agents.service.AgentService") as mock_agent_service:
+    # Mock AgentService to return our test coder as foreground, and patch _run_parallel
+    with (
+        patch("cecli.helpers.agents.service.AgentService") as mock_agent_service,
+        patch.object(coder, "_run_parallel") as mock_run,
+    ):
         mock_instance = MagicMock()
         mock_instance.foreground_coder = coder
         mock_agent_service.get_instance.return_value = mock_instance
 
         # Simulate first interrupt
+        worker.interrupt()
 
-            # Simulate first interrupt
-            worker.interrupt()
+        # Verify both flags are set to False
+        assert coder.input_running is False
+        assert coder.output_running is False
 
-            # Verify both flags are set to False
-            assert coder.input_running is False
-            assert coder.output_running is False
+        # Verify interrupt_event is set
+        assert coder.interrupt_event.is_set()
 
-            # Verify interrupt_event is set
-            assert coder.interrupt_event.is_set()
-
-            # Verify _run_parallel was called
-            mock_run.assert_called()
+        # Verify _run_parallel was called
+        mock_run.assert_called()
 
 
 @pytest.mark.asyncio

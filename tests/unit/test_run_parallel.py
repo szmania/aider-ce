@@ -1,6 +1,5 @@
 """Unit tests for _run_parallel with FIRST_COMPLETED."""
 
-import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
