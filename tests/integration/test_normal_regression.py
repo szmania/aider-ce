@@ -12,7 +12,7 @@ from cecli.coders.base_coder import Coder
 async def test_normal_operation_multiple_messages():
     """Test that multiple messages process normally without interruption (TC-INTERRUPT-005)."""
     mock_io = MagicMock()
-    coder = Coder(mock_io)
+    coder = Coder(main_model=MagicMock(), io=mock_io)
 
     # Set initial state
     coder.input_running = True
@@ -39,7 +39,7 @@ async def test_normal_operation_multiple_messages():
 async def test_normal_operation_no_premature_unblocking():
     """Test that _run_parallel does not unblock prematurely under normal operation."""
     mock_io = MagicMock()
-    coder = Coder(mock_io)
+    coder = Coder(main_model=MagicMock(), io=mock_io)
 
     # Set initial state simulating a run
     coder.input_running = True
@@ -67,7 +67,7 @@ async def test_normal_operation_no_premature_unblocking():
 async def test_normal_operation_spinner_behavior():
     """Test that spinner starts and stops correctly during normal operation."""
     mock_io = MagicMock()
-    coder = Coder(mock_io)
+    coder = Coder(main_model=MagicMock(), io=mock_io)
 
     # Set initial state
     coder.input_running = True

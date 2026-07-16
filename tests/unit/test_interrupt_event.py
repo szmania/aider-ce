@@ -1,7 +1,7 @@
 """Unit tests for interrupt_event clearing."""
 
 import asyncio
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -16,7 +16,7 @@ async def test_interrupt_event_cleared_in_run_parallel():
     coder.interrupt_event.set()  # Pre-set the event
 
     # Mock run_one to avoid actual processing
-    coder.run_one = MagicMock(return_value=None)
+    coder.run_one = AsyncMock(return_value=None)
 
     # Mock the tasks to complete quickly
     input_task = asyncio.create_task(asyncio.sleep(0.01))
@@ -39,7 +39,7 @@ async def test_interrupt_event_cleared_even_when_tasks_cancelled():
     coder.interrupt_event.set()  # Pre-set the event
 
     # Mock run_one to avoid actual processing
-    coder.run_one = MagicMock(return_value=None)
+    coder.run_one = AsyncMock(return_value=None)
 
     # Mock the tasks that will be cancelled
     input_task = asyncio.create_task(asyncio.sleep(10))  # Long running

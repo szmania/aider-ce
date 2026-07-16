@@ -1,7 +1,7 @@
 """Unit tests for BaseCoder interrupt handling."""
 
 import asyncio
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -51,7 +51,7 @@ async def test_base_coder_run_parallel_sets_flags():
     output_task = asyncio.create_task(quick_task())
 
     # Mock run_one to avoid actual processing
-    coder.run_one = MagicMock(return_value=None)
+    coder.run_one = AsyncMock(return_value=None)
 
     # Call _run_parallel
     with patch("asyncio.wait") as mock_wait:

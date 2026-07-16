@@ -33,13 +33,13 @@ async def test_single_interrupt_scenario():
 
     coder.generate = mock_generate
 
-    # Mock _run_parallel to return normally
-    with patch.object(coder, "_run_parallel", return_value="response") as mock_run:
-        # Mock AgentService to return our test coder as foreground
-        with patch("cecli.tui.worker.AgentService") as mock_agent_service:
-            mock_instance = MagicMock()
-            mock_instance.foreground_coder.return_value = coder
-            mock_agent_service.get_instance.return_value = mock_instance
+    # Mock AgentService to return our test coder as foreground
+    with patch("cecli.helpers.agents.service.AgentService") as mock_agent_service:
+        mock_instance = MagicMock()
+        mock_instance.foreground_coder = coder
+        mock_agent_service.get_instance.return_value = mock_instance
+
+        # Simulate first interrupt
 
             # Simulate first interrupt
             worker.interrupt()
@@ -82,9 +82,9 @@ async def test_double_interrupt_scenario():
     # Mock _run_parallel to return normally
     with patch.object(coder, "_run_parallel", return_value="response") as mock_run:
         # Mock AgentService to return our test coder as foreground
-        with patch("cecli.tui.worker.AgentService") as mock_agent_service:
+        with patch("cecli.helpers.agents.service.AgentService") as mock_agent_service:
             mock_instance = MagicMock()
-            mock_instance.foreground_coder.return_value = coder
+            mock_instance.foreground_coder = coder
             mock_agent_service.get_instance.return_value = mock_instance
 
             # Simulate first interrupt
@@ -135,9 +135,9 @@ async def test_triple_interrupt_scenario():
     # Mock _run_parallel to return normally
     with patch.object(coder, "_run_parallel", return_value="response") as mock_run:
         # Mock AgentService to return our test coder as foreground
-        with patch("cecli.tui.worker.AgentService") as mock_agent_service:
+        with patch("cecli.helpers.agents.service.AgentService") as mock_agent_service:
             mock_instance = MagicMock()
-            mock_instance.foreground_coder.return_value = coder
+            mock_instance.foreground_coder = coder
             mock_agent_service.get_instance.return_value = mock_instance
 
             # Simulate three interrupts in rapid succession
@@ -217,9 +217,9 @@ async def test_rapid_message_interrupt_sequence():
     # Mock _run_parallel to return normally
     with patch.object(coder, "_run_parallel", return_value="response") as mock_run:
         # Mock AgentService to return our test coder as foreground
-        with patch("cecli.tui.worker.AgentService") as mock_agent_service:
+        with patch("cecli.helpers.agents.service.AgentService") as mock_agent_service:
             mock_instance = MagicMock()
-            mock_instance.foreground_coder.return_value = coder
+            mock_instance.foreground_coder = coder
             mock_agent_service.get_instance.return_value = mock_instance
 
             # Simulate message 1 + interrupt
