@@ -1,12 +1,12 @@
 #!/usr/bin/env python
 
 import asyncio
-import logging
 import base64
 import copy
 import hashlib
 import json
 import locale
+import logging
 import math
 import mimetypes
 import os
@@ -1570,7 +1570,8 @@ class Coder(metaclass=UsageMeta):
                 # so neither completes first — behavior is identical to
                 # FIRST_EXCEPTION in the absence of exceptions.
                 logger.debug(
-                    f"_run_parallel: Waiting for tasks (input_task.done={input_task.done()}, output_task.done={output_task.done()})"
+                    "_run_parallel: Waiting for tasks "
+                    f"(input_task.done={input_task.done()}, output_task.done={output_task.done()})"
                 )
                 done, pending = await asyncio.wait(
                     [input_task, output_task], return_when=asyncio.FIRST_COMPLETED
@@ -1596,7 +1597,8 @@ class Coder(metaclass=UsageMeta):
 
                 # Log state before cancelling tasks
                 logger.debug(
-                    f"_run_parallel finally: input_running={self.input_running}, output_running={self.output_running}"
+                    "_run_parallel finally: "
+                    f"input_running={self.input_running}, output_running={self.output_running}"
                 )
 
                 # Cancel tasks
