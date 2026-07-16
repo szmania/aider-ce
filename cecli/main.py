@@ -40,6 +40,20 @@ from dotenv import load_dotenv
 if sys.platform == "win32":
     if hasattr(asyncio, "set_event_loop_policy"):
         asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+elif sys.platform == "darwin":
+    # The default KqueueSelector cannot handle pipe-based stdin
+    # (e.g. when running inside Emacs comint-mode). Fall back to
+    # SelectSelector which works with any file descriptor that supports select().
+    import selectors
+
+    if not sys.stdin.isatty():
+        _original_event_loop_policy = asyncio.DefaultEventLoopPolicy
+
+        class _SelectSelectorPolicy(asyncio.DefaultEventLoopPolicy):
+            def new_event_loop(self):
+                return asyncio.SelectorEventLoop(selectors.SelectSelector())
+
+        asyncio.set_event_loop_policy(_SelectSelectorPolicy())
 from prompt_toolkit.enums import EditingMode
 
 from .dump import dump  # noqa
@@ -708,6 +722,7 @@ async def main_async(
             notifications_command=args.notifications_command,
             notification_bell=args.notification_bell,
             verbose=args.verbose,
+            show_spinner=args.spinner,
         )
 
     validate_tui_args(args)
@@ -1042,6 +1057,7 @@ async def main_async(
                 subtree_only=args.subtree_only,
                 git_commit_verify=args.git_commit_verify,
                 attribute_co_authored_by=args.attribute_co_authored_by,
+                show_spinner=args.spinner,
             )
         except FileNotFoundError:
             pass
