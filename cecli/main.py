@@ -1,5 +1,9 @@
 import os
+import json
 import sys
+import yaml
+
+from cecli.helpers import nested
 
 try:
     if sys.platform == "win32":
@@ -609,6 +613,47 @@ async def main_async(
         args, unknown = parser.parse_known_args(argv)
 
     set_args_error_data(args)
+
+    # Deep merge configuration files after parsing (unconditional)
+    deep_merge_configs = []
+    shallow_merge_configs = []
+
+    for config_file in default_config_files:
+        if os.path.exists(config_file):
+            try:
+                with open(config_file, "r") as f:
+                    config_data = yaml.safe_load(f)
+                    if nested.is_cecli_conf_file(config_file):
+                        deep_merge_configs.append(config_data)
+                    else:
+                        shallow_merge_configs.append(config_data)
+            except yaml.YAMLError as e:
+                print(f"Warning: Could not parse YAML file {config_file}: {e}")
+
+    if deep_merge_configs:
+        merged_config = nested.deep_merge_config_dicts(deep_merge_configs)
+
+        # Step 5.1: Post-merge type validation for list fields
+        for key in nested.DEEP_MERGE_LIST_FIELDS:
+            if key in merged_config and hasattr(args, key):
+                if not isinstance(merged_config[key], list):
+                    print(
+                        f"Warning: Merged config for {key} is not a list "
+                        f"(type: {type(merged_config[key]).__name__}), expected list"
+                    )
+                setattr(args, key, merged_config[key])
+
+        for key in nested.DEEP_MERGE_JSON_FIELDS:
+            if key in merged_config and hasattr(args, key):
+                if not isinstance(merged_config[key], dict):
+                    print(
+                        f"Warning: Merged config for {key} is not a dict "
+                        f"(type: {type(merged_config[key]).__name__}), expected dict"
+                    )
+                try:
+                    setattr(args, key, json.dumps(merged_config[key]))
+                except (TypeError, ValueError) as e:
+                    print(f"Warning: Could not serialize merged config for {key}: {e}")
 
     if len(unknown):
         print("Unknown Args: ", unknown)

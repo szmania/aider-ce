@@ -150,6 +150,20 @@ class AgentCoder(Coder):
         ):
             try:
                 config = json.loads(self.args.agent_config)
+
+                # Validate that array fields are lists, wrap scalars in lists
+                array_fields = [
+                    "skills_paths", "skills_includelist", "skills_excludelist", "skills_init",
+                    "subagent_paths", "tools_paths", "tools_includelist", "tools_excludelist",
+                    "servers_includelist", "servers_excludelist", "allowed_commands"
+                ]
+                for field in array_fields:
+                    if field in config and not isinstance(config[field], list):
+                        self.start_up_errors.append(
+                            f"agent-config field '{field}' should be a list but got "
+                            f"{type(config[field]).__name__}, wrapping in list"
+                        )
+                        config[field] = [config[field]]
             except (json.JSONDecodeError, TypeError) as e:
                 self.start_up_errors.append(f"Failed to parse agent-config JSON: {e}")
                 return {}
