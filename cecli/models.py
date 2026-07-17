@@ -1656,6 +1656,7 @@ class Model(ModelSettings):
                 default=lambda o: "<not serializable>",
             )
             f.write(",\n")
+@dataclass(frozen=True)
 class FrozenCompactionSettings:
     enable_context_compaction: bool
     max_compaction_retries: int
