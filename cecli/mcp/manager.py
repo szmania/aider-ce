@@ -160,17 +160,43 @@ class McpServerManager:
             self._server_tools[server.name] = get_local_tool_schemas()
             return True
 
-        try:
-            session = await server.connect()
-            tools = await experimental_mcp_client.load_mcp_tools(session=session, format="openai")
-            self._server_tools[server.name] = tools
-            self._connected_servers.add(server)
-            self._log_verbose(f"Connected to MCP server: {name}")
-            return True
-        except (Exception, asyncio.CancelledError) as e:
-            if server.name != "unnamed-server":
-                self._log_error(f"Failed to connect to MCP server {name}: {e}")
-            return False
+        # Retry with exponential backoff for transient connection failures.
+        # Note: This also fixes a latent bug where asyncio.CancelledError was
+        # silently caught and treated as a connection failure. CancelledError is
+        # now re-raised to properly propagate cancellation.
+        # When io is None (e.g., during from_servers before IO is assigned),
+        # _log_warning and _log_error silently return — retries still happen
+        # but with no user-visible feedback. This is intentional.
+        max_retries = 3
+        delay = 1.0
+        backoff = 2.0
+        max_delay = 30.0
+
+        for attempt in range(1, max_retries + 1):
+            try:
+                session = await server.connect()
+                tools = await experimental_mcp_client.load_mcp_tools(session=session, format="openai")
+                self._server_tools[server.name] = tools
+                self._connected_servers.add(server)
+                self._log_verbose(f"Connected to MCP server: {name}")
+                return True
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                if attempt < max_retries:
+                    self._log_warning(
+                        f"Connection attempt {attempt} failed for {name}, "
+                        f"retrying in {delay}s... ({e})"
+                    )
+                    await asyncio.sleep(delay)
+                    delay = min(delay * backoff, max_delay)
+                else:
+                    if server.name != "unnamed-server":
+                        self._log_error(
+                            f"Failed to connect to MCP server {name} "
+                            f"after {max_retries} attempts: {e}"
+                        )
+                    return False
 
     async def disconnect_server(self, name: str) -> bool:
         """
@@ -281,11 +307,10 @@ class McpServerManager:
                 success = await mcp_manager.add_server(server, connect=False)
                 return (server, success)
 
-            for _attempt in range(max_retries):
-                success = await mcp_manager.add_server(server, connect=True)
-                if success:
-                    return (server, True)
-            return (server, False)
+            # connect_server now has built-in retry logic, so we only need
+            # a single call here — no separate retry loop needed.
+            success = await mcp_manager.add_server(server, connect=True)
+            return (server, success)
 
         tasks = []
         for server in servers:
