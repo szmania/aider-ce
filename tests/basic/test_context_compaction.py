@@ -343,7 +343,7 @@ async def test_ut_ctx_009_structured_logging(mock_acompletion, mock_logger_info,
         MagicMock(),
     ]
 
-    with patch("cecli.models.logging.getLogger") as mock_get_logger:
+    with patch("logging.getLogger") as mock_get_logger:
         mock_get_logger.return_value.info = mock_logger_info
         await mock_model.send_completion(
             messages=[{"role": "user", "content": "Hello"}],
@@ -580,8 +580,7 @@ async def test_ut_ctx_015_non_context_retry_preserved(mock_acompletion, mock_mod
     )
 
     mock_acompletion.side_effect = [
-        APIError(message="Test API error", llm_provider="openai", model="gpt-4"),
-        MagicMock(),  # Successful response on retry
+        APIError(message="Test API error", llm_provider="openai", model="gpt-4", status_code=500),
     ]
 
     await mock_model.send_completion(

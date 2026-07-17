@@ -1211,14 +1211,6 @@ class Model(ModelSettings):
     def is_ollama(self):
         return self.name.startswith("ollama/") or self.name.startswith("ollama_chat/")
 
-@dataclass(frozen=True)
-class FrozenCompactionSettings:
-    enable_context_compaction: bool
-    max_compaction_retries: int
-    context_compaction_max_tokens: int
-    context_compaction_summary_tokens: int
-    is_agent_mode: bool
-
     async def send_completion(
         self,
         messages,
@@ -1630,6 +1622,14 @@ class FrozenCompactionSettings:
                 default=lambda o: "<not serializable>",
             )
             f.write(",\n")
+class FrozenCompactionSettings:
+    enable_context_compaction: bool
+    max_compaction_retries: int
+    context_compaction_max_tokens: int
+    context_compaction_summary_tokens: int
+    is_agent_mode: bool
+
+
 
 
 def register_models(model_settings_fnames):
