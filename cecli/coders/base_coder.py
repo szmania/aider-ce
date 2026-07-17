@@ -1993,7 +1993,7 @@ class Coder(metaclass=UsageMeta):
 
     # Old summarization system removed - using context compaction logic instead
 
-    async def compact_context_if_needed(self, force=False, message=""):
+    async def compact_context_if_needed(self, force=False, message="", retry_index=0):
         if not self.enable_context_compaction:
             return
 
@@ -2047,6 +2047,7 @@ class Coder(metaclass=UsageMeta):
 
         self.io.update_spinner("Compacting...")
 
+        start_time = time.time()
         try:
             compaction_prompt = self.gpt_prompts.compaction_prompt
             if message:
@@ -2134,7 +2135,6 @@ class Coder(metaclass=UsageMeta):
             if cur_tokens > self.context_compaction_max_tokens or cur_tokens > done_tokens:
                 await summarize_and_update(cur_messages, MessageTag.CUR)
 
-            self.io.tool_output("...chat history compacted.")
             self.io.update_spinner(self.io.last_spinner_text)
 
             # Post-compaction token floor check
@@ -2144,13 +2144,12 @@ class Coder(metaclass=UsageMeta):
             post_compaction_tokens = self.summarizer.count_tokens(all_messages)
             token_floor = self.context_compaction_max_tokens * 0.25 if self.context_compaction_max_tokens else 0
 
-            if post_compaction_tokens < token_floor and not force:
+            if post_compaction_tokens < token_floor:
                 self._compaction_floor_reached = True
                 self.io.tool_output(
                     "...context is already at minimum size, cannot compact further."
                 )
 
-            self.io.tool_output("...chat history compacted.")
             self.io.update_spinner(self.io.last_spinner_text)
 
             manager.clear_tag(MessageTag.DIFFS)
@@ -2161,18 +2160,6 @@ class Coder(metaclass=UsageMeta):
             ObservationService.get_instance(self).reset_index()
             self.format_chat_chunks()
 
-            # Emit structured log entry for observability (timestamp,
-            # token counts, trigger). No sensitive message bodies are logged.
-            logger = logging.getLogger("cecli.compaction")
-            logger.info(
-                json.dumps({
-                    "event": "context_compaction",
-                    "timestamp": datetime.now().isoformat(),
-                    "token_count_before": all_tokens,
-                    "token_count_after": post_compaction_tokens,
-                    "trigger": "context_window_exceeded" if not force else "manual",
-                })
-            )
 
         except Exception as e:
             self.io.tool_warning(f"Context compaction failed: {e}")
