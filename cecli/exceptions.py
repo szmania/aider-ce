@@ -81,8 +81,12 @@ class LiteLLMExceptions:
     def exceptions_tuple(self):
         return tuple(self.exceptions)
 
-    def get_ex_info(self, ex):
-        """Return the ExInfo for a given exception instance"""
+    def get_ex_info(self, ex, enable_context_compaction=False):
+        """Return the ExInfo for a given exception instance.
+
+        When enable_context_compaction is True, ContextWindowExceededError
+        is treated as retryable so the caller can compact and retry.
+        """
         import litellm
 
         if ex.__class__ is litellm.APIConnectionError:
@@ -101,6 +105,16 @@ class LiteLLMExceptions:
                         " limiting your requests."
                     ),
                 )
+
+        # ContextWindowExceededError: retryable only when compaction is enabled
+        if ex.__class__ is litellm.ContextWindowExceededError:
+            if enable_context_compaction:
+                return ExInfo(
+                    "ContextWindowExceededError",
+                    True,
+                    "The context window has been exceeded. Compacting and retrying.",
+                )
+            return ExInfo("ContextWindowExceededError", False, None)
 
         # Check for specific non-retryable APIError cases like insufficient credits
         if ex.__class__ is litellm.APIError:

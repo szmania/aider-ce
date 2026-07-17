@@ -610,6 +610,23 @@ async def main_async(
 
     set_args_error_data(args)
 
+    # Security: In agent mode, --ignore-context-limit must not be settable via
+    # environment variable alone. Reject if env var is set but CLI flag is absent.
+    is_agent_mode = args.edit_format == "agent" or getattr(args, "agent", False)
+    if is_agent_mode and args.ignore_context_limit:
+        env_val = os.environ.get("CECLI_IGNORE_CONTEXT_LIMIT", "").lower()
+        if env_val in ("true", "1", "yes"):
+            import logging
+
+            logging.getLogger("cecli").warning(
+                "--ignore-context-limit via env var rejected in agent mode."
+                " Use --ignore-context-limit CLI flag instead."
+            )
+            args.ignore_context_limit = False
+
+
+
+
     if len(unknown):
         print("Unknown Args: ", unknown)
 

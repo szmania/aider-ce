@@ -14,6 +14,7 @@ import re
 import sys
 import threading
 import time
+import logging
 import traceback
 import weakref
 from collections import defaultdict
@@ -2159,6 +2160,19 @@ class Coder(metaclass=UsageMeta):
             ConversationService.get_chunks(self).reset_clear_count()
             ObservationService.get_instance(self).reset_index()
             self.format_chat_chunks()
+
+            # Emit structured log entry for observability (timestamp,
+            # token counts, trigger). No sensitive message bodies are logged.
+            logger = logging.getLogger("cecli.compaction")
+            logger.info(
+                json.dumps({
+                    "event": "context_compaction",
+                    "timestamp": datetime.now().isoformat(),
+                    "token_count_before": all_tokens,
+                    "token_count_after": post_compaction_tokens,
+                    "trigger": "context_window_exceeded" if not force else "manual",
+                })
+            )
 
         except Exception as e:
             self.io.tool_warning(f"Context compaction failed: {e}")

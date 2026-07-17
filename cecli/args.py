@@ -449,8 +449,16 @@ def get_parser(default_config_files, git_root):
     group.add_argument(
         "--enable-context-compaction",
         action=argparse.BooleanOptionalAction,
-        default=True,
+        default=False,
         help="Enable automatic compaction of chat history to conserve tokens (default: False)",
+    )
+    group.add_argument(
+        "--max-compaction-retries",
+        type=int,
+        default=3,
+        metavar="N",
+        choices=range(1, 11),
+        help="Maximum number of compactions per request before propagating the error (default: 3, min: 1, max: 10)",
     )
     group.add_argument(
         "--context-compaction-max-tokens",
@@ -466,6 +474,16 @@ def get_parser(default_config_files, git_root):
         type=int,
         default=4096,
         help="The target maximum number of tokens for the generated summary. (default: 4096)",
+    )
+    group.add_argument(
+        "--ignore-context-limit",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help=(
+            "Ignore the model's context window limit when sending requests."
+            " WARNING: This may cause API errors or truncated responses."
+            " Not settable via env var alone in agent mode (default: False)"
+        ),
     )
 
     ##########
