@@ -22,7 +22,7 @@ from cecli.models import Model, FrozenCompactionSettings
 def mock_coder():
     """Create a mock coder with compaction-related attributes."""
     coder = MagicMock()
-    coder.enable_context_compaction = False
+    coder.enable_context_compaction = True
     coder.compact_context_if_needed = AsyncMock()
     coder.context_compaction_max_tokens = 100000
     coder.max_compaction_retries = 3
@@ -246,7 +246,7 @@ async def test_it_ctx_006_env_var_precedence(mock_acompletion):
     """
     args = [
         "cecli",
-        "--enable-context-compaction=false",
+        "--no-enable-context-compaction",
         "--max-compaction-retries",
         "1",
         "--yes",
