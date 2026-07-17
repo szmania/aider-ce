@@ -4,14 +4,16 @@ import json
 class ToolResponse:
     """Assists in formatting all tool call responses as JSON for the LLM.
 
-    By default, every tool response is wrapped in JSON:
+    Every tool response is wrapped in JSON:
 
         {
-            "tool_name": str,
-            "result": str | list[str],
-            "errors": list[str],
-            "details": list[str]
+            "result": [{"content": ..., "_": {...}}],
+            "errors": [...],
+            "details": [...]
         }
+
+    Each result item has a ``content`` key (the primary output) and an
+    ``_`` key (metadata).  Use ``append_result(content, metadata=None)``
 
     Usage inside a tool's ``execute`` method::
 
@@ -32,21 +34,29 @@ class ToolResponse:
         self._errors = []
         self._details = []
 
-    def append_result(self, result):
+    def append_result(self, content, metadata=None):
         """Append a result entry.
 
         If ``result_type`` is ``"str"`` the text is concatenated (with a
         newline separator for subsequent calls).  If ``result_type`` is
         ``"list"`` each call adds a new item to the results list.
+
+        When metadata is provided (``result_type="list"`` only), it is
+        stored under the ``_`` key alongside ``content``.
+
+        Backward compat: if ``content`` is a dict *without* a ``content``
+        key it is treated as the content value and metadata defaults to
+        an empty dict.
         """
 
         if self.result_type == "str":
             if self._result:
-                self._result += "\n" + str(result)
+                self._result += "\n" + str(content)
             else:
-                self._result = str(result)
+                self._result = str(content)
         else:
-            self._result.append(result)
+            item = {"content": content, "_": metadata or {}}
+            self._result.append(item)
 
     def append_error(self, error):
         """Collect an error message."""
@@ -61,9 +71,13 @@ class ToolResponse:
     def to_dict(self):
         """Return the response as a plain Python dictionary."""
 
+        if self.result_type == "str":
+            results = [{"content": self._result, "_": {}}] if self._result else []
+        else:
+            results = self._result
+
         return {
-            "tool_name": self.tool_name,
-            "result": self._result,
+            "result": results,
             "errors": self._errors,
             "details": self._details,
         }

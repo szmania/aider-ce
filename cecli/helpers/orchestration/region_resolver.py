@@ -1,0 +1,390 @@
+"""
+Region resolution helpers for the orchestration sandbox.
+
+Provides AgentRegion for storing named region boundary *patterns* that are
+resolved to content IDs on-demand at access time.  This ensures content IDs
+are always fresh — important after intervening edits shift hashline positions.
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
+
+class AgentRegion:
+    """
+    Stores named region boundary *patterns* resolved to content IDs on access.
+
+    Content IDs can shift after edits, so ``get_start(name)`` and
+    ``get_end(name)`` re-read the file and re-resolve patterns at each call.
+    Use these directly in ``EditFile`` calls for always-fresh IDs.
+
+    When a region spec uses a **content ID** (e.g. ``"abc::"``) instead of
+    text, the referenced line content is snapshotted on first resolution.
+    If the ID goes stale after intervening edits, subsequent resolutions
+    fall back to content matching against the snapshotted line text.
+
+    Example usage in orchestration code::
+
+        regions = Agent.resolve_regions("foo.py", [
+            {"name": "helper", "start": "def helper", "end": "return x"},
+        ])
+        edit_tool = Agent.get_tool("EditFile")
+        await edit_tool.call(edits=[{
+            "file_path": "foo.py",
+            "operation": "replace",
+            "start_line": regions.get_start("helper"),
+            "end_line":   regions.get_end("helper"),
+            "text": "def helper():\\n    return 42",
+        }])
+    """
+
+    def __init__(
+        self,
+        file_path: str,
+        coder: Any,
+        region_specs: list[dict[str, str]],
+    ) -> None:
+        self._file_path = file_path
+        self._coder = coder
+        self._specs: dict[str, dict[str, str]] = {}
+
+        for spec in region_specs:
+            name = spec["name"]
+            entry: dict[str, object] = {
+                "start": spec["start"],
+                "end": spec["end"],
+            }
+            if "start_line_hint" in spec:
+                entry["start_line_hint"] = spec["start_line_hint"]
+            if "end_line_hint" in spec:
+                entry["end_line_hint"] = spec["end_line_hint"]
+            self._specs[name] = entry
+
+        # Eagerly validate uniqueness for all regions at creation time.
+        # This catches ambiguous patterns immediately with clear error messages.
+        self._eager_validate()
+
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
+
+    def get_start(self, name: str) -> str:
+        """Re-read file and return the current content ID for the start of *name*."""
+
+        return self._resolve(name)[0]
+
+    def get_end(self, name: str) -> str:
+        """Re-read file and return the current content ID for the end of *name*."""
+
+        return self._resolve(name)[1]
+
+    def get_start_line(self, name: str) -> int:
+        """Re-read file and return the current 1-based start line for *name*."""
+
+        return self._resolve(name)[2]
+
+    def get_end_line(self, name: str) -> int:
+        """Re-read file and return the current 1-based end line for *name*."""
+
+        return self._resolve(name)[3]
+
+    def __contains__(self, name: str) -> bool:
+        return name in self._specs
+
+    def __len__(self) -> int:
+        return len(self._specs)
+
+    def names(self) -> list[str]:
+        """Return the list of region names."""
+
+        return sorted(self._specs.keys())
+
+    def get(self, name: str) -> dict[str, str]:
+        """Return ``{"start": content_id, "end": content_id}`` for *name*.
+
+        The returned dict can be passed directly as the ``region`` value
+        in ``Agent.edit_region()`` edits.
+        """
+
+        return {"start": self.get_start(name), "end": self.get_end(name)}
+
+    def __repr__(self) -> str:
+        names = ", ".join(sorted(self._specs.keys()))
+        return f"AgentRegion({len(self._specs)} regions on " f"{self._file_path!r}: {names})"
+
+    # ------------------------------------------------------------------
+    # Resolution internals
+    # ------------------------------------------------------------------
+
+    def _eager_validate(self) -> None:
+        """Eagerly resolve and validate all region patterns at init time.
+
+        Raises ValueError immediately for ambiguous patterns so the LLM
+        gets clear feedback without waiting for the first access.
+        """
+
+        for name in list(self._specs.keys()):
+            self._resolve(name)
+
+    def _resolve(self, name: str) -> tuple[str, str, int, int]:
+        """
+        Re-read file and resolve *name* to
+        (start_id, end_id, start_line, end_line).
+
+        When a pattern is a content ID the referenced line is snapshotted
+        so future resolutions can fall back to content matching if the
+        original ID goes stale.
+        """
+
+        import os
+
+        from cecli.helpers.hashline import (
+            ContentHashError,
+            normalize_hashline,
+            resolve_content_to_hashline_ids,
+        )
+        from cecli.helpers.hashpos.hashpos import HashPos
+        from cecli.tools.utils.helpers import resolve_paths
+
+        spec = self._specs[name]
+
+        # Read explicit line hints from spec (preferred over @L in patterns).
+        # 1-based in the spec, converted to 0-based internally.
+        explicit_start = spec.get("start_line_hint")
+        explicit_end = spec.get("end_line_hint")
+
+        abs_path, rel_path = resolve_paths(self._coder, self._file_path)
+
+        if not os.path.isfile(abs_path):
+            raise ValueError(f"File not found: {self._file_path}")
+
+        content = self._coder.io.read_text(abs_path)
+
+        if content is None:
+            raise ValueError(f"Could not read file: {self._file_path}")
+
+        lines = content.splitlines()
+        hp = HashPos(content)
+
+        start_pattern = self._resolve_pattern(
+            hp, lines, spec, "start", normalize_hashline, ContentHashError
+        )
+        end_pattern = self._resolve_pattern(
+            hp, lines, spec, "end", normalize_hashline, ContentHashError
+        )
+
+        # Always strip @L hints from patterns — they are metadata, not literal text.
+        # Explicit hints (start_line_hint / end_line_hint) override any @L in patterns.
+        start_pattern, extracted_start = self._extract_l_hint(start_pattern)
+        end_pattern, extracted_end = self._extract_l_hint(end_pattern)
+        start_hint = (explicit_start - 1) if explicit_start is not None else extracted_start
+        end_hint = (explicit_end - 1) if explicit_end is not None else extracted_end
+
+        # Validate uniqueness for text-based patterns (not content IDs or special markers).
+        self._validate_pattern_uniqueness(start_pattern, start_hint, "start", name, lines)
+        self._validate_pattern_uniqueness(end_pattern, end_hint, "end", name, lines)
+
+        start_id, end_id = resolve_content_to_hashline_ids(content, start_pattern, end_pattern)
+
+        # Resolve line numbers from content IDs
+        def _line_from_id(content_id: str, default_if_not_found: int) -> int:
+            if content_id == "@000":
+                return 1
+
+            if content_id == "000@":
+                return len(lines)
+
+            try:
+                normalized = normalize_hashline(content_id)
+                candidates = hp.resolve_to_lines(normalized)
+
+                if candidates:
+                    return candidates[0] + 1
+            except (ContentHashError, ValueError):
+                pass
+
+            return default_if_not_found
+
+        start_line = _line_from_id(start_id, -1)
+        end_line = _line_from_id(end_id, -1)
+
+        if start_line < 0 or end_line < 0:
+            parts = []
+            if start_line >= 0:
+                parts.append(f"  Start pattern resolved to: {start_pattern!r} (line {start_line})")
+            else:
+                parts.append(f"  Start pattern NOT FOUND: {start_pattern!r}")
+            if end_line >= 0:
+                parts.append(f"  End pattern resolved to: {end_pattern!r} (line {end_line})")
+            else:
+                parts.append(f"  End pattern NOT FOUND: {end_pattern!r}")
+            raise ValueError(
+                f"Could not resolve line numbers for region "
+                f"'{name}' in {self._file_path}\n" + "\n".join(parts)
+            )
+
+        return start_id, end_id, start_line, end_line
+
+    # ------------------------------------------------------------------
+    # Helpers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _search_in_lines(lines: list[str], pattern: str) -> list[int]:
+        """Return 0-based indices of all lines where *pattern* matches.
+
+        Supports multiline patterns (each line of *pattern* must be
+        a substring of the corresponding line in *lines*).
+        """
+
+        pattern_lines = pattern.split("\n")
+        indices = []
+        for i in range(len(lines) - len(pattern_lines) + 1):
+            if all(p_line in lines[i + j] for j, p_line in enumerate(pattern_lines)):
+                indices.append(i)
+        return indices
+
+    @staticmethod
+    def _extract_l_hint(pattern: str) -> tuple[str, int | None]:
+        """Extract an @L line hint suffix from a pattern.
+
+        Returns (stripped_pattern, 0_based_line_number_or_None).
+        """
+
+        import re
+
+        m = re.search(r"[ \t]+@L([0-9]+)[ \t]*$", pattern)
+        if m:
+            return pattern[: m.start()], int(m.group(1)) - 1
+        return pattern, None
+
+    @staticmethod
+    def _narrow_by_proximity(indices: list[int], target: int, max_results: int = 5) -> list[int]:
+        """Return up to *max_results* indices closest to *target* (0-based)."""
+
+        if not indices:
+            return []
+        scored = [(abs(i - target), i) for i in indices]
+        scored.sort(key=lambda x: x[0])
+        return [idx for _, idx in scored[:max_results]]
+
+    def _validate_pattern_uniqueness(
+        self,
+        pattern: str,
+        hint: int | None,
+        boundary: str,
+        name: str,
+        lines: list[str],
+    ) -> None:
+        """Raise ValueError if *pattern* matches multiple locations.
+
+        Only validates text patterns — content IDs and special markers
+        (@000 / 000@) are inherently unique and are skipped.
+        """
+
+        if self._looks_like_content_id(pattern):
+            return
+        if pattern in ("@000", "000@"):
+            return
+
+        matches = self._search_in_lines(lines, pattern)
+        if len(matches) <= 1:
+            return
+
+        # Try @L hint narrowing — find the unique closest match
+        if hint is not None:
+            best = min(matches, key=lambda i: abs(i - hint))
+            best_dist = abs(best - hint)
+            conflicts = [i for i in matches if i != best and abs(i - hint) == best_dist]
+            if not conflicts:
+                return  # Unique closest match found
+            matches_for_display = [best] + conflicts
+        else:
+            matches_for_display = matches
+
+        line_nums = [str(i + 1) for i in sorted(matches_for_display)]
+        display = ", ".join(line_nums[:10])
+        if len(line_nums) > 10:
+            display += f", ... ({len(line_nums)} total)"
+
+        if hint is not None:
+            raise ValueError(
+                f"{boundary.capitalize()} pattern '{pattern}' for region "
+                f"'{name}' has {len(matches)} matches; @L{hint + 1} hint ties "
+                f"between {len(matches_for_display)} equally-close locations "
+                f"(lines {display}). Use a more specific pattern."
+            )
+
+        raise ValueError(
+            f"{boundary.capitalize()} pattern '{pattern}' for region "
+            f"'{name}' matches {len(matches)} locations "
+            f"(lines {display}). "
+            f"Use a more specific pattern or append ' @L<num>' to "
+            f"disambiguate (e.g., '{pattern} @L{line_nums[0]}')."
+        )
+
+    @staticmethod
+    def _looks_like_content_id(value: str) -> bool:
+        """Return True if *value* appears to be a content ID rather than text."""
+
+        from cecli.helpers.hashline import ContentHashError, normalize_hashline
+
+        if value in ("@000", "000@"):
+            return True
+
+        try:
+            normalize_hashline(value)
+
+            return True
+        except (ContentHashError, ValueError):
+            return False
+
+    def _resolve_pattern(
+        self,
+        hp,
+        lines: list[str],
+        spec: dict[str, str],
+        key: str,
+        normalize_hashline,
+        ContentHashError,
+    ) -> str:
+        """
+        Resolve a single boundary pattern.
+
+        Content-ID patterns have their referenced line content snapshotted
+        so stale IDs can be recovered via content matching.
+        """
+
+        pattern = spec[key]
+
+        # Special markers never go stale
+        if pattern in ("@000", "000@"):
+            return pattern
+
+        if not self._looks_like_content_id(pattern):
+            return pattern
+
+        # Content ID — try to resolve and snapshot the line content
+        content_key = f"_{key}_content"
+
+        try:
+            normalized = normalize_hashline(pattern)
+            candidates = hp.resolve_to_lines(normalized)
+
+            if candidates and candidates[0] < len(lines):
+                spec[content_key] = lines[candidates[0]]
+
+                return pattern
+        except (ContentHashError, ValueError):
+            pass
+
+        # Content ID may be stale — fall back to snapshotted line content
+        cached = spec.get(content_key)
+
+        if cached:
+            return cached
+
+        # No fallback available; return the (stale) ID and let the
+        # caller's resolution logic handle the error
+        return pattern

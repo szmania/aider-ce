@@ -238,16 +238,18 @@ class Tool(BaseTool):
 
                 if num_lines == 0:
                     new_context_details.append(
-                        "\n".join(
-                            [
-                                f"File {rel_path} is empty.",
-                                (
-                                    "Next: use EditFile with start_line @000 and end_line @000 to"
-                                    " write content, or ResourceManager to scaffold — do not call"
-                                    " ReadFile again on this empty file."
-                                ),
-                            ]
-                        )
+                        {
+                            "file_path": rel_path,
+                            "status": "full",
+                            "total_lines": 0,
+                            "prefixed_contents": "",
+                            "outline": "",
+                            "note": (
+                                f"File {rel_path} is empty. Next: use EditFile with start_line @000 and"
+                                " end_line @000 to write content, or ResourceManager to scaffold —"
+                                " do not call ReadFile again on this empty file."
+                            ),
+                        }
                     )
                     new_context_retrieved.append(rel_path)
                     cls._last_read_turn[abs_path] = coder.turn_count
@@ -357,15 +359,20 @@ class Tool(BaseTool):
                             )
                             if cls._special_marker_count[abs_path] > 1:
                                 coder.abs_fnames.add(abs_path)
-                                preview = f"Full contents of {rel_path} will be added to context in future message."
+                                preview = {
+                                    "file_path": rel_path,
+                                    "status": "placeholder",
+                                    "total_lines": num_lines,
+                                    "prefixed_contents": "",
+                                    "outline": "",
+                                    "note": (
+                                        f"Full contents of {rel_path} will be added to context in future message."
+                                    ),
+                                }
                                 if abs_path in coder.abs_read_only_fnames:
                                     coder.abs_read_only_fnames.remove(abs_path)
 
-                    preview_key = (
-                        json.dumps(preview, sort_keys=True)
-                        if isinstance(preview, dict)
-                        else preview
-                    )
+                    preview_key = json.dumps(preview, sort_keys=True)
                     if preview_key not in all_outputs_set:
                         all_outputs_set.add(preview_key)
                         if len(all_outputs):
@@ -375,10 +382,19 @@ class Tool(BaseTool):
                     # If the range was large and we're showing a preview, add explicit guidance
                     range_lines = e_idx - s_idx + 1
                     if not has_stub:
-                        response.append_result(
+                        note_text = (
                             f"read operation {read_index + 1}: {rel_path} range "
                             f"({range_lines} lines) is large. "
                             f"Use @L ranges (e.g., @L{s_idx + 1}, @L{e_idx + 1}) for precise reads."
+                        )
+                        response.append_result(
+                            content=note_text,
+                            metadata={
+                                "file_path": rel_path,
+                                "status": "placeholder",
+                                "total_lines": num_lines,
+                                "outline": "",
+                            },
                         )
 
                     continue
@@ -529,13 +545,23 @@ class Tool(BaseTool):
                         type="tool-result",
                     )
 
-                    response.append_result(
+                    note_text = (
                         f"Retrieved context for {len(new_context_details)} operation(s). "
                         "Full results for these reads will be given in a follow up message."
-                        "Note: Full contents contain aggregated content across multiple reads."
+                        " Note: Full contents contain aggregated content across multiple reads."
+                    )
+                    response.append_result(
+                        content=note_text,
+                        metadata={
+                            "file_path": "",
+                            "status": "placeholder",
+                            "total_lines": 0,
+                            "outline": "",
+                        },
                     )
                     for d in new_context_details:
-                        response.append_result(d)
+                        content_text = d.pop("prefixed_contents", "")
+                        response.append_result(content=content_text, metadata=d)
                 if already_up_to_details:
                     coder.io.tool_output(
                         (
@@ -545,23 +571,56 @@ class Tool(BaseTool):
                         type="tool-result",
                     )
 
-                    response.append_result(
+                    note_text = (
                         "Earlier contents still valid from previous read for "
                         f"{len(already_up_to_details)} operation(s). "
                         "Relevant contents for these reads available in previous message."
                     )
+                    response.append_result(
+                        content=note_text,
+                        metadata={
+                            "file_path": "",
+                            "status": "placeholder",
+                            "total_lines": 0,
+                            "outline": "",
+                        },
+                    )
                     for d in already_up_to_details:
-                        response.append_result(d)
+                        content_text = d.pop("prefixed_contents", "")
+                        response.append_result(content=content_text, metadata=d)
                 if already_up_to_date and not new_context_retrieved:
                     response.append_result(
-                        "Do not call `ReadFile` again with these parameters again unless you edit"
-                        " the relevant files."
+                        content=(
+                            "Do not call `ReadFile` again with these parameters again"
+                            " unless you edit the relevant files."
+                        ),
+                        metadata={
+                            "file_path": "",
+                            "status": "placeholder",
+                            "total_lines": 0,
+                            "outline": "",
+                        },
                     )
 
             if all_outputs:
                 for output in all_outputs:
-                    response.append_result(output)
-                response.append_result("Use these outlines to refine your search.")
+                    if output:
+                        if isinstance(output, dict):
+                            outline_content = output.pop("outline", "")
+                            prefixed_content = output.pop("prefixed_contents", "")
+                            preview_content = prefixed_content or outline_content
+                            response.append_result(content=preview_content, metadata=output)
+                        else:
+                            response.append_result(output)
+                response.append_result(
+                    content="Use these outlines to refine your search.",
+                    metadata={
+                        "file_path": "",
+                        "status": "placeholder",
+                        "total_lines": 0,
+                        "outline": "",
+                    },
+                )
 
             if error_outputs:
                 coder.io.tool_error(
@@ -571,7 +630,15 @@ class Tool(BaseTool):
                 for err in error_outputs:
                     response.append_error(err)
 
-            response.append_result(f"File Context Turn {coder.turn_count}")
+            response.append_result(
+                content=f"File Context Turn {coder.turn_count}",
+                metadata={
+                    "file_path": "",
+                    "status": "placeholder",
+                    "total_lines": 0,
+                    "outline": "",
+                },
+            )
             return response
 
         except ToolError as e:
@@ -603,10 +670,13 @@ class Tool(BaseTool):
 
         result = {
             "file_path": rel_path,
+            "status": "full",
             "start_line": s_idx + 1,
             "end_line": e_idx + 1,
             "total_lines": len(hashed_lines),
             "prefixed_contents": prefixed,
+            "outline": "",
+            "note": "",
         }
         return result
 
@@ -853,6 +923,21 @@ class Tool(BaseTool):
     @classmethod
     def on_duplicate_request(cls, coder, **kwargs):
         coder.edit_allowed = True
+
+    @classmethod
+    def ptc_format(cls, result):
+        """Strip placeholder entries from the result before sandbox exposure."""
+        if isinstance(result, ToolResponse) and result.result_type == "list":
+            result._result = [
+                item
+                for item in result._result
+                if not (
+                    isinstance(item, dict)
+                    and isinstance(item.get("_"), dict)
+                    and item["_"].get("status") == "placeholder"
+                )
+            ]
+        return result
 
     @classmethod
     def _extend_range_with_stub(cls, coder, abs_path, s_idx, e_idx, num_lines):
@@ -1153,13 +1238,22 @@ class Tool(BaseTool):
             proximity_narrowed = cls._narrow_by_proximity(start_indices, start_hint, max_results=5)
             if proximity_narrowed and len(proximity_narrowed) <= 5:
                 line_nums = [str(i + 1) for i in sorted(proximity_narrowed)]
-                response.append_result(
+                note_text = (
                     f"read operation {read_index + 1}: start pattern "
                     f"'{range_start}' matched many locations in {rel_path}; "
                     f"narrowed to {len(proximity_narrowed)} closest to @L hint "
                     f"at lines {', '.join(line_nums)}. "
                     f"Tip: append ' @L<num>' to any pattern (e.g., "
                     f"'{range_start} @L{start_hint + 1}') to target a specific match."
+                )
+                response.append_result(
+                    content=note_text,
+                    metadata={
+                        "file_path": rel_path,
+                        "status": "placeholder",
+                        "total_lines": num_lines,
+                        "outline": "",
+                    },
                 )
                 return proximity_narrowed
 
@@ -1173,7 +1267,7 @@ class Tool(BaseTool):
 
         if narrowed and len(narrowed) <= 5:
             line_nums = [str(i + 1) for i in sorted(narrowed)]
-            response.append_result(
+            note_text = (
                 f"read operation {read_index + 1}: start pattern "
                 f"'{range_start}' matched many locations in {rel_path}; "
                 f"narrowed to {len(narrowed)} structural match(es) "
@@ -1181,14 +1275,32 @@ class Tool(BaseTool):
                 f"Tip: append ' @L<num>' to a pattern (e.g., "
                 f"'{range_start} @L{line_nums[0]}') to target a specific match."
             )
+            response.append_result(
+                content=note_text,
+                metadata={
+                    "file_path": rel_path,
+                    "status": "placeholder",
+                    "total_lines": num_lines,
+                    "outline": "",
+                },
+            )
             return narrowed
 
         line_nums = [str(i + 1) for i in sorted(start_indices[:5])]
-        response.append_result(
+        note_text = (
             f"read operation {read_index + 1}: start pattern "
             f"'{range_start}' too broad ({len(start_indices)} matches) "
             f"in {rel_path}. Using first 5 (lines {', '.join(line_nums)}). "
             f"Refine with specific names or @L ranges for precision."
+        )
+        response.append_result(
+            content=note_text,
+            metadata={
+                "file_path": rel_path,
+                "status": "placeholder",
+                "total_lines": num_lines,
+                "outline": "",
+            },
         )
         return start_indices[:5]
 
@@ -1366,6 +1478,8 @@ class Tool(BaseTool):
         io = coder.io
         abs_path, rel_path = resolve_paths(coder, abs_path)
 
+        content = io.read_text(abs_path)
+
         stub = RepoMap.get_file_stub(
             abs_path, io, start_line=start_idx, end_line=end_idx, line_numbers=line_numbers
         )
@@ -1374,6 +1488,9 @@ class Tool(BaseTool):
         if stub and stub != "# No outline available":
             return {
                 "file_path": rel_path,
+                "status": "outline",
+                "total_lines": len(content.splitlines()),
+                "prefixed_contents": "",
                 "outline": stub,
                 "note": (
                     f"Large File. Tip: use @L ranges for precise reads"
@@ -1383,7 +1500,14 @@ class Tool(BaseTool):
 
         content = io.read_text(abs_path)
         if not content:
-            return ""
+            return {
+                "file_path": rel_path,
+                "status": "outline",
+                "total_lines": 0,
+                "prefixed_contents": "",
+                "outline": "",
+                "note": "Empty file.",
+            }, False
 
         lines = content.splitlines()
         num_file_lines = len(lines)
@@ -1393,7 +1517,14 @@ class Tool(BaseTool):
         total_lines = actual_end - actual_start + 1
 
         if total_lines <= 0:
-            return "", False
+            return {
+                "file_path": rel_path,
+                "status": "outline",
+                "total_lines": 0,
+                "prefixed_contents": "",
+                "outline": "",
+                "note": "Invalid range.",
+            }, False
 
         if total_lines <= 20:
             # Return all lines
@@ -1433,4 +1564,14 @@ class Tool(BaseTool):
         parts.append("truncated:")
         parts.append("\n".join(file_contents))
 
-        return "\n".join(parts), False
+        return {
+            "file_path": rel_path,
+            "status": "outline",
+            "total_lines": num_file_lines,
+            "prefixed_contents": "",
+            "outline": "\n".join(parts),
+            "note": (
+                f"Tip: use @L ranges for precise reads"
+                f" (e.g., @L{actual_start + 1}, @L{actual_end + 1})."
+            ),
+        }, False

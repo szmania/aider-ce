@@ -128,7 +128,8 @@ class Tool(BaseTool):
                         # Replace hyphens with underscores (common in code) and strip special chars.
                         safe_symbol = symbol.replace("-", "_") if symbol else symbol
                         results = c.search(safe_symbol, limit=limit)
-                        response.append_result(cls._format_search_results(results, symbol))
+                        results = cls._filter_gitignored(results, coder)
+                        response.append_result(content=cls._format_search_results(results, symbol))
                     elif action == "investigate":
                         symbol_name = symbol
                         file_hint = ""
@@ -143,27 +144,41 @@ class Tool(BaseTool):
 
                         try:
                             investigation = c.investigate(safe_name, file_hint)
+                            investigation = cls._filter_investigation_gitignored(
+                                investigation, coder
+                            )
                             response.append_result(
-                                cls._format_investigation_results(investigation, symbol)
+                                content=cls._format_investigation_results(investigation, symbol)
                             )
                         except Exception as e:
                             if "multiple matches" in str(e).lower():
                                 results = c.search(symbol_name, limit=10)
-                                locations = "\n".join(
-                                    [f"- {r['file']}:{r['start_line']}" for r in results]
+                                response.append_result(
+                                    content={
+                                        "action": "investigate",
+                                        "symbol": symbol,
+                                        "error": "Multiple matches found",
+                                        "hint": (
+                                            "Please use a more specific name or filename:symbol format"
+                                        ),
+                                        "locations": [
+                                            {
+                                                "file": r.get("rel_path") or r.get("file", ""),
+                                                "start_line": r.get("start_line", 0),
+                                            }
+                                            for r in results
+                                        ],
+                                    }
                                 )
-                                msg = (
-                                    f"Error: Multiple matches found for '{symbol}'.\nPlease use a"
-                                    " more specific name or check the locations"
-                                    f" below:\n{locations}"
-                                )
-                                response.append_result(msg)
                             else:
                                 raise e
                     elif action == "find_references":
                         safe_symbol = symbol.replace("-", "_") if symbol else symbol
                         references = c.find_references(safe_symbol, limit=limit)
-                        response.append_result(cls._format_reference_results(references, symbol))
+                        references = cls._filter_gitignored(references, coder)
+                        response.append_result(
+                            content=cls._format_reference_results(references, symbol)
+                        )
                     else:
                         all_failed_queries.append(
                             f"Error for symbol '{symbol}': Unknown action '{action}'"
@@ -198,115 +213,142 @@ class Tool(BaseTool):
                 c.close()
 
     @classmethod
+    def _filter_gitignored(cls, results, coder):
+        """Filter out results whose file path is git-ignored."""
+
+        if not results or not hasattr(coder, "repo") or not coder.repo:
+            return results
+
+        filtered = []
+        for r in results:
+            file_path = r.get("rel_path") or r.get("file", "")
+            if not file_path:
+                filtered.append(r)
+                continue
+            if not coder.repo.git_ignored_file(file_path):
+                filtered.append(r)
+
+        return filtered
+
+    @classmethod
+    def _filter_investigation_gitignored(cls, investigation, coder):
+        """Filter git-ignored entries from an investigation result."""
+
+        if not investigation or not hasattr(coder, "repo") or not coder.repo:
+            return investigation
+
+        # Filter references
+        if "refs" in investigation:
+            investigation["refs"] = cls._filter_gitignored(investigation["refs"], coder)
+
+        # Filter impact/callers
+        if "impact" in investigation:
+            investigation["impact"] = cls._filter_gitignored(investigation["impact"], coder)
+
+        return investigation
+
+    @classmethod
     def _format_search_results(cls, results, symbol):
-        """Format search results for display."""
+        """Format search results as structured data."""
+
         if not results:
-            return f"No symbols found matching '{symbol}'"
+            return {"action": "search", "symbol": symbol, "count": 0, "results": []}
 
-        formatted = [f"Found {len(results)} symbols matching '{symbol}':"]
-        for i, result in enumerate(results[:15], 1):
-            name = result.get("name", "Unknown")
-            kind = result.get("kind", "unknown")
-            file = result.get("rel_path") or result.get("file", "Unknown")
-            start_line = result.get("start_line", 0)
-            signature = result.get("signature", "")
-            parent = result.get("parent")
-
-            location = f"{file}:{start_line}"
-            if parent:
-                location = f"{location} (in {parent})"
-
-            formatted.append(f"{i}. {name}{signature} ({kind}) at {location}")
-
-        if len(results) > 15:
-            formatted.append(f"... and {len(results) - 15} more results")
-
-        return "\n".join(formatted)
+        return {
+            "action": "search",
+            "symbol": symbol,
+            "count": len(results),
+            "results": [
+                {
+                    "name": r.get("name", ""),
+                    "kind": r.get("kind", ""),
+                    "file": r.get("rel_path") or r.get("file", ""),
+                    "start_line": r.get("start_line", 0),
+                    "signature": r.get("signature", ""),
+                    "parent": r.get("parent"),
+                }
+                for r in results
+            ],
+        }
 
     @classmethod
     def _format_investigation_results(cls, investigation, symbol):
-        """Format investigation results for display."""
+        """Format investigation results as structured data."""
+
         if not investigation:
-            return f"No information found for symbol '{symbol}'"
+            return {"action": "investigate", "symbol": symbol, "error": "No information found"}
 
         # Handle nested structure if present
         if "results" in investigation and "result" in investigation["results"]:
             investigation = investigation["results"]["result"]
 
-        formatted = [f"Investigation of symbol '{symbol}':"]
+        result = {
+            "action": "investigate",
+            "symbol": symbol,
+        }
 
         # Extract definition information
         definition = investigation.get("symbol")
         if definition:
-            def_name = definition.get("name", symbol)
-            def_file = definition.get("rel_path") or definition.get("file", "Unknown")
-            def_line = definition.get("start_line", 0)
-            def_kind = definition.get("kind", "unknown")
-            def_sig = definition.get("signature", "")
-            formatted.append(
-                f"Definition: {def_name}{def_sig} ({def_kind}) at {def_file}:{def_line}"
-            )
+            result["definition"] = {
+                "name": definition.get("name", symbol),
+                "file": definition.get("rel_path") or definition.get("file", ""),
+                "line": definition.get("start_line", 0),
+                "kind": definition.get("kind", ""),
+                "signature": definition.get("signature", ""),
+            }
 
         # Source code snippet
         source = investigation.get("source")
         if source:
-            formatted.append("\nSource Code:")
-            formatted.append("```python")
-            formatted.append(source.strip())
-            formatted.append("```")
+            result["source"] = source.strip()
 
         # References
         references = investigation.get("refs", [])
-        ref_count = len(references) if references else 0
-        formatted.append(f"\nReferences found: {ref_count}")
-
-        if references and ref_count > 0:
-            formatted.append("Top references:")
-            for i, ref in enumerate(references[:10], 1):
-                ref_file = ref.get("rel_path") or ref.get("file", "Unknown")
-                ref_line = ref.get("line", 0)
-                formatted.append(f"{i}. {ref_file}:{ref_line}")
-
-            if ref_count > 10:
-                formatted.append(f"... and {ref_count - 10} more references")
+        result["ref_count"] = len(references) if references else 0
+        if references:
+            result["references"] = [
+                {
+                    "file": ref.get("rel_path") or ref.get("file", ""),
+                    "line": ref.get("line", 0),
+                }
+                for ref in references
+            ]
 
         # Impact / Callers
         impact = investigation.get("impact", [])
         if impact:
-            formatted.append("\nImpact (Callers):")
-            for i, imp in enumerate(impact[:10], 1):
-                imp_file = imp.get("rel_path") or imp.get("file", "Unknown")
-                imp_line = imp.get("line", 0)
-                imp_caller = imp.get("caller", "unknown")
-                formatted.append(f"{i}. {imp_caller} at {imp_file}:{imp_line}")
+            result["impact"] = [
+                {
+                    "caller": imp.get("caller", ""),
+                    "file": imp.get("rel_path") or imp.get("file", ""),
+                    "line": imp.get("line", 0),
+                }
+                for imp in impact
+            ]
 
-            if len(impact) > 10:
-                formatted.append(f"... and {len(impact) - 10} more callers")
-
-        return "\n".join(formatted)
+        return result
 
     @classmethod
     def _format_reference_results(cls, references, symbol):
-        """Format reference finding results for display."""
+        """Format reference finding results as structured data."""
+
         if not references:
-            return f"No references found for symbol '{symbol}'"
+            return {"action": "find_references", "symbol": symbol, "count": 0, "results": []}
 
-        formatted = [f"Found {len(references)} references to '{symbol}':"]
-        for i, ref in enumerate(references[:15], 1):
-            file = ref.get("rel_path") or ref.get("file", "Unknown")
-            line = ref.get("line", 0)
-            context = ref.get("context", [])
-
-            formatted.append(f"{i}. {file}:{line}")
-            if context:
-                formatted.append("   Context:")
-                for line_text in context:
-                    formatted.append(f"     {line_text.strip()}")
-
-        if len(references) > 15:
-            formatted.append(f"... and {len(references) - 15} more references")
-
-        return "\n".join(formatted)
+        return {
+            "action": "find_references",
+            "symbol": symbol,
+            "count": len(references),
+            "results": [
+                {
+                    "file": ref.get("rel_path") or ref.get("file", ""),
+                    "line": ref.get("line", 0),
+                    "context": ref.get("context", []),
+                }
+                for ref in references
+            ],
+        }
 
     @classmethod
     def format_output(cls, coder, mcp_server, tool_response):

@@ -41,16 +41,18 @@ class BaseTool(ABC):
         pass
 
     @classmethod
-    def process_response(cls, coder, params):
+    def process_response(cls, coder, params, _stringify=True):
         """
         Process the tool response by creating an instance and calling execute.
 
         Args:
             coder: The Coder instance
             params: Dictionary of parameters
+            _stringify: If True (default), ToolResponse results are converted to str.
+                         If False, ToolResponse is returned as-is for sandbox use.
 
         Returns:
-            str: Result message
+            str or ToolResponse: Result message (or ToolResponse when _stringify=False)
         """
 
         # Validate required parameters from SCHEMA
@@ -140,7 +142,7 @@ class BaseTool(ABC):
             result = cls.execute(coder, **params)
 
             if isinstance(result, ToolResponse):
-                return str(result)
+                return result if not _stringify else str(result)
 
             return result
         except Exception as e:
@@ -163,3 +165,20 @@ class BaseTool(ABC):
     def clear_invocation_cache(cls):
         cls._invocations.clear()
         cls._invocation_summary.clear()
+
+    @classmethod
+    def ptc_format(cls, result):
+        """Post-tool-call formatting hook for orchestration sandbox exposure.
+
+        By default, passes through the result unchanged. Tools can override
+        this to reshape the output that gets exposed to the orchestration
+        sandbox (e.g., stripping placeholder entries).
+
+        Args:
+            result: The result from ``execute()`` (typically a ``ToolResponse``
+                    or string).
+
+        Returns:
+            The (possibly modified) result.
+        """
+        return result

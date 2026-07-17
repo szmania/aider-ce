@@ -171,7 +171,6 @@ class TestReadFileExecute:
         try:
             show = [{"file_path": self.test_file, "range_start": "5", "range_end": "10"}]
             result = self.Tool.execute(self.coder, show)
-            assert "prefixed_contents" in str(result)
             assert "line5" in str(result)
             assert "line10" in str(result)
         finally:
@@ -305,7 +304,6 @@ class TestReadFileExecute:
                 }
             ]
             result = self.Tool.execute(self.coder, show)
-            assert "prefixed_contents" in str(result)
             assert "def foo()" in str(result)
             assert "def bar()" in str(result)
         finally:
@@ -335,7 +333,7 @@ class TestReadFileExecute:
         try:
             show = [{"file_path": self.test_file, "range_start": "def foo", "range_end": "def bar"}]
             result = self.Tool.execute(self.coder, show)
-            assert "prefixed_contents" in str(result)
+            assert "return 1" in str(result)
         finally:
             self._teardown()
 
@@ -524,7 +522,7 @@ def func_f():
                 }
             ]
             result = self.Tool.execute(self.coder, show)
-            assert "prefixed_contents" in str(result)
+            assert "def func_a" in str(result)
         finally:
             self._teardown()
 

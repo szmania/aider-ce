@@ -412,6 +412,8 @@ class Tool(BaseTool):
 
             # 5. Format and return result
 
+            cls.clear_invocation_cache()
+
             if files_processed == 1:
                 # Single file case
                 result = all_results[0]
@@ -420,26 +422,37 @@ class Tool(BaseTool):
                 )
                 if result["failed_edits"]:
                     success_message += f" ({len(result['failed_edits'])} failed)"
-                    # Include failed edit details in message to LLM
                     success_message += "\nFailed edits:\n" + "\n".join(result["failed_edits"])
-                change_id_to_return = result.get("change_id")
-            else:
-                # Multiple files case
-                success_message = (
-                    f"Applied {total_successful_edits} edits across {files_processed} files"
+
+                response.append_result(
+                    content=f"\u2713 {success_message}",
+                    metadata={
+                        "change_id": result.get("change_id"),
+                        "file_path": result.get("file_path"),
+                        "successful_edits": result.get("successful_edits"),
+                        "failed_edits": result.get("failed_edits", []),
+                    },
                 )
-                if all_failed_edits:
-                    success_message += f" ({len(all_failed_edits)} failed)"
-                    # Include failed edit details in message to LLM
-                    success_message += "\nFailed edits:\n" + "\n".join(all_failed_edits)
-                change_id_to_return = None  # Multiple change IDs, can't return single one
+            else:
+                # Multiple files case — append per-file structured results
+                for result in all_results:
+                    per_file_message = (
+                        f"Applied {result['successful_edits']} edits in {result['file_path']}"
+                    )
+                    if result["failed_edits"]:
+                        per_file_message += f" ({len(result['failed_edits'])} failed)"
+                        per_file_message += "\nFailed edits:\n" + "\n".join(result["failed_edits"])
 
-            cls.clear_invocation_cache()
+                    response.append_result(
+                        content=f"\u2713 {per_file_message}",
+                        metadata={
+                            "change_id": result.get("change_id"),
+                            "file_path": result.get("file_path"),
+                            "successful_edits": result.get("successful_edits"),
+                            "failed_edits": result.get("failed_edits", []),
+                        },
+                    )
 
-            response.append_result(
-                f"\u2713 {success_message}"
-                + (f" (change_id: {change_id_to_return})" if change_id_to_return else "")
-            )
             return response
 
         except ToolError as e:

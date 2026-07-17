@@ -17,6 +17,7 @@ from cecli.tools.validations import ToolValidations
 
 class Tool(BaseTool):
     NORM_NAME = "resourcemanager"
+    RESULT_TYPE = "list"
     SCHEMA = {
         "type": "function",
         "function": {
@@ -169,7 +170,7 @@ class Tool(BaseTool):
             )
 
         coder.io.tool_output("⛭ Modifying Context", type="tool-result")
-        response = ToolResponse(cls.NORM_NAME)
+        response = ToolResponse(cls.NORM_NAME, result_type=cls.RESULT_TYPE)
 
         # Expand wildcards for MCP operations
         if "*" in load_mcp_servers and coder.mcp_manager:

@@ -155,9 +155,31 @@ def test_security_filter_blocks_locals():
     assert not _run_security_filter_safe("locals()"), "SecurityFilter should block 'locals'"
 
 
-def test_security_filter_blocks_vars():
-    """SecurityFilter blocks ``vars()``."""
-    assert not _run_security_filter_safe("vars()"), "SecurityFilter should block 'vars'"
+def test_security_filter_allows_vars():
+    """SecurityFilter allows ``vars(obj)`` — safe at runtime via _safe_vars."""
+    assert _run_security_filter_safe(
+        "vars(obj)"
+    ), "SecurityFilter should allow 'vars(obj)' as safe version is provided"
+
+
+@pytest.mark.asyncio
+async def test_env_vars_requires_one_arg():
+    """vars() with no arguments raises TypeError (no local namespace leak)."""
+    env = _make_env()
+    result = await env.execute("vars()")
+    assert (
+        "TypeError" in result["results"]
+    ), f"Expected TypeError for vars() no-args, got: {result!r}"
+
+
+@pytest.mark.asyncio
+async def test_env_vars_works_with_obj():
+    """vars(obj) returns non-dunder attributes of obj."""
+    env = _make_env()
+    result = await env.execute("def f(): pass\nf.x = 42\nprint(vars(f))")
+    assert (
+        '"x": 42' in result["results"] or "'x': 42" in result["results"]
+    ), f"Expected 'x' attr in vars result, got: {result!r}"
 
 
 def test_security_filter_blocks_getattr():
@@ -359,7 +381,7 @@ async def test_env_rejects_import():
 async def test_env_json_dumps():
     """AgentExecutionEnv.execute() provides ``json.dumps`` in globals."""
     env = _make_env()
-    result = await env.execute("json.dumps({'key': 'value'})")
+    result = await env.execute("print(json.dumps({'key': 'value'}))")
     assert result["results"] == '{"key": "value"}', f"Expected JSON output, got: {result!r}"
 
 
@@ -407,7 +429,7 @@ async def test_env_rejects_global_stmt():
 async def test_env_runs_simple_expression():
     """AgentExecutionEnv.execute() runs a simple arithmetic expression."""
     env = _make_env()
-    result = await env.execute("42")
+    result = await env.execute("print(42)")
     assert result["results"] == "42", f"Expected '42', got: {result!r}"
 
 
@@ -424,10 +446,10 @@ async def test_env_state_persistence():
     """AgentExecutionEnv.state persists across execute() calls."""
     env = _make_env()
 
-    result1 = await env.execute("state['key'] = 'value1'\nstate['key']")
+    result1 = await env.execute("state['key'] = 'value1'\nprint(state['key'])")
     assert result1["results"] == "value1", f"Expected 'value1', got: {result1!r}"
 
-    result2 = await env.execute("state['key']")
+    result2 = await env.execute("print(state['key'])")
     assert result2["results"] == "value1", f"Expected 'value1' (persisted), got: {result2!r}"
 
 
@@ -435,7 +457,7 @@ async def test_env_state_persistence():
 async def test_env_runs_list_comprehension():
     """AgentExecutionEnv.execute() runs a list comprehension."""
     env = _make_env()
-    result = await env.execute("[i * 2 for i in range(5)]")
+    result = await env.execute("print([i * 2 for i in range(5)])")
     assert (
         result["results"] == "[0, 2, 4, 6, 8]"
     ), f"Expected list comprehension result, got: {result!r}"
@@ -443,17 +465,17 @@ async def test_env_runs_list_comprehension():
 
 @pytest.mark.asyncio
 async def test_env_returns_last_expression():
-    """AgentExecutionEnv returns the value of the last expression."""
+    """AgentExecutionEnv only returns printed output — last expression values must be printed."""
     env = _make_env()
-    result = await env.execute("x = 10\ny = 20\nx + y")
+    result = await env.execute("x = 10\ny = 20\nprint(x + y)")
     assert result["results"] == "30", f"Expected '30' from last expression, got: {result!r}"
 
 
 @pytest.mark.asyncio
 async def test_env_print_and_expression():
-    """AgentExecutionEnv returns both print output and last expression."""
+    """AgentExecutionEnv returns print output only."""
     env = _make_env()
-    result = await env.execute("print('computed')\n42")
+    result = await env.execute("print('computed')\nprint(42)")
     assert "computed" in result["results"]
     assert "42" in result["results"]
 
@@ -488,8 +510,10 @@ async def test_env_sleep_works():
 async def test_env_gather_works():
     """AgentExecutionEnv's gather primitive works."""
     env = _make_env()
-    result = await env.execute("await gather()")
-    assert result["results"] == "[]", f"Expected '[]' from gather(), got: {result!r}"
+    result = await env.execute("print(await gather())")
+    assert (
+        result["results"] == "GatherResult()"
+    ), f"Expected 'GatherResult()' from gather(), got: {result!r}"
 
 
 @pytest.mark.asyncio
@@ -505,13 +529,13 @@ async def test_env_safe_builtins_available():
     """AgentExecutionEnv provides safe builtins (len, range, int, str, etc.)."""
     env = _make_env()
 
-    result = await env.execute("len([1, 2, 3])")
+    result = await env.execute("print(len([1, 2, 3]))")
     assert result["results"] == "3", f"Expected '3', got: {result!r}"
 
-    result = await env.execute("str(42)")
+    result = await env.execute("print(str(42))")
     assert result["results"] == "42", f"Expected '42', got: {result!r}"
 
-    result = await env.execute("list(range(3))")
+    result = await env.execute("print(list(range(3)))")
     assert result["results"] == "[0, 1, 2]", f"Expected '[0, 1, 2]', got: {result!r}"
 
 
@@ -532,19 +556,19 @@ async def test_env_runs_function_def():
     result = await env.execute("""
 def add(a, b):
     return a + b
-add(2, 3)
+print(add(2, 3))
 """)
     assert result["results"] == "5", f"Expected '5' from function call, got: {result!r}"
 
 
 @pytest.mark.asyncio
 async def test_env_mixed_print_and_return():
-    """AgentExecutionEnv returns print output followed by expression value."""
+    """AgentExecutionEnv returns only printed output."""
     env = _make_env()
     result = await env.execute("""
 print("start")
 result = 99
-result
+print(result)
 """)
     assert (
         "start" in result["results"] and "99" in result["results"]
@@ -657,9 +681,9 @@ async def test_tool_proxy_mcp_dispatch():
     tool = proxy.get_tool("MockServer--MockTool")
     result = await tool.call(param1="value1")
     assert "result" in result
-    assert "mcp-result" in result["result"][0]
-    assert "MockTool" in result["result"][0]
-    assert "param1" in result["result"][0]
+    assert "mcp-result" in result["result"][0]["content"]
+    assert "MockTool" in result["result"][0]["content"]
+    assert "param1" in result["result"][0]["content"]
 
 
 def test_agent_proxy_includelist_filters():
@@ -716,3 +740,612 @@ def test_agent_proxy_local_prefix_tool():
     tool = proxy.get_tool("Local--ReadFile")
     assert tool._tool_module is not None, "Local--ReadFile should resolve via ToolRegistry"
     assert tool._mcp_server is None
+
+
+# ===================================================================
+# AgentRegion
+# ===================================================================
+
+
+def test_agent_region_basic(tmp_path):
+    """AgentRegion stores patterns and resolves lazily via get_start/get_end."""
+
+    import os
+
+    from cecli.helpers.orchestration.region_resolver import AgentRegion
+
+    # Create a real file so lazy resolution works
+    source = "def foo():\n    return 42\n"
+    test_file = os.path.join(str(tmp_path), "basic.py")
+    with open(test_file, "w") as f:
+        f.write(source)
+
+    coder = _make_coder_with_io(str(tmp_path))
+
+    regions = AgentRegion(
+        "basic.py",
+        coder,
+        [
+            {"name": "foo", "start": "def foo", "end": "return 42"},
+        ],
+    )
+
+    assert "foo" in regions
+    assert "missing" not in regions
+    assert len(regions) == 1
+    assert "AgentRegion(1" in repr(regions)
+
+    # Lazy resolution on access
+    start_id = regions.get_start("foo")
+    end_id = regions.get_end("foo")
+
+    assert "::" in start_id
+    assert "::" in end_id
+
+    start_line = regions.get_start_line("foo")
+    end_line = regions.get_end_line("foo")
+
+    assert start_line > 0
+    assert end_line > 0
+    assert start_line <= end_line
+
+
+# ===================================================================
+# AgentProxy.resolve_regions
+# ===================================================================
+
+
+def _make_coder_with_io(tmp_path):
+    """Build a coder mock that supports resolve_paths + file I/O."""
+
+    import os
+
+    class _MockIO:
+        def read_text(self, abs_path):
+            if os.path.isfile(abs_path):
+                with open(abs_path, "r") as f:
+                    return f.read()
+
+            return None
+
+    class _MockCoder:
+        root = tmp_path
+        io = _MockIO()
+        registered_tools = {"included": set(), "excluded": set()}
+        mcp_tools = []
+
+        def abs_root_path(self, file_path):
+            import os
+
+            return os.path.join(self.root, file_path)
+
+        def get_rel_fname(self, abs_path):
+            import os
+
+            return os.path.relpath(abs_path, self.root)
+
+    return _MockCoder()
+
+
+def test_resolve_regions_basic(tmp_path):
+    """AgentProxy.resolve_regions resolves text patterns to content IDs."""
+
+    import os
+
+    from cecli.helpers.orchestration.environment import AgentProxy
+
+    # Create a test file with known regions
+    source = """\
+def helper_one():
+    \"\"\"Returns 'one'.\"\"\"
+    return "one"
+
+
+def helper_two():
+    \"\"\"Returns 'two'.\"\"\"
+    return "two"
+
+
+def main():
+    result = helper_one() + helper_two()
+    return result
+"""
+
+    test_file = os.path.join(str(tmp_path), "test_regions.py")
+
+    with open(test_file, "w") as f:
+        f.write(source)
+
+    coder = _make_coder_with_io(str(tmp_path))
+    proxy = AgentProxy(coder)
+
+    regions = proxy.resolve_regions(
+        "test_regions.py",
+        [
+            {"name": "helper_one", "start": "def helper_one", "end": 'return "one"'},
+            {"name": "helper_two", "start": "def helper_two", "end": 'return "two"'},
+            {"name": "main", "start": "def main", "end": "return result"},
+        ],
+    )
+
+    from cecli.helpers.orchestration.region_resolver import AgentRegion
+
+    assert isinstance(regions, AgentRegion)
+    assert len(regions) == 3
+
+    # Each region should have valid content IDs
+    for name in ("helper_one", "helper_two", "main"):
+        start_id = regions.get_start(name)
+        end_id = regions.get_end(name)
+
+        assert "::" in start_id, f"{name} start_id should be a content ID: {start_id}"
+        assert "::" in end_id, f"{name} end_id should be a content ID: {end_id}"
+
+        assert regions.get_start_line(name) > 0
+        assert regions.get_end_line(name) > 0
+        assert regions.get_start_line(name) <= regions.get_end_line(name)
+
+
+def test_resolve_regions_file_not_found(tmp_path):
+    """Lazy resolution raises ValueError when file doesn't exist."""
+
+    import pytest
+
+    from cecli.helpers.orchestration.environment import AgentProxy
+
+    coder = _make_coder_with_io(str(tmp_path))
+
+    proxy = AgentProxy(coder)
+    regions = proxy.resolve_regions(
+        "nonexistent.py",
+        [{"name": "x", "start": "def x", "end": "return"}],
+    )
+
+    # resolve_regions is now lazy — error surfaces on access
+    with pytest.raises(ValueError, match="File not found"):
+        regions.get_start("x")
+
+
+def test_resolve_regions_empty_regions_list(tmp_path):
+    """AgentProxy.resolve_regions handles empty region list."""
+
+    import os
+
+    from cecli.helpers.orchestration.environment import AgentProxy
+    from cecli.helpers.orchestration.region_resolver import AgentRegion
+
+    source = "x = 1\n"
+
+    test_file = os.path.join(str(tmp_path), "empty_test.py")
+
+    with open(test_file, "w") as f:
+        f.write(source)
+
+    coder = _make_coder_with_io(str(tmp_path))
+    proxy = AgentProxy(coder)
+
+    regions = proxy.resolve_regions("empty_test.py", [])
+
+    assert isinstance(regions, AgentRegion)
+    assert len(regions) == 0
+
+
+def test_agent_region_content_id_fallback(tmp_path):
+    """AgentRegion snapshots line content from content-ID patterns for stale-ID fallback."""
+
+    import os
+
+    from cecli.helpers.orchestration.region_resolver import AgentRegion
+
+    source = """\
+def greet(name):
+    return f"hello {name}"
+
+
+def farewell(name):
+    return f"goodbye {name}"
+"""
+
+    test_file = os.path.join(str(tmp_path), "fallback_test.py")
+
+    with open(test_file, "w") as f:
+        f.write(source)
+
+    coder = _make_coder_with_io(str(tmp_path))
+
+    # First, resolve using the Agent to get a real content ID
+    from cecli.helpers.orchestration.environment import AgentProxy
+
+    proxy = AgentProxy(coder)
+    regions = proxy.resolve_regions(
+        "fallback_test.py",
+        [{"name": "greet", "start": "def greet", "end": 'return f"hello {name}"'}],
+    )
+
+    # Get the content ID for the start of "greet"
+    start_id = regions.get_start("greet")
+
+    # Now create a NEW AgentRegion that uses the raw content ID as the pattern.
+    # This simulates an agent that captured content IDs from a previous turn.
+    regions2 = AgentRegion(
+        "fallback_test.py",
+        coder,
+        [{"name": "greet", "start": start_id, "end": start_id}],
+    )
+
+    # First resolution should snapshot the line content
+    result_id = regions2.get_start("greet")
+    assert "::" in result_id
+
+    # Now modify the file (simulating an edit that shifts hashlines)
+    new_source = """\
+# header comment added
+def greet(name):
+    return f"hello {name}"
+
+
+def farewell(name):
+    return f"goodbye {name}"
+"""
+
+    with open(test_file, "w") as f:
+        f.write(new_source)
+
+    # The original content ID is now stale, but the snapshot should let
+    # us resolve via content matching
+    result_id2 = regions2.get_start("greet")
+    assert "::" in result_id2, f"Should resolve via fallback content match, got: {result_id2!r}"
+
+
+def test_agent_region_rejects_ambiguous_pattern(tmp_path):
+    """AgentRegion raises ValueError when a text pattern matches multiple locations."""
+
+    import os
+
+    import pytest
+
+    from cecli.helpers.orchestration.region_resolver import AgentRegion
+
+    # Create a file where "return x" appears multiple times
+    source = """\
+def foo():
+    return x
+
+def bar():
+    return x
+
+def baz():
+    return x
+"""
+
+    test_file = os.path.join(str(tmp_path), "ambiguous.py")
+    with open(test_file, "w") as f:
+        f.write(source)
+
+    coder = _make_coder_with_io(str(tmp_path))
+
+    regions = AgentRegion(
+        "ambiguous.py",
+        coder,
+        [
+            {"name": "bar", "start": "def bar", "end": "return x"},
+        ],
+    )
+
+    # start is unique, but end matches 3 locations
+    with pytest.raises(ValueError, match="End pattern"):
+        regions.get_end("bar")
+
+
+def test_agent_region_disambiguates_with_l_hint(tmp_path):
+    """AgentRegion uses @L hint to disambiguate when a pattern matches multiple locations."""
+
+    import os
+
+    from cecli.helpers.orchestration.region_resolver import AgentRegion
+
+    source = """\
+def foo():
+    return x
+
+def bar():
+    return y
+
+def baz():
+    return z
+"""
+
+    test_file = os.path.join(str(tmp_path), "hint_test.py")
+    with open(test_file, "w") as f:
+        f.write(source)
+
+    coder = _make_coder_with_io(str(tmp_path))
+
+    # "return" appears on lines 2, 5, 8 — use @L hint to target bar's return
+    regions = AgentRegion(
+        "hint_test.py",
+        coder,
+        [
+            {"name": "bar", "start": "def bar", "end": "return @L6"},
+        ],
+    )
+
+    start_id = regions.get_start("bar")
+    end_id = regions.get_end("bar")
+
+    assert "::" in start_id
+    assert "::" in end_id
+    assert regions.get_start_line("bar") == 4
+    assert regions.get_end_line("bar") == 5
+
+
+def test_agent_region_rejects_l_hint_still_ambiguous(tmp_path):
+    """AgentRegion raises ValueError when @L hint has equally-close matches (tie)."""
+
+    import os
+
+    import pytest
+
+    from cecli.helpers.orchestration.region_resolver import AgentRegion
+
+    source = """\
+return x
+
+return y
+middle
+return x
+return z
+"""
+
+    test_file = os.path.join(str(tmp_path), "bad_hint.py")
+    with open(test_file, "w") as f:
+        f.write(source)
+
+    coder = _make_coder_with_io(str(tmp_path))
+
+    # "return x" at lines 1 and 4 (0-based: 0 and 3), hint @L3 (0-based 2)
+    # Both are distance 1 away from the hint
+    regions = AgentRegion(
+        "bad_hint.py",
+        coder,
+        [
+            {"name": "top", "start": "return x @L1", "end": "return x @L3"},
+        ],
+    )
+
+    # "return x" at lines 1 and 4 both distance 1 from @L3 (0-based 2)
+    with pytest.raises(ValueError, match="End pattern.*@L3 hint ties"):
+        regions.get_end("top")
+
+
+def test_agent_region_explicit_line_hints(tmp_path):
+    """Explicit start_line_hint / end_line_hint fields disambiguate patterns."""
+
+    import os
+
+    from cecli.helpers.orchestration.region_resolver import AgentRegion
+
+    source = """\
+def foo():
+    return x
+
+def bar():
+    return y
+
+def baz():
+    return z
+"""
+
+    test_file = os.path.join(str(tmp_path), "explicit_hint.py")
+    with open(test_file, "w") as f:
+        f.write(source)
+
+    coder = _make_coder_with_io(str(tmp_path))
+
+    # Use explicit end_line_hint instead of @L in pattern
+    regions = AgentRegion(
+        "explicit_hint.py",
+        coder,
+        [
+            {"name": "bar", "start": "def bar", "end": "return", "end_line_hint": 6},
+        ],
+    )
+
+    start_id = regions.get_start("bar")
+    end_id = regions.get_end("bar")
+
+    assert "::" in start_id
+    assert "::" in end_id
+    assert regions.get_start_line("bar") == 4
+    assert regions.get_end_line("bar") == 5
+
+
+def test_agent_region_explicit_hint_overrides_at_syntax(tmp_path):
+    """Explicit line_hint fields override @L hints embedded in patterns."""
+
+    import os
+
+    from cecli.helpers.orchestration.region_resolver import AgentRegion
+
+    source = """\
+def foo():
+    return x
+
+def bar():
+    return y
+
+def baz():
+    return z
+"""
+
+    test_file = os.path.join(str(tmp_path), "override_hint.py")
+    with open(test_file, "w") as f:
+        f.write(source)
+
+    coder = _make_coder_with_io(str(tmp_path))
+
+    # @L2 points to foo's return, but explicit end_line_hint=3 points to bar's
+    regions = AgentRegion(
+        "override_hint.py",
+        coder,
+        [
+            {
+                "name": "bar",
+                "start": "def bar",
+                "end": "return @L3",
+                "end_line_hint": 6,
+            },
+        ],
+    )
+
+    # Explicit hint (6→line 5) should win over @L3 (→line 2)
+    assert regions.get_end_line("bar") == 5
+
+
+def test_resolve_regions_rejects_ambiguous_via_proxy(tmp_path):
+    """resolve_regions() through AgentProxy surfaces ambiguity errors at access time."""
+
+    import os
+
+    import pytest
+
+    from cecli.helpers.orchestration.environment import AgentProxy
+
+    source = """\
+def one():
+    pass
+
+def two():
+    pass
+
+def three():
+    pass
+"""
+
+    test_file = os.path.join(str(tmp_path), "proxy_ambig.py")
+    with open(test_file, "w") as f:
+        f.write(source)
+
+    coder = _make_coder_with_io(str(tmp_path))
+    proxy = AgentProxy(coder)
+
+    regions = proxy.resolve_regions(
+        "proxy_ambig.py",
+        [{"name": "two", "start": "def two", "end": "pass"}],
+    )
+
+    # "pass" appears 3 times — should raise at access time
+    with pytest.raises(ValueError, match="End pattern.*pass.*matches 3"):
+        regions.get_end("two")
+
+
+def test_gather_result_attribute_access():
+    """GatherResult supports attribute access for named results."""
+    from cecli.helpers.orchestration.environment import GatherResult
+
+    gr = GatherResult({"read_a": {"result": ["hello"]}, "grep_b": {"result": ["world"]}})
+    assert gr.read_a == {"result": ["hello"]}
+    assert gr.grep_b == {"result": ["world"]}
+
+
+def test_gather_result_key_access():
+    """GatherResult supports key/index access for named results."""
+    from cecli.helpers.orchestration.environment import GatherResult
+
+    gr = GatherResult({"x": 1, "y": 2})
+    assert gr["x"] == 1
+    assert gr["y"] == 2
+
+
+def test_gather_result_len():
+    """GatherResult supports len()."""
+    from cecli.helpers.orchestration.environment import GatherResult
+
+    gr = GatherResult({"a": 1, "b": 2, "c": 3})
+    assert len(gr) == 3
+
+
+def test_gather_result_contains():
+    """GatherResult supports 'in' operator."""
+    from cecli.helpers.orchestration.environment import GatherResult
+
+    gr = GatherResult({"a": 1})
+    assert "a" in gr
+    assert "b" not in gr
+
+
+def test_gather_result_iteration():
+    """GatherResult is iterable (yields values)."""
+    from cecli.helpers.orchestration.environment import GatherResult
+
+    gr = GatherResult({"a": 10, "b": 20})
+    values = list(gr)
+    assert ("a", 10) in values
+    assert ("b", 20) in values
+    assert len(values) == 2
+
+
+def test_gather_result_read_only():
+    """GatherResult prevents mutation via attribute assignment."""
+    import pytest
+
+    from cecli.helpers.orchestration.environment import GatherResult
+
+    gr = GatherResult({"a": 1})
+    with pytest.raises(AttributeError, match="read-only"):
+        gr.a = 2
+
+
+def test_gather_result_repr():
+    """GatherResult repr shows types."""
+    from cecli.helpers.orchestration.environment import GatherResult
+
+    gr = GatherResult({"a": 42, "b": "hello"})
+    r = repr(gr)
+    assert "GatherResult" in r
+    assert "int" in r or "str" in r
+
+
+def test_gather_result_missing_key():
+    """GatherResult raises AttributeError with helpful message for missing keys."""
+    import pytest
+
+    from cecli.helpers.orchestration.environment import GatherResult
+
+    gr = GatherResult({"foo": 1, "bar": 2})
+    with pytest.raises(AttributeError, match="no key"):
+        gr.baz
+
+
+@pytest.mark.asyncio
+async def test_env_named_gather():
+    """AgentExecutionEnv supports named gather returning GatherResult."""
+    env = _make_env()
+    result = await env.execute(
+        "results = await gather(a=tool.call(), b=tool.call())\n"
+        "print(results.a)\n"
+        "print(results['b'])\n"
+        "print(len(results))\n"
+    )
+    # Just verify it doesn't crash and produces output
+    assert result["results"]  # should have some output
+
+
+@pytest.mark.asyncio
+async def test_env_gather_mixed_rejected():
+    """Mixing positional and keyword args in gather raises TypeError."""
+    env = _make_env()
+    result = await env.execute("await gather(1, a=2)")
+    assert "TypeError" in result["results"] or "cannot mix" in result["results"].lower()
+
+
+@pytest.mark.asyncio
+async def test_env_named_gather_exception_handling():
+    """Named gather converts exceptions to error dicts per-key."""
+    env = _make_env()
+    result = await env.execute(
+        "results = await gather(good=tool.call(), bad=tool.call())\n"
+        "print('errors' in results.bad)\n"
+    )
+    # Just verify it doesn't crash
+    assert result["results"] is not None

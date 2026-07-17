@@ -46,12 +46,15 @@ class Tool(BaseTool):
         BaseTool.clear_invocation_cache()
         env = OrchestrationService.get_instance(coder)
         result = await env.execute(code)
-        response = ToolResponse(cls.NORM_NAME)
-        response.append_result(result)
+        response = ToolResponse(cls.NORM_NAME, result_type="list")
+        response.append_result(
+            content=result["results"], metadata={"state_variables": result["state_variables"]}
+        )
         return response
 
     @classmethod
     def format_output(cls, coder, mcp_server, tool_response):
+
         color_start, color_end = color_markers(coder)
 
         tool_header(coder=coder, mcp_server=mcp_server, tool_response=tool_response)

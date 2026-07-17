@@ -507,7 +507,7 @@ class Tool(BaseTool):
                     op_result["has_more_files"] = has_more
                     op_result["files"] = [
                         {
-                            "path": pf["path"],
+                            "file": pf["path"],
                             "match_count": pf.get("count_from_pass", 0),
                             "truncated": pf["path"] in truncated_files,
                             "content": pf["content"],
@@ -545,7 +545,26 @@ class Tool(BaseTool):
 
         response = ToolResponse(cls.NORM_NAME, result_type=cls.RESULT_TYPE)
         for op_result in all_operation_results:
-            response.append_result(op_result)
+            files = op_result.get("files", [])
+            metadata = {k: v for k, v in op_result.items() if k != "files"}
+
+            # Build a human-readable string summary as content
+            pattern = op_result.get("pattern", "")
+            if op_result.get("error"):
+                summary = f"[{pattern}]\nError: {op_result['error']}"
+            elif op_result.get("total_matches", 0) == 0:
+                summary = f"[{pattern}]\nNo matches found."
+            else:
+                lines = [f"[{pattern}]"]
+                for f in files:
+                    truncated_mark = " (truncated)" if f.get("truncated") else ""
+                    lines.append(f"{f['file']}: {f['match_count']} match(es){truncated_mark}")
+                if op_result.get("has_more_files"):
+                    lines.append(f"... ({op_result['total_files']} files total)")
+                summary = "\n".join(lines)
+
+            response.append_result(content=summary, metadata=metadata)
+
         return response
 
     @classmethod

@@ -34,7 +34,6 @@ class SecurityFilter(ast.NodeVisitor):
         "breakpoint",
         "globals",
         "locals",
-        "vars",
         "getattr",
         "setattr",
         "delattr",
@@ -46,8 +45,13 @@ class SecurityFilter(ast.NodeVisitor):
     def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
         raise SecurityError("Imports are disabled in the agent orchestration environment.")
 
+    _SAFE_DUNDER: set[str] = {"__name__", "__doc__"}
+
     def visit_Attribute(self, node: ast.Attribute) -> None:
         if node.attr.startswith("_"):
+            if node.attr in self._SAFE_DUNDER:
+                self.generic_visit(node)
+                return
             raise SecurityError(f"Access to private/dunder attribute '{node.attr}' is forbidden.")
         self.generic_visit(node)
 
