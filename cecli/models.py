@@ -3,6 +3,7 @@ import difflib
 import hashlib
 import importlib.resources
 import json
+import logging
 import math
 import os
 import platform
@@ -1407,8 +1408,16 @@ class Model(ModelSettings):
                 if not hasattr(self, "_compaction_retry_count"):
                     self._compaction_retry_count = 0
 
+                compaction_logger = logging.getLogger("cecli.compaction")
+
                 if self._compaction_retry_count >= effective_max:
                     # Exhausted compaction retries — propagate with user guidance
+                    compaction_logger.info(json.dumps({
+                        "event": "context_compaction_exhausted",
+                        "retry_count": self._compaction_retry_count,
+                        "effective_max": effective_max,
+                        "trigger": "context_window_exceeded",
+                    }))
                     print(
                         f"Context compaction failed after {effective_max} attempt(s)."
                         " Please use /clear or /compact manually."
@@ -1417,9 +1426,16 @@ class Model(ModelSettings):
                     raise err
 
                 # Attempt compaction before retrying
+                retry_index = self._compaction_retry_count + 1
+                compaction_logger.info(json.dumps({
+                    "event": "context_compaction_attempt",
+                    "retry_index": retry_index,
+                    "effective_max": effective_max,
+                    "trigger": "context_window_exceeded",
+                }))
                 print(
                     f"Compacting context… retry"
-                    f" {self._compaction_retry_count + 1}/{effective_max}"
+                    f" {retry_index}/{effective_max}"
                 )
 
                 try:
@@ -1430,8 +1446,21 @@ class Model(ModelSettings):
                 except Exception as compaction_err:
                     # Compaction itself failed — do NOT count as retry attempt
                     # (no context reduction occurred, retrying would be futile)
+                    error_type, _ = FrozenCompactionSettings._scrub_compaction_error(
+                        compaction_err
+                    )
+                    compaction_logger.warning(json.dumps({
+                        "event": "context_compaction_failed",
+                        "error_type": error_type,
+                        "retry_index": retry_index,
+                        "trigger": "context_window_exceeded",
+                    }))
+                    if self.verbose:
+                        compaction_logger.debug(
+                            f"Compaction exception details: {compaction_err!r}"
+                        )
                     print(
-                        f"Context compaction failed: {type(compaction_err).__name__}."
+                        f"Context compaction failed: {error_type}."
                         " Please use /clear or /compact manually."
                     )
                     self._compaction_retry_count = 0  # Reset for next request
@@ -1439,6 +1468,11 @@ class Model(ModelSettings):
 
                 # Check if compaction actually reduced context (floor guard)
                 if getattr(coder, "_compaction_floor_reached", False):
+                    compaction_logger.info(json.dumps({
+                        "event": "context_compaction_floor_reached",
+                        "retry_index": retry_index,
+                        "trigger": "context_window_exceeded",
+                    }))
                     print(
                         "Context is already at minimum size, cannot compact further."
                         " Please use /clear manually."
@@ -1628,6 +1662,19 @@ class FrozenCompactionSettings:
     context_compaction_max_tokens: int
     context_compaction_summary_tokens: int
     is_agent_mode: bool
+
+
+    @staticmethod
+    def _scrub_compaction_error(ex):
+        """Extract only the error type name and sanitized description.
+
+        Strips message bodies, file paths, and conversation content from
+        exception output. Returns a tuple of (error_type_name, sanitized_description).
+        """
+        error_type = type(ex).__name__
+        # Only surface the error type, never raw exception messages
+        # which may contain conversation content or file paths
+        return error_type, None
 
 
 
