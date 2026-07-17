@@ -1,6 +1,8 @@
-import os
 import json
+import logging
+import os
 import sys
+
 import yaml
 
 from cecli.helpers import nested
@@ -614,46 +616,62 @@ async def main_async(
 
     set_args_error_data(args)
 
-    # Deep merge configuration files after parsing (unconditional)
-    deep_merge_configs = []
-    shallow_merge_configs = []
+    # Deep merge configuration files after parsing
+    # Step 5.4: Early-exit if no .cecli.conf.yml files exist
+    has_cecli_conf = any(
+        nested.is_cecli_conf_file(cf) and os.path.exists(cf)
+        for cf in default_config_files
+    )
 
-    for config_file in default_config_files:
-        if os.path.exists(config_file):
-            try:
-                with open(config_file, "r") as f:
-                    config_data = yaml.safe_load(f)
-                    if nested.is_cecli_conf_file(config_file):
-                        deep_merge_configs.append(config_data)
-                    else:
-                        shallow_merge_configs.append(config_data)
-            except yaml.YAMLError as e:
-                print(f"Warning: Could not parse YAML file {config_file}: {e}")
+    if not has_cecli_conf:
+        logging.debug(
+            "No .cecli.conf.yml files found — shallow-merge-only mode active "
+            "(configargparse handles .cecli/conf.yml)"
+        )
+    else:
+        deep_merge_configs = []
 
-    if deep_merge_configs:
-        merged_config = nested.deep_merge_config_dicts(deep_merge_configs)
-
-        # Step 5.1: Post-merge type validation for list fields
-        for key in nested.DEEP_MERGE_LIST_FIELDS:
-            if key in merged_config and hasattr(args, key):
-                if not isinstance(merged_config[key], list):
-                    print(
-                        f"Warning: Merged config for {key} is not a list "
-                        f"(type: {type(merged_config[key]).__name__}), expected list"
-                    )
-                setattr(args, key, merged_config[key])
-
-        for key in nested.DEEP_MERGE_JSON_FIELDS:
-            if key in merged_config and hasattr(args, key):
-                if not isinstance(merged_config[key], dict):
-                    print(
-                        f"Warning: Merged config for {key} is not a dict "
-                        f"(type: {type(merged_config[key]).__name__}), expected dict"
-                    )
+        for config_file in default_config_files:
+            if os.path.exists(config_file) and nested.is_cecli_conf_file(config_file):
                 try:
-                    setattr(args, key, json.dumps(merged_config[key]))
-                except (TypeError, ValueError) as e:
-                    print(f"Warning: Could not serialize merged config for {key}: {e}")
+                    with open(config_file, "r") as f:
+                        config_data = yaml.safe_load(f)
+                        deep_merge_configs.append(config_data)
+                except yaml.YAMLError as e:
+                    logging.warning(
+                        "Could not parse YAML file %s: %s", config_file, e
+                    )
+
+        if deep_merge_configs:
+            # Only deep merge .cecli.conf.yml files — .cecli/conf.yml files
+            # are handled by configargparse shallow merge (Step 3.5)
+            merged_config = nested.deep_merge_config_dicts(deep_merge_configs)
+
+            # Step 5.1: Post-merge type validation for list fields
+            for key in nested.DEEP_MERGE_LIST_FIELDS:
+                if key in merged_config and hasattr(args, key):
+                    if not isinstance(merged_config[key], list):
+                        logging.warning(
+                            "Merged config for %s is not a list (type: %s), expected list",
+                            key,
+                            type(merged_config[key]).__name__,
+                        )
+                    setattr(args, key, merged_config[key])
+
+            for key in nested.DEEP_MERGE_JSON_FIELDS:
+                if key in merged_config and hasattr(args, key):
+                    if not isinstance(merged_config[key], dict):
+                        logging.warning(
+                            "Merged config for %s is not a dict (type: %s), expected dict",
+                            key,
+                            type(merged_config[key]).__name__,
+                        )
+                    try:
+                        setattr(args, key, json.dumps(merged_config[key]))
+                    except (TypeError, ValueError) as e:
+                        logging.warning(
+                            "Could not serialize merged config for %s: %s", key, e
+                        )
 
     if len(unknown):
         print("Unknown Args: ", unknown)
