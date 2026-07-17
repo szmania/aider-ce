@@ -1211,6 +1211,14 @@ class Model(ModelSettings):
     def is_ollama(self):
         return self.name.startswith("ollama/") or self.name.startswith("ollama_chat/")
 
+@dataclass(frozen=True)
+class FrozenCompactionSettings:
+    enable_context_compaction: bool
+    max_compaction_retries: int
+    context_compaction_max_tokens: int
+    context_compaction_summary_tokens: int
+    is_agent_mode: bool
+
     async def send_completion(
         self,
         messages,
@@ -1223,6 +1231,7 @@ class Model(ModelSettings):
         max_wait=2,
         override_kwargs={},
         interrupt_event=None,
+        coder=None,
     ):
         if os.environ.get("CECLI_SANITY_CHECK_TURNS"):
             sanity_check_messages(messages)
@@ -1386,7 +1395,86 @@ class Model(ModelSettings):
 
                 return hash_object, res
             except litellm.ContextWindowExceededError as err:
-                raise err
+                # Check if automatic compaction+retry is enabled via frozen settings
+                compaction_enabled = (
+                    coder is not None
+                    and hasattr(coder, "enable_context_compaction")
+                    and coder.enable_context_compaction
+                )
+
+                if not compaction_enabled:
+                    # Backward compatible: propagate immediately when disabled
+                    raise err
+
+                # Determine effective retry limit (agent mode caps at 2)
+                max_retries = getattr(coder, "max_compaction_retries", 3)
+                is_agent_mode = getattr(coder, "is_agent_mode", False)
+                effective_max = min(max_retries, 2) if is_agent_mode else max_retries
+
+                # Track per-request compaction retries (separate from general retry_delay loop)
+                if not hasattr(self, "_compaction_retry_count"):
+                    self._compaction_retry_count = 0
+
+                if self._compaction_retry_count >= effective_max:
+                    # Exhausted compaction retries — propagate with user guidance
+                    print(
+                        f"Context compaction failed after {effective_max} attempt(s)."
+                        " Please use /clear or /compact manually."
+                    )
+                    self._compaction_retry_count = 0  # Reset for next request
+                    raise err
+
+                # Attempt compaction before retrying
+                print(
+                    f"Compacting context… retry"
+                    f" {self._compaction_retry_count + 1}/{effective_max}"
+                )
+
+                try:
+                    await coder.compact_context_if_needed(
+                        force=True,
+                        message="Context window exceeded, compacting to retry.",
+                    )
+                except Exception as compaction_err:
+                    # Compaction itself failed — do NOT count as retry attempt
+                    # (no context reduction occurred, retrying would be futile)
+                    print(
+                        f"Context compaction failed: {type(compaction_err).__name__}."
+                        " Please use /clear or /compact manually."
+                    )
+                    self._compaction_retry_count = 0  # Reset for next request
+                    raise err from compaction_err
+
+                # Check if compaction actually reduced context (floor guard)
+                if getattr(coder, "_compaction_floor_reached", False):
+                    print(
+                        "Context is already at minimum size, cannot compact further."
+                        " Please use /clear manually."
+                    )
+                    self._compaction_retry_count = 0  # Reset for next request
+                    raise err
+
+                # Compaction succeeded — increment counter and retry
+                self._compaction_retry_count += 1
+
+                # Apply exponential backoff before retry
+                retry_delay *= self.retry_backoff_factor
+                if retry_delay > self.retry_timeout:
+                    retry_delay = self.retry_timeout
+
+                print(f"Retrying in {retry_delay:.1f} seconds...")
+                if interrupt_event:
+                    _res, interrupted = await coroutines.interruptible(
+                        asyncio.sleep(retry_delay), interrupt_event
+                    )
+                    if interrupted:
+                        self._compaction_retry_count = 0  # Reset on interrupt
+                        raise KeyboardInterrupt("Interrupted during compaction retry sleep")
+                else:
+                    await asyncio.sleep(retry_delay)
+
+                # Reset compaction counter on successful retry (handled after loop)
+                continue
             except litellm_ex.exceptions_tuple() as err:
                 ex_info = litellm_ex.get_ex_info(err)
                 should_retry = ex_info.retry
@@ -1462,6 +1550,7 @@ class Model(ModelSettings):
                     tools=tools,
                     max_tokens=max_tokens,
                     override_kwargs=override_kwargs,
+                    coder=coder,
                 )
                 if (
                     not response

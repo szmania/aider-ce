@@ -409,6 +409,7 @@ class Coder(metaclass=UsageMeta):
         auto_accept_architect=True,
         mcp_manager=None,
         enable_context_compaction=False,
+        max_compaction_retries=3,
         context_compaction_max_tokens=None,
         context_compaction_summary_tokens=8192,
         map_cache_dir=".",
@@ -477,6 +478,11 @@ class Coder(metaclass=UsageMeta):
         self.context_compaction_current_ratio = 0
         self.context_compaction_max_tokens = context_compaction_max_tokens
         self.context_compaction_summary_tokens = context_compaction_summary_tokens
+        self.max_compaction_retries = max_compaction_retries
+
+        # Token floor guard: prevents infinite compaction on near-empty context
+        self._compaction_floor_reached = False
+
         self.max_reflections = nested.getter(self.args, "max_reflections", 3)
 
         if not fnames:
@@ -1990,6 +1996,10 @@ class Coder(metaclass=UsageMeta):
         if not self.enable_context_compaction:
             return
 
+        # Skip compaction if token floor has been reached (context too small to compact further)
+        if self._compaction_floor_reached:
+            return
+
         # Trigger background observation/reflection check
         await ObservationService.get_instance(self).check_and_trigger()
 
@@ -2122,6 +2132,22 @@ class Coder(metaclass=UsageMeta):
 
             if cur_tokens > self.context_compaction_max_tokens or cur_tokens > done_tokens:
                 await summarize_and_update(cur_messages, MessageTag.CUR)
+
+            self.io.tool_output("...chat history compacted.")
+            self.io.update_spinner(self.io.last_spinner_text)
+
+            # Post-compaction token floor check
+            # Recalculate tokens after compaction to prevent infinite loops
+            # on already-minimal context
+            all_messages = manager.get_messages_dict()
+            post_compaction_tokens = self.summarizer.count_tokens(all_messages)
+            token_floor = self.context_compaction_max_tokens * 0.25 if self.context_compaction_max_tokens else 0
+
+            if post_compaction_tokens < token_floor and not force:
+                self._compaction_floor_reached = True
+                self.io.tool_output(
+                    "...context is already at minimum size, cannot compact further."
+                )
 
             self.io.tool_output("...chat history compacted.")
             self.io.update_spinner(self.io.last_spinner_text)
@@ -3458,6 +3484,7 @@ class Coder(metaclass=UsageMeta):
                 tools=tools,
                 override_kwargs=self.model_kwargs.copy(),
                 interrupt_event=self.interrupt_event,
+                coder=self,
             )
 
             try:
