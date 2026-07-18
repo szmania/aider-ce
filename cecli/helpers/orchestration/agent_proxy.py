@@ -52,8 +52,21 @@ class AgentProxy:
             tool_module = ToolRegistry.get_tool(bare_name)
             if tool_module is not None:
                 return ToolProxy(tool_name, self._coder, tool_module=tool_module)
+            # Also try with hyphen normalization on the bare name
+            bare_underscored = bare_name.replace("-", "_")
+            if bare_underscored != bare_name:
+                tool_module = ToolRegistry.get_tool(bare_underscored)
+                if tool_module is not None:
+                    return ToolProxy(tool_name, self._coder, tool_module=tool_module)
 
-        # 3b. Strip underscores from the tool name and retry (snake_case fallback)
+        # 3b. Replace hyphens with underscores and retry (kebab-case -> snake_case)
+        underscored = name_lower.replace("-", "_")
+        if underscored != name_lower:
+            tool_module = ToolRegistry.get_tool(underscored)
+            if tool_module is not None:
+                return ToolProxy(tool_name, self._coder, tool_module=tool_module)
+
+        # 3c. Strip underscores from the tool name and retry (snake_case fallback)
         no_underscore = name_lower.replace("_", "")
         if no_underscore != name_lower:
             tool_module = ToolRegistry.get_tool(no_underscore)
@@ -301,10 +314,63 @@ class AgentProxy:
                 }
             )
 
+        self._validate_edit_regions(edits, edit_objects)
+
         return await edit_tool.call(
             edits=edit_objects,
             change_id=change_id,
         )
+
+    @staticmethod
+    def _validate_edit_regions(
+        edits: list[dict[str, object]],
+        edit_objects: list[dict[str, object]],
+    ) -> None:
+        """Reject batches where any two edit regions overlap or are adjacent.
+
+        Adjacent edits (within 8 lines of each other) corrupt content IDs
+        because the first edit regenerates IDs in the surrounding ~8-line
+        window, making the second edit's target IDs stale.
+        """
+        _ADJACENCY_THRESHOLD = 8  # lines of ID-regeneration buffer
+
+        if len(edits) <= 1:
+            return
+
+        # Collect (start_line, end_line, idx) for each edit
+        indexed: list[tuple[int, int, int]] = []
+        for i, (edit, eo) in enumerate(zip(edits, edit_objects)):
+            region = edit["region"]
+            sl = region.get("start_line")
+            el = region.get("end_line")
+            if sl is None or el is None:
+                # No line numbers available — skip validation (best-effort)
+                return
+            indexed.append((int(sl), int(el), i))
+
+        # Sort by start_line
+        indexed.sort(key=lambda x: x[0])
+
+        for j in range(len(indexed) - 1):
+            sl_a, el_a, idx_a = indexed[j]
+            sl_b, el_b, idx_b = indexed[j + 1]
+
+            if sl_b <= el_a:
+                raise ValueError(
+                    f"Overlapping edit regions detected: "
+                    f"edit {idx_a + 1} (lines {sl_a}-{el_a}) overlaps with "
+                    f"edit {idx_b + 1} (lines {sl_b}-{el_b}). "
+                    f"Split edits into separate calls."
+                )
+            if sl_b <= el_a + _ADJACENCY_THRESHOLD:
+                raise ValueError(
+                    f"Adjacent edit regions detected: "
+                    f"edit {idx_a + 1} (lines {sl_a}-{el_a}) is within "
+                    f"{_ADJACENCY_THRESHOLD} lines of edit {idx_b + 1} (lines {sl_b}-{el_b}). "
+                    f"Content IDs within ~8 lines of an edit are regenerated, "
+                    f"so adjacent edits corrupt each other's targets. "
+                    f"Split edits into separate calls."
+                )
 
 
 # ---------------------------------------------------------------------------

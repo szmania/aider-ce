@@ -100,14 +100,21 @@ class AgentRegion:
 
         return sorted(self._specs.keys())
 
-    def get(self, name: str) -> dict[str, str]:
-        """Return ``{"start": content_id, "end": content_id}`` for *name*.
+    def get(self, name: str) -> dict[str, object]:
+        """Return ``{"start": ..., "end": ..., "start_line": N, "end_line": N}`` for *name*.
 
         The returned dict can be passed directly as the ``region`` value
-        in ``Agent.edit_region()`` edits.
+        in ``Agent.edit_region()`` edits.  ``start_line`` / ``end_line`` are
+        1-based for readability and enable adjacent-edit detection.
         """
 
-        return {"start": self.get_start(name), "end": self.get_end(name)}
+        start_id, end_id, start_line, end_line = self._resolve(name)
+        return {
+            "start": start_id,
+            "end": end_id,
+            "start_line": start_line + 1,
+            "end_line": end_line + 1,
+        }
 
     def __repr__(self) -> str:
         names = ", ".join(sorted(self._specs.keys()))

@@ -60,6 +60,40 @@ class TrackedDict(dict):
         self._owner = owner
         self._is_shared = is_shared
 
+    def __getattr__(self, key: str):
+        """Route attribute reads through dict lookup.
+
+        Internal attrs (_owner, _is_shared) are accessed via object.__getattribute__
+        to avoid recursion. All other names are looked up in the dict.
+        """
+        if key.startswith("_"):
+            raise AttributeError(f"Cannot access private attribute {key!r} on TrackedDict")
+        try:
+            return self[key]
+        except KeyError:
+            raise AttributeError(
+                f"TrackedDict has no key {key!r}. "
+                f"Available keys: {', '.join(sorted(self.keys()))}"
+            ) from None
+
+    def __setattr__(self, key: str, value) -> None:
+        """Route attribute writes through dict __setitem__.
+
+        Internal attrs (_owner, _is_shared) are set directly on the instance
+        to avoid polluting dict state.
+        """
+        if key.startswith("_"):
+            object.__setattr__(self, key, value)
+        else:
+            self[key] = value
+
+    def __delattr__(self, key: str) -> None:
+        """Route attribute deletes through dict __delitem__."""
+        if key.startswith("_"):
+            object.__delattr__(self, key)
+        else:
+            del self[key]
+
     def __setitem__(self, key, value):
         is_new = key not in self
         super().__setitem__(key, value)
@@ -99,7 +133,29 @@ class TrackedDict(dict):
 
 # ---------------------------------------------------------------------------
 # Safe primitives exposed to the sandbox
-# ---------------------------------------------------------------------------
+
+
+def _make_sandbox_dir(globals_dict, locals_dict):
+    """Create a safe dir() callable that handles both no-arg and obj modes.
+
+    When called without arguments (like the builtin ``dir()``), returns a sorted
+    list of public (non-dunder) names from the sandbox globals, locals, and
+    builtins (including pre-imported modules like ``re``, ``math``, etc.).
+    When called with an object, delegates to ``_safe_dir(obj)``.
+    """
+    _SENTINEL = object()
+
+    def sandbox_dir(obj=_SENTINEL):
+        if obj is _SENTINEL:
+            names = set(globals_dict.keys()) | set(locals_dict.keys())
+            builtins = globals_dict.get("__builtins__", {})
+            if isinstance(builtins, dict):
+                names |= set(builtins.keys())
+            return sorted(n for n in names if not n.startswith("_"))
+
+        return _safe_dir(obj)
+
+    return sandbox_dir
 
 
 class AgentExecutionEnv:
@@ -129,6 +185,10 @@ class AgentExecutionEnv:
         self.state._set_owner(self)
         self._shared_state._set_owner(self, is_shared=True)
 
+        # Initialize early so _safe_builtins can reference them
+        self.globals: dict[str, Any] = {}
+        self.locals: dict[str, Any] = {}
+
         _safe_builtins: dict[str, Any] = {
             "print": print,
             "range": range,
@@ -144,9 +204,10 @@ class AgentExecutionEnv:
             "typeof": _safe_typeof,
             "type": _safe_typeof,
             "vars": _safe_vars,
-            "dir": _safe_dir,
+            "dir": _make_sandbox_dir(self.globals, self.locals),
             "isinstance": isinstance,
             "hasattr": hasattr,
+            "getattr": getattr,
             "repr": repr,
             "enumerate": enumerate,
             "zip": zip,
@@ -188,19 +249,35 @@ class AgentExecutionEnv:
             )
             return builtins + globals_list
 
-        self.globals: dict[str, Any] = {
-            "__builtins__": _HelpfulBuiltins(_safe_builtins),
-            "Agent": AgentProxy(coder),
-            "gather": _safe_gather,
-            "sleep": _safe_sleep,
-            "json": _SafeJson,
-            "state": self.state,
-            "shared_state": AgentExecutionEnv._shared_state,
-            "__yield": _cooperative_yield,
-            "NEWLINE": "\n",
-            "allowed_methods": _allowed_methods,
-        }
-        self.locals: dict[str, Any] = {}
+        def _allowed_tools():
+            """Return a sorted list of available tool names for use with Agent.get_tool()."""
+            from cecli.helpers import nested
+
+            tool_names = []
+            tool_list = coder.get_tool_list()
+            for tool in tool_list:
+                name = nested.getter(tool, "function.name", "")
+                if name:
+                    tool_names.append(name)
+            return sorted(tool_names)
+
+        self.globals.clear()
+        self.globals.update(
+            {
+                "__builtins__": _HelpfulBuiltins(_safe_builtins),
+                "Agent": AgentProxy(coder),
+                "gather": _safe_gather,
+                "sleep": _safe_sleep,
+                "json": _SafeJson,
+                "state": self.state,
+                "shared_state": AgentExecutionEnv._shared_state,
+                "__yield": _cooperative_yield,
+                "NEWLINE": "\n",
+                "allowed_methods": _allowed_methods,
+                "allowed_tools": _allowed_tools,
+            }
+        )
+        self.locals.clear()
 
         def _make_reset(env_locals, env_state):
             def reset_func(local_vars: bool = True, state: bool = False) -> None:
@@ -351,33 +428,34 @@ class AgentExecutionEnv:
             code = f"Compilation Error: {e}"
             return {"results": code, "state_variables": self._state_snapshot()}
 
+        def _build_result(msg: str = "") -> dict:
+            print_output = "".join(captured_output)
+            parts = []
+            if print_output:
+                parts.append(print_output.rstrip("\n"))
+            if msg:
+                parts.append(msg)
+            code = "\n".join(parts) if parts else ""
+            return {"results": code, "state_variables": self._state_snapshot()}
+
         try:
             exec(compiled_code, self.globals, self.locals)
             runner_coro = self.locals["__agent_async_runner"]()
             result = await runner_coro
         except asyncio.CancelledError:
-            code = "Execution Error: Script was cancelled."
-            return {"results": code, "state_variables": self._state_snapshot()}
+            return _build_result("Execution Error: Script was cancelled.")
         except SecurityError as e:
-            code = f"Security Error: {e}"
-            return {"results": code, "state_variables": self._state_snapshot()}
+            return _build_result(f"Security Error: {e}")
         except Exception as e:
             tb = traceback.format_exc()
             logger.warning("Orchestration execution error: %s\n%s", e, tb)
-            code = f"Execution Error: {type(e).__name__}: {e}"
-            return {"results": code, "state_variables": self._state_snapshot()}
+            return _build_result(f"Execution Error: {type(e).__name__}: {e}")
         finally:
             self.locals.pop("__agent_async_runner", None)
             self.globals["__builtins__"]["print"] = print
             # Mutation tracking is handled automatically by TrackedDict
 
-        print_output = "".join(captured_output)
-
-        if print_output:
-            code = print_output.rstrip("\n")
-            return {"results": code, "state_variables": self._state_snapshot()}
-
-        return {"results": "", "state_variables": self._state_snapshot()}
+        return _build_result()
 
 
 # flake8: noqa
@@ -416,6 +494,7 @@ This is much more efficient than making individual tool calls for loop-heavy wor
 | `print(...)` / `reset(local_vars=True, state=False)` | Output messages; clear local namespace (and optionally state) |
 | `typeof(x)` / `isinstance(x, t)` / `hasattr(x, n)` / `repr(x)` / `vars(obj)` | Type inspection and debugging |
 | `allowed_methods()` | List all available builtin function names |
+| `allowed_tools()` | List all available tool names for use with ``Agent.get_tool()`` |
 
 ### Available Modules
 

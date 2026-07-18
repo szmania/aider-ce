@@ -78,7 +78,7 @@ class GatherResult:
 
     def __iter__(self):
         results = object.__getattribute__(self, "_results")
-        return iter(results.keys())
+        return iter(results.items())
 
     def keys(self) -> Any:
         results = object.__getattribute__(self, "_results")
@@ -106,7 +106,7 @@ class GatherResult:
         return f"GatherResult({inner})"
 
 
-async def _safe_gather(**named_awaitables: Any):
+async def _safe_gather(*args: Any, **named_awaitables: Any):
     """
     Safely execute multiple awaitables concurrently.
 
@@ -122,6 +122,12 @@ async def _safe_gather(**named_awaitables: Any):
     do not crash the entire batch. Exceptions are converted to
     structured error dicts.
     """
+    if args:
+        raise TypeError(
+            "gather() requires keyword arguments. "
+            "Use named arguments like gather(a=task1, b=task2), "
+            "not positional arguments like gather(task1, task2)."
+        )
     if not named_awaitables:
         return GatherResult({})
 
@@ -599,7 +605,6 @@ class _HelpfulBuiltins(dict):
         "globals": "globals() is disabled. Use state or shared_state for persistence.",
         "locals": "locals() is disabled. Use state or shared_state for persistence.",
         "vars": "Use vars(obj) instead of vars() — vars(obj) returns non-dunder attrs of obj.",
-        "getattr": "getattr() is disabled. Access attributes directly.",
         "setattr": "setattr() is disabled. Assign attributes directly.",
         "delattr": "delattr() is disabled. Use del obj.attr instead.",
     }

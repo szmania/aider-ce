@@ -34,7 +34,6 @@ class SecurityFilter(ast.NodeVisitor):
         "breakpoint",
         "globals",
         "locals",
-        "getattr",
         "setattr",
         "delattr",
     }

@@ -182,9 +182,9 @@ async def test_env_vars_works_with_obj():
     ), f"Expected 'x' attr in vars result, got: {result!r}"
 
 
-def test_security_filter_blocks_getattr():
-    """SecurityFilter blocks ``getattr()``."""
-    assert not _run_security_filter_safe("getattr(x, 'y')"), "SecurityFilter should block 'getattr'"
+def test_security_filter_allows_getattr():
+    """SecurityFilter allows ``getattr()``."""
+    assert _run_security_filter_safe("getattr(x, 'y')"), "SecurityFilter should allow 'getattr'"
 
 
 def test_security_filter_blocks_setattr():
