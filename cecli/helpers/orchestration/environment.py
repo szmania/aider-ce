@@ -480,7 +480,7 @@ This is much more efficient than making individual tool calls for loop-heavy wor
 |-----------|-------------|
 | `Agent.get_tool(name)` | Get a tool proxy (case-insensitive, accepts `Local--` or `Server--` prefix) |
 | `await tool.call(**params)` | Execute a tool; returns `{"result": [...], "errors": [...], "details": [...]}` — each result item is `{"content": ..., "_": {...}}` |
-| `Agent.get_shape(result)` | Inspect a tool result's structure — returns a string; use `print(Agent.get_shape(result))` to see it |
+| `Agent.peek(result)` | Inspect a tool result's structure and leaf content — returns a string; use `print(Agent.peek(result))` to see it |
 
 | `Agent.get_content_id(path, text)` | Resolve a content ID from `@L{num}` or line text for EditFile |
 | `Agent.resolve_regions(path, regions)` | Batch-resolve text patterns to content IDs; ambiguous patterns raise immediately with clear error messages. Use `start_line_hint` / `end_line_hint` to disambiguate. The returned `AgentRegion` has `.get_start(name)`, `.get_end(name)`, `.names()`, `.get(name)` |

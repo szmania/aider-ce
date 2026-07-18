@@ -102,7 +102,7 @@ class AgentProxy:
                 return server
         return None
 
-    def get_shape(self, result: Any) -> str:
+    def peek(self, result: Any) -> str:
         """Inspect the structure of a tool result and return a readable summary.
 
         Tool results have a standard shape::
@@ -114,25 +114,40 @@ class AgentProxy:
             }
 
         This method unwraps the structure to show what keys are available,
-        helping the LLM navigate deeply nested tool outputs.
+        helping the LLM navigate deeply nested tool outputs.  Leaf values
+        include a short content snippet so you can see actual data.
 
         Example::
 
             output = await grep_tool.call(pattern="TODO", file_glob="*.py")
-            print(Agent.get_shape(output))
-            # Shows: result[0].content, result[0]._.file, result[0]._.match_count, ...
+            print(Agent.peek(output))
+            # Shows: result[0].content: str = 'def foo():...'
+            #        result[0]._.file_path: str = 'src/main.py'
 
             # Now the LLM can confidently access:
             for item in output["result"]:
-                print(item["content"])  # or item["_"]["file"]
+                print(item["content"])  # or item["_"]["file_path"]
 
-        Returns a multi-line string describing the available access paths.
+        Returns a multi-line string describing the available access paths
+        with short content previews for leaf values.
         """
+
         return self._inspect_structure(result)
 
     @staticmethod
+    def _content_preview(value: Any, max_chars: int = 20) -> str:
+        """Return a short preview of a scalar value's stringified content."""
+
+        s = str(value)
+        if len(s) <= max_chars:
+            return repr(s)
+
+        return repr(s[:max_chars]) + "..."
+
+    @staticmethod
     def _inspect_structure(obj: Any, prefix: str = "", depth: int = 0) -> str:
-        """Recursively inspect the structure of a tool result — paths and types only."""
+        """Recursively inspect the structure of a tool result — paths, types, and content previews."""
+
         max_depth = 3
         max_keys = 5
         lines: list[str] = []
@@ -164,7 +179,8 @@ class AgentProxy:
                     else:
                         lines.append(f"{path}: list (empty)")
                 else:
-                    lines.append(f"{path}: {type(value).__name__}")
+                    preview = AgentProxy._content_preview(value)
+                    lines.append(f"{path}: {type(value).__name__} = {preview}")
 
         elif isinstance(obj, list):
             if obj:
