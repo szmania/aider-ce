@@ -279,7 +279,8 @@ def parse_lint_cmds(lint_cmds, io):
 
 def register_models(git_root, model_settings_fname, io, verbose=False):
     from cecli import models
-    from cecli.helpers.file_searcher import generate_search_path_list, handle_core_files
+    from cecli.helpers.file_searcher import (generate_search_path_list,
+                                             handle_core_files)
 
     model_settings_files = generate_search_path_list(
         handle_core_files(".cecli.model.settings.yml"), git_root, model_settings_fname
@@ -310,7 +311,8 @@ def register_models(git_root, model_settings_fname, io, verbose=False):
 
 
 def load_dotenv_files(git_root, dotenv_fname, encoding="utf-8"):
-    from cecli.helpers.file_searcher import generate_search_path_list, handle_core_files
+    from cecli.helpers.file_searcher import (generate_search_path_list,
+                                             handle_core_files)
 
     dotenv_files = generate_search_path_list(".env", git_root, dotenv_fname)
     oauth_keys_file = handle_core_files(Path.home() / ".cecli" / "oauth-keys.env")
@@ -338,7 +340,8 @@ def load_dotenv_files(git_root, dotenv_fname, encoding="utf-8"):
 
 def register_litellm_models(git_root, model_metadata_fname, io, verbose=False):
     from cecli import models
-    from cecli.helpers.file_searcher import generate_search_path_list, handle_core_files
+    from cecli.helpers.file_searcher import (generate_search_path_list,
+                                             handle_core_files)
 
     model_metadata_files = []
     resource_metadata = importlib_resources.files("cecli.resources").joinpath("model-metadata.json")
@@ -582,10 +585,8 @@ async def main_async(
 
     uses_workspace = False
     if args.workspaces or args.workspace_name:
-        from cecli.helpers.monorepo.config import (
-            find_active_workspace_name,
-            load_workspace_config,
-        )
+        from cecli.helpers.monorepo.config import (find_active_workspace_name,
+                                                   load_workspace_config)
         from cecli.helpers.monorepo.workspace import WorkspaceManager
 
         # Interpolate environment variables in the workspaces argument
@@ -616,36 +617,43 @@ async def main_async(
 
     set_args_error_data(args)
 
-    # Deep merge configuration files after parsing
-    # Step 5.4: Early-exit if no .cecli.conf.yml files exist
-    has_cecli_conf = any(
-        nested.is_cecli_conf_file(cf) and os.path.exists(cf)
-        for cf in default_config_files
-    )
+    # Deep merge configuration files after parsing.
+    # configargparse has already shallow-merged ALL config files (both
+    # .cecli/conf.yml and .cecli.conf.yml) onto args, overwriting earlier
+    # values with later ones.  We now read every config file directly from
+    # disk and deep-merge them ourselves, then overwrite the relevant
+    # array/JSON fields on args with the correctly merged result.
+    #
+    # Step 5.4: Early-exit if no config files exist at all
+    existing_config_files = [
+        cf for cf in default_config_files if os.path.exists(cf)
+    ]
 
-    if not has_cecli_conf:
+    if not existing_config_files:
         logging.debug(
-            "No .cecli.conf.yml files found — shallow-merge-only mode active "
-            "(configargparse handles .cecli/conf.yml)"
+            "No config files found — shallow-merge-only mode active "
+            "(configargparse handles defaults)"
         )
     else:
-        deep_merge_configs = []
+        all_config_dicts = []
 
-        for config_file in default_config_files:
-            if os.path.exists(config_file) and nested.is_cecli_conf_file(config_file):
-                try:
-                    with open(config_file, "r") as f:
-                        config_data = yaml.safe_load(f)
-                        deep_merge_configs.append(config_data)
-                except yaml.YAMLError as e:
-                    logging.warning(
-                        "Could not parse YAML file %s: %s", config_file, e
-                    )
+        for config_file in existing_config_files:
+            try:
+                with open(config_file, "r") as f:
+                    config_data = yaml.safe_load(f)
+                    if isinstance(config_data, dict):
+                        all_config_dicts.append(config_data)
+            except yaml.YAMLError as e:
+                logging.warning(
+                    "Could not parse YAML file %s: %s", config_file, e
+                )
 
-        if deep_merge_configs:
-            # Only deep merge .cecli.conf.yml files — .cecli/conf.yml files
-            # are handled by configargparse shallow merge (Step 3.5)
-            merged_config = nested.deep_merge_config_dicts(deep_merge_configs)
+        if all_config_dicts:
+            # Deep-merge ALL config files together (both .cecli/conf.yml
+            # and .cecli.conf.yml).  This replaces configargparse's
+            # shallow-merged result for array/JSON fields with a proper
+            # concatenation+dedup across every config source.
+            merged_config = nested.deep_merge_config_dicts(all_config_dicts)
 
             # Step 5.1: Post-merge type validation for list fields
             for key in nested.DEEP_MERGE_LIST_FIELDS:
@@ -932,9 +940,8 @@ async def main_async(
             user_providers = json.loads(args.model_providers)
             if isinstance(user_providers, dict):
                 models.model_info_manager.provider_manager.merge_provider_configs(user_providers)
-                from cecli.helpers.model_providers import (
-                    register_user_providers_with_litellm,
-                )
+                from cecli.helpers.model_providers import \
+                    register_user_providers_with_litellm
 
                 register_user_providers_with_litellm(user_providers)
                 if args.verbose:
