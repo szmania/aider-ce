@@ -46,6 +46,9 @@ rustworkx>=0.15.0
 # scipy is still needed for other parts of the codebase
 scipy>=1.15.3
 
+# dependencies added because litellm is so mid and doesn't declare all of its deps properly
+orjson>=3.11.6
+
 # GitHub Release action failing on "KeyError: 'home-page'"
 # https://github.com/pypa/twine/blob/6fbf880ee60915cf1666348c4bdd78a10415f2ac/twine/__init__.py#L40
 # Uses importlib-metadata
