@@ -887,7 +887,7 @@ def main():
 
 
 def test_resolve_regions_file_not_found(tmp_path):
-    """Lazy resolution raises ValueError when file doesn't exist."""
+    """Eager validation raises ValueError at resolve_regions time when file doesn't exist."""
 
     import pytest
 
@@ -896,14 +896,13 @@ def test_resolve_regions_file_not_found(tmp_path):
     coder = _make_coder_with_io(str(tmp_path))
 
     proxy = AgentProxy(coder)
-    regions = proxy.resolve_regions(
-        "nonexistent.py",
-        [{"name": "x", "start": "def x", "end": "return"}],
-    )
 
-    # resolve_regions is now lazy — error surfaces on access
+    # Eager validation surfaces errors at construction time
     with pytest.raises(ValueError, match="File not found"):
-        regions.get_start("x")
+        proxy.resolve_regions(
+            "nonexistent.py",
+            [{"name": "x", "start": "def x", "end": "return"}],
+        )
 
 
 def test_resolve_regions_empty_regions_list(tmp_path):
@@ -998,7 +997,7 @@ def farewell(name):
 
 
 def test_agent_region_rejects_ambiguous_pattern(tmp_path):
-    """AgentRegion raises ValueError when a text pattern matches multiple locations."""
+    """AgentRegion raises ValueError eagerly when a text pattern matches multiple locations."""
 
     import os
 
@@ -1011,8 +1010,10 @@ def test_agent_region_rejects_ambiguous_pattern(tmp_path):
 def foo():
     return x
 
+
 def bar():
     return x
+
 
 def baz():
     return x
@@ -1024,17 +1025,15 @@ def baz():
 
     coder = _make_coder_with_io(str(tmp_path))
 
-    regions = AgentRegion(
-        "ambiguous.py",
-        coder,
-        [
-            {"name": "bar", "start": "def bar", "end": "return x"},
-        ],
-    )
-
-    # start is unique, but end matches 3 locations
+    # start is unique, but end matches 3 locations — error surfaces eagerly
     with pytest.raises(ValueError, match="End pattern"):
-        regions.get_end("bar")
+        AgentRegion(
+            "ambiguous.py",
+            coder,
+            [
+                {"name": "bar", "start": "def bar", "end": "return x"},
+            ],
+        )
 
 
 def test_agent_region_disambiguates_with_l_hint(tmp_path):
@@ -1080,7 +1079,7 @@ def baz():
 
 
 def test_agent_region_rejects_l_hint_still_ambiguous(tmp_path):
-    """AgentRegion raises ValueError when @L hint has equally-close matches (tie)."""
+    """AgentRegion raises ValueError eagerly when @L hint has equally-close matches (tie)."""
 
     import os
 
@@ -1104,18 +1103,15 @@ return z
     coder = _make_coder_with_io(str(tmp_path))
 
     # "return x" at lines 1 and 4 (0-based: 0 and 3), hint @L3 (0-based 2)
-    # Both are distance 1 away from the hint
-    regions = AgentRegion(
-        "bad_hint.py",
-        coder,
-        [
-            {"name": "top", "start": "return x @L1", "end": "return x @L3"},
-        ],
-    )
-
-    # "return x" at lines 1 and 4 both distance 1 from @L3 (0-based 2)
+    # Both are distance 1 away from the hint — error surfaces eagerly
     with pytest.raises(ValueError, match="End pattern.*@L3 hint ties"):
-        regions.get_end("top")
+        AgentRegion(
+            "bad_hint.py",
+            coder,
+            [
+                {"name": "top", "start": "return x @L1", "end": "return x @L3"},
+            ],
+        )
 
 
 def test_agent_region_explicit_line_hints(tmp_path):
@@ -1203,7 +1199,7 @@ def baz():
 
 
 def test_resolve_regions_rejects_ambiguous_via_proxy(tmp_path):
-    """resolve_regions() through AgentProxy surfaces ambiguity errors at access time."""
+    """resolve_regions() through AgentProxy surfaces ambiguity errors eagerly at construction time."""
 
     import os
 
@@ -1215,8 +1211,10 @@ def test_resolve_regions_rejects_ambiguous_via_proxy(tmp_path):
 def one():
     pass
 
+
 def two():
     pass
+
 
 def three():
     pass
@@ -1229,14 +1227,12 @@ def three():
     coder = _make_coder_with_io(str(tmp_path))
     proxy = AgentProxy(coder)
 
-    regions = proxy.resolve_regions(
-        "proxy_ambig.py",
-        [{"name": "two", "start": "def two", "end": "pass"}],
-    )
-
-    # "pass" appears 3 times — should raise at access time
+    # "pass" appears 3 times — error surfaces eagerly at resolve_regions time
     with pytest.raises(ValueError, match="End pattern.*pass.*matches 3"):
-        regions.get_end("two")
+        proxy.resolve_regions(
+            "proxy_ambig.py",
+            [{"name": "two", "start": "def two", "end": "pass"}],
+        )
 
 
 def test_gather_result_attribute_access():

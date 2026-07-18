@@ -540,7 +540,7 @@ regions = Agent.resolve_regions("foo.py", [
 await Agent.edit_region(
     file_path="foo.py",
     edits=[
-        {"region": regions.get("my_func"), "text": "def my_func():\\n    return 42"},
+        {"region": regions.get("my_func"), "text": "def my_func():\n    return 42"},
     ],
 )
 ```
@@ -554,7 +554,7 @@ await edit_tool.call(edits=[{
     "operation": "replace",
     "start_line": regions.get_start("my_func"),
     "end_line":   regions.get_end("my_func"),
-    "text": "def my_func():\\n    return 42",
+    "text": "def my_func():\n    return 42",
 }])
 ```
 
