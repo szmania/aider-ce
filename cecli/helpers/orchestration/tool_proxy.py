@@ -115,7 +115,7 @@ class ToolProxy:
         """
 
         if self._tool_module is not None:
-            result = self._tool_module.process_response(self._coder, kwargs, _stringify=False)
+            result = self._tool_module.process_response(self._coder, kwargs, _convert=False)
             if asyncio.iscoroutine(result):
                 result = await result
             result = self._tool_module.ptc_format(result)

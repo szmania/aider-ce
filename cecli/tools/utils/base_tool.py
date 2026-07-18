@@ -41,18 +41,18 @@ class BaseTool(ABC):
         pass
 
     @classmethod
-    def process_response(cls, coder, params, _stringify=True):
+    def process_response(cls, coder, params, _convert=True):
         """
         Process the tool response by creating an instance and calling execute.
 
         Args:
             coder: The Coder instance
             params: Dictionary of parameters
-            _stringify: If True (default), ToolResponse results are converted to str.
+            _convert: If True (default), ToolResponse results are converted to str.
                          If False, ToolResponse is returned as-is for sandbox use.
 
         Returns:
-            str or ToolResponse: Result message (or ToolResponse when _stringify=False)
+            str or ToolResponse: Result message (or ToolResponse when _convert=False)
         """
 
         # Validate required parameters from SCHEMA
@@ -90,7 +90,7 @@ class BaseTool(ABC):
                     return handle_tool_error(coder, tool_name, ValueError(error_msg))
 
         # Check for repeated invocations if TRACK_INVOCATIONS is enabled
-        if cls.TRACK_INVOCATIONS:
+        if cls.TRACK_INVOCATIONS and _convert:
             tool_name = None
             if cls.SCHEMA and "function" in cls.SCHEMA:
                 tool_name = cls.SCHEMA["function"].get("name", "Unknown Tool")
@@ -142,7 +142,7 @@ class BaseTool(ABC):
             result = cls.execute(coder, **params)
 
             if isinstance(result, ToolResponse):
-                return result if not _stringify else str(result)
+                return result if not _convert else str(result)
 
             return result
         except Exception as e:
