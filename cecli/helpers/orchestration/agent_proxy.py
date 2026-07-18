@@ -330,7 +330,7 @@ class AgentProxy:
                 }
             )
 
-        self._validate_edit_regions(edits, edit_objects)
+        # self._validate_edit_regions(edits, edit_objects)
 
         return await edit_tool.call(
             edits=edit_objects,

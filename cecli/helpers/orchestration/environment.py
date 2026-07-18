@@ -473,6 +473,8 @@ def build_orchestration_context_block(agent_config: dict[str, Any]) -> str | Non
     return """<context name="orchestration" from="agent">
 The `Orchestrate` tool lets you batch multiple tool calls in a single step by writing Python code in a limited, secure sandbox.
 This is much more efficient than making individual tool calls for loop-heavy workflows.
+Variables and methods defined in a script are persisted in subsequent turns.
+As such, results from previous calls can be reused and helper methods can be defined to enhance usage of the environment.
 
 ### Primitives
 
