@@ -154,21 +154,15 @@ class Tool(BaseTool):
                             if "multiple matches" in str(e).lower():
                                 results = c.search(symbol_name, limit=10)
                                 response.append_result(
-                                    content={
-                                        "action": "investigate",
-                                        "symbol": symbol,
-                                        "error": "Multiple matches found",
-                                        "hint": (
-                                            "Please use a more specific name or filename:symbol format"
-                                        ),
-                                        "locations": [
-                                            {
-                                                "file": r.get("rel_path") or r.get("file", ""),
-                                                "start_line": r.get("start_line", 0),
-                                            }
+                                    content=(
+                                        f"Error: Multiple matches found for '{symbol}'.\n"
+                                        f"Please use a more specific name or check the locations"
+                                        f" below:\n"
+                                        + "\n".join(
+                                            f"- {r.get('rel_path') or r.get('file', '')}:{r.get('start_line', 0)}"
                                             for r in results
-                                        ],
-                                    }
+                                        )
+                                    )
                                 )
                             else:
                                 raise e
@@ -249,106 +243,114 @@ class Tool(BaseTool):
 
     @classmethod
     def _format_search_results(cls, results, symbol):
-        """Format search results as structured data."""
-
+        """Format search results for display."""
         if not results:
-            return {"action": "search", "symbol": symbol, "count": 0, "results": []}
+            return f"No symbols found matching '{symbol}'"
 
-        return {
-            "action": "search",
-            "symbol": symbol,
-            "count": len(results),
-            "results": [
-                {
-                    "name": r.get("name", ""),
-                    "kind": r.get("kind", ""),
-                    "file": r.get("rel_path") or r.get("file", ""),
-                    "start_line": r.get("start_line", 0),
-                    "signature": r.get("signature", ""),
-                    "parent": r.get("parent"),
-                }
-                for r in results
-            ],
-        }
+        formatted = [f"Found {len(results)} symbols matching '{symbol}':"]
+        for i, result in enumerate(results[:15], 1):
+            name = result.get("name", "Unknown")
+            kind = result.get("kind", "unknown")
+            file = result.get("rel_path") or result.get("file", "Unknown")
+            start_line = result.get("start_line", 0)
+            signature = result.get("signature", "")
+            parent = result.get("parent")
+
+            location = f"{file}:{start_line}"
+            if parent:
+                location = f"{location} (in {parent})"
+
+            formatted.append(f"{i}. {name}{signature} ({kind}) at {location}")
+
+        if len(results) > 15:
+            formatted.append(f"... and {len(results) - 15} more results")
+
+        return "\n".join(formatted)
 
     @classmethod
     def _format_investigation_results(cls, investigation, symbol):
-        """Format investigation results as structured data."""
-
+        """Format investigation results for display."""
         if not investigation:
-            return {"action": "investigate", "symbol": symbol, "error": "No information found"}
+            return f"No information found for symbol '{symbol}'"
 
         # Handle nested structure if present
         if "results" in investigation and "result" in investigation["results"]:
             investigation = investigation["results"]["result"]
 
-        result = {
-            "action": "investigate",
-            "symbol": symbol,
-        }
+        formatted = [f"Investigation of symbol '{symbol}':"]
 
         # Extract definition information
         definition = investigation.get("symbol")
         if definition:
-            result["definition"] = {
-                "name": definition.get("name", symbol),
-                "file": definition.get("rel_path") or definition.get("file", ""),
-                "line": definition.get("start_line", 0),
-                "kind": definition.get("kind", ""),
-                "signature": definition.get("signature", ""),
-            }
+            def_name = definition.get("name", symbol)
+            def_file = definition.get("rel_path") or definition.get("file", "Unknown")
+            def_line = definition.get("start_line", 0)
+            def_kind = definition.get("kind", "unknown")
+            def_sig = definition.get("signature", "")
+            formatted.append(
+                f"Definition: {def_name}{def_sig} ({def_kind}) at {def_file}:{def_line}"
+            )
 
         # Source code snippet
         source = investigation.get("source")
         if source:
-            result["source"] = source.strip()
+            formatted.append("\nSource Code:")
+            formatted.append("```python")
+            formatted.append(source.strip())
+            formatted.append("```")
 
         # References
         references = investigation.get("refs", [])
-        result["ref_count"] = len(references) if references else 0
-        if references:
-            result["references"] = [
-                {
-                    "file": ref.get("rel_path") or ref.get("file", ""),
-                    "line": ref.get("line", 0),
-                }
-                for ref in references
-            ]
+        ref_count = len(references) if references else 0
+        formatted.append(f"\nReferences found: {ref_count}")
+
+        if references and ref_count > 0:
+            formatted.append("Top references:")
+            for i, ref in enumerate(references[:10], 1):
+                ref_file = ref.get("rel_path") or ref.get("file", "Unknown")
+                ref_line = ref.get("line", 0)
+                formatted.append(f"{i}. {ref_file}:{ref_line}")
+
+            if ref_count > 10:
+                formatted.append(f"... and {ref_count - 10} more references")
 
         # Impact / Callers
         impact = investigation.get("impact", [])
         if impact:
-            result["impact"] = [
-                {
-                    "caller": imp.get("caller", ""),
-                    "file": imp.get("rel_path") or imp.get("file", ""),
-                    "line": imp.get("line", 0),
-                }
-                for imp in impact
-            ]
+            formatted.append("\nImpact (Callers):")
+            for i, imp in enumerate(impact[:10], 1):
+                imp_file = imp.get("rel_path") or imp.get("file", "Unknown")
+                imp_line = imp.get("line", 0)
+                imp_caller = imp.get("caller", "unknown")
+                formatted.append(f"{i}. {imp_caller} at {imp_file}:{imp_line}")
 
-        return result
+            if len(impact) > 10:
+                formatted.append(f"... and {len(impact) - 10} more callers")
+
+        return "\n".join(formatted)
 
     @classmethod
     def _format_reference_results(cls, references, symbol):
-        """Format reference finding results as structured data."""
-
+        """Format reference finding results for display."""
         if not references:
-            return {"action": "find_references", "symbol": symbol, "count": 0, "results": []}
+            return f"No references found for symbol '{symbol}'"
 
-        return {
-            "action": "find_references",
-            "symbol": symbol,
-            "count": len(references),
-            "results": [
-                {
-                    "file": ref.get("rel_path") or ref.get("file", ""),
-                    "line": ref.get("line", 0),
-                    "context": ref.get("context", []),
-                }
-                for ref in references
-            ],
-        }
+        formatted = [f"Found {len(references)} references to '{symbol}':"]
+        for i, ref in enumerate(references[:15], 1):
+            file = ref.get("rel_path") or ref.get("file", "Unknown")
+            line = ref.get("line", 0)
+            context = ref.get("context", [])
+
+            formatted.append(f"{i}. {file}:{line}")
+            if context:
+                formatted.append("   Context:")
+                for line_text in context:
+                    formatted.append(f"     {line_text.strip()}")
+
+        if len(references) > 15:
+            formatted.append(f"... and {len(references) - 15} more references")
+
+        return "\n".join(formatted)
 
     @classmethod
     def format_output(cls, coder, mcp_server, tool_response):
