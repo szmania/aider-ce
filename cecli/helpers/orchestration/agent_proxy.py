@@ -33,6 +33,7 @@ class AgentProxy:
 
     def __init__(self, coder: Any) -> None:
         self._coder = coder
+        self._env = None  # Set by AgentExecutionEnv after creation
 
     def get_tool(self, tool_name: str) -> ToolProxy:
         from cecli.tools.utils.registry import ToolRegistry
@@ -424,6 +425,51 @@ class AgentProxy:
             edits=edit_objects,
             change_id=change_id,
         )
+
+    async def sleep(self, seconds: float) -> None:
+        """Safe sleep - pauses execution (0-120 seconds max).
+
+        Usage::
+
+            await Agent.sleep(1)  # pause for 1 second
+        """
+        from cecli.helpers.orchestration.safe_methods import _safe_sleep
+
+        await _safe_sleep(seconds)
+
+    def allowed_tools(self) -> list[str]:
+        """Return a sorted list of available tool names.
+
+        Usage::
+
+            tools = Agent.allowed_tools()
+        """
+        from cecli.helpers import nested
+
+        tool_names = []
+        tool_list = self._coder.get_tool_list()
+        for tool in tool_list:
+            name = nested.getter(tool, "function.name", "")
+            if name:
+                tool_names.append(name)
+        return sorted(tool_names)
+
+    def allowed_methods(self) -> list[str]:
+        """Return a sorted list of all available functions and objects in the sandbox.
+
+        Usage::
+
+            methods = Agent.allowed_methods()
+        """
+        if self._env is None:
+            return []
+        builtins = sorted(k for k in self._env._safe_builtins.keys() if not k.startswith("_"))
+        globals_list = sorted(
+            k
+            for k in self._env.globals.keys()
+            if not k.startswith("__") and k not in ("__builtins__", "NEWLINE")
+        )
+        return builtins + globals_list
 
     @staticmethod
     def _validate_edit_regions(

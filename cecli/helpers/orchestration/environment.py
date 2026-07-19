@@ -186,10 +186,9 @@ class AgentExecutionEnv:
     Sandboxed REPL environment for executing LLM-generated orchestration code.
 
     Provides:
-    - `Agent`  : proxy to look up and call tools
+    - `Agent`  : proxy to look up and call tools and other core agentic utility methods
     - `gather` : safe parallel execution helper
     - `state`  : persistent dict (survives across Orchestrate calls)
-    - `sleep`  : safe sleep (0-120 seconds)
     - `print`  : captured output
     - `range`, `len`, `int`, `str`, `list`, `dict`, `bool`, `Exception`
 
@@ -212,7 +211,7 @@ class AgentExecutionEnv:
         self.globals: dict[str, Any] = {}
         self.locals: dict[str, Any] = {}
 
-        _safe_builtins: dict[str, Any] = {
+        self._safe_builtins: dict[str, Any] = {
             "print": print,
             "range": range,
             "len": len,
@@ -268,43 +267,21 @@ class AgentExecutionEnv:
             "pathlib": _SafePathlib,
         }
 
-        def _allowed_methods():
-            """Return a sorted list of all available functions and objects in the sandbox."""
-            builtins = sorted(k for k in _safe_builtins.keys() if not k.startswith("__"))
-            globals_list = sorted(
-                k
-                for k in self.globals.keys()
-                if not k.startswith("__") and k not in ("__builtins__", "NEWLINE")
-            )
-            return builtins + globals_list
-
-        def _allowed_tools():
-            """Return a sorted list of available tool names for use with Agent.get_tool()."""
-            from cecli.helpers import nested
-
-            tool_names = []
-            tool_list = coder.get_tool_list()
-            for tool in tool_list:
-                name = nested.getter(tool, "function.name", "")
-                if name:
-                    tool_names.append(name)
-            return sorted(tool_names)
-
         self.globals.clear()
+        _agent = AgentProxy(coder)
+        _agent._env = self
+
         self.globals.update(
             {
-                "__builtins__": _HelpfulBuiltins(_safe_builtins),
-                "Agent": AgentProxy(coder),
+                "__builtins__": _HelpfulBuiltins(self._safe_builtins),
+                "Agent": _agent,
                 "gather": _safe_gather,
-                "sleep": _safe_sleep,
                 "json": _SafeJson,
                 "state": self.state,
                 "shared_state": AgentExecutionEnv._shared_state,
                 "__yield": _cooperative_yield,
                 "__security_raise": _security_raise,
                 "NEWLINE": "\n",
-                "allowed_methods": _allowed_methods,
-                "allowed_tools": _allowed_tools,
             }
         )
         self.locals.clear()
@@ -499,14 +476,18 @@ def build_orchestration_context_block(agent_config: dict[str, Any]) -> str | Non
 The `Orchestrate` tool lets you batch multiple tool calls in a single step by writing Python code in a limited, secure sandbox.
 This is much more efficient than making individual tool calls for loop-heavy workflows.
 Variables and methods defined in a script are persisted in subsequent turns.
-As such, results from previous calls can be reused and helper methods can be defined to enhance usage of the environment.
+As such, results from previous calls can be reused and helper methods can be defined to enhance ease of use within the environment.
 
 ### Primitives
 
 | Primitive | Description |
 |-----------|-------------|
-| `Agent.get_tool(name)` | Get a tool proxy (case-insensitive, accepts `Local--` or `Server--` prefix) |
+| `Agent.allowed_methods()` | List all available builtin function names |
+| `Agent.allowed_tools()` | List all available tool names |
+
+| `Agent.get_tool(name)` | Get a tool proxy (case-insensitive, accepts `Local--` or `{{Server}}--` prefix) |
 | `await tool.call(**params)` | Execute a tool; returns `{"result": [...], "errors": [...], "details": [...]}` — each result item is `{"content": ..., "_": {...}}` |
+
 | `Agent.peek(result)` | Inspect a tool result's structure and leaf content — returns a string; use `print(Agent.peek(result))` to see it |
 | `Agent.get_value(result, path, default?)` | Safely access nested values in tool results using dot-notation (e.g. `"result.0.content"`)  |
 
@@ -514,28 +495,26 @@ As such, results from previous calls can be reused and helper methods can be def
 | `Agent.resolve_regions(path, regions)` | Batch-resolve text patterns to content IDs; ambiguous patterns raise immediately with clear error messages. Use `start_line_hint` / `end_line_hint` to disambiguate. The returned `AgentRegion` has `.get_start(name)`, `.get_end(name)`, `.names()`, `.get(name)` |
 | `Agent.edit_region(path, edits)` | Thin wrapper around EditFile that accepts pre-resolved region dicts `{"start": content_id, "end": content_id}`. Use with `Agent.resolve_regions()` and `regions.get(name)` |
 
+| `await Agent.sleep(seconds)` | Pause execution (0-120s max) |
 
 | `gather(**named_tasks)` | Run tasks concurrently; returns an iterable with `.key` / `["key"]` access |
 | `state` / `shared_state` | `state` persists across *all* `Orchestrate` calls within the same agent session (not just one call). `state.get(key)` falls through to ``shared_state`` when the key is not local. `shared_state` persists across *all* agent sessions globally |
-| `json.loads(s)` / `json.dumps(obj, indent=..., sort_keys=...)` | Parse / serialize JSON with optional formatting |
-| `sleep(seconds)` | Pause execution (0-120s max) |
 | `print(...)` / `reset(local_vars=True, state=False)` | Output messages; clear local namespace (and optionally state) |
 | `typeof(x)` / `isinstance(x, t)` / `hasattr(x, n)` / `repr(x)` / `vars(obj)` | Type inspection and debugging |
-| `allowed_methods()` | List all available builtin function names |
-| `allowed_tools()` | List all available tool names for use with ``Agent.get_tool()`` |
 
 ### Available Modules
 
 Pre-imported, read-only standard library modules:
 
 | Module | Common uses |
-|--------|------------|
+|--------|-------------|
 | `re` | Regular expressions: `re.search(r"pat", s)`, `re.findall(...)` |
 | `math` | Math functions: `math.ceil(n)`, `math.sqrt(n)` |
 | `itertools` | Combinatorics: `itertools.chain(a, b)`, `itertools.product(...)` |
 | `collections` | Container helpers: `collections.Counter(...)`, `collections.defaultdict(...)` |
 | `datetime` | Date/time: `datetime.datetime.now()`, `datetime.timedelta(...)` |
 | `pathlib` | Safe filesystem paths: `pathlib.Path("/tmp/foo")`, `.parent`, `.name`, `/` joining. I/O methods (``read_text``, ``write_text``, etc.) blocked |
+| `json` | Parse / serialize: `json.loads(s)`, `json.dumps(obj, indent=2)` |
 | `traceback` | Traceback formatting: `traceback.format_exc()`, `traceback.format_tb(...)` |
 
 ### Usage

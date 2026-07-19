@@ -498,10 +498,10 @@ async def test_env_whitespace_code():
 
 @pytest.mark.asyncio
 async def test_env_sleep_works():
-    """AgentExecutionEnv's sleep primitive works."""
+    """AgentExecutionEnv's Agent.sleep primitive works."""
     env = _make_env()
     result = await env.execute(
-        "sleep(0.01)\nprint('done')",
+        "await Agent.sleep(0.01)\nprint('done')",
     )
     assert result["results"] == "done", f"Expected 'done' after sleep, got: {result!r}"
 

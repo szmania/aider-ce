@@ -1,4 +1,9 @@
+import re
 from typing import Any, Dict, List, Union
+
+# Precompiled regex for normalizing bracket notation to dot notation in paths
+# e.g., "result[0]._.file_path" -> "result.0._.file_path"
+_BRACKET_RE = re.compile(r"\[(\d+)\]")
 
 
 def arg_resolver(obj: Union[List[Any], Dict[str, Any], Any], key: str, default: Any = None) -> Any:
@@ -54,7 +59,12 @@ def arg_resolver(obj: Union[List[Any], Dict[str, Any], Any], key: str, default: 
 def getter(
     data: Union[List[Any], Dict[str, Any], Any], path: Union[str, List[str]], default: Any = None
 ) -> Any:
-    """Safely access nested dicts, lists, and objects using normalized dot-notation."""
+    """Safely access nested dicts, lists, and objects using normalized dot-notation.
+
+    Supports both:
+        getter(data, "result.0._.file_path")   # dot notation
+        getter(data, "result[0]._.file_path")  # bracket notation
+    """
 
     if data is None:
         return default
@@ -64,6 +74,9 @@ def getter(
         paths = [path]
     else:
         paths = path
+
+    # Normalize bracket notation to dot notation
+    paths = [_BRACKET_RE.sub(r".\1", p) for p in paths]
 
     # Try each path, return first valid result
     for path_str in paths:
