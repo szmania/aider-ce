@@ -492,7 +492,7 @@ As such, results from previous calls can be reused and helper methods can be def
 | `Agent.get_value(result, path, default?)` | Safely access nested values in tool results using dot-notation (e.g. `"result.0.content"`)  |
 
 | `Agent.get_content_id(path, text)` | Resolve a content ID from `@L{num}` or line text for EditFile |
-| `Agent.resolve_regions(path, regions)` | Batch-resolve text patterns to content IDs; ambiguous patterns raise immediately with clear error messages. Use `start_line_hint` / `end_line_hint` to disambiguate. The returned `AgentRegion` has `.get_start(name)`, `.get_end(name)`, `.names()`, `.get(name)` |
+| `Agent.resolve_regions(path, regions)` | Batch-resolve text patterns to content IDs; also supports `@L{num}` notation to reference specific lines by number. Ambiguous patterns raise immediately with clear error messages. Use `start_line_hint` / `end_line_hint` to disambiguate. The returned `AgentRegion` has `.get_start(name)`, `.get_end(name)`, `.names()`, `.get(name)` |
 | `Agent.edit_region(path, edits)` | Thin wrapper around EditFile that accepts pre-resolved region dicts `{"start": content_id, "end": content_id}`. Use with `Agent.resolve_regions()` and `regions.get(name)` |
 
 | `await Agent.sleep(seconds)` | Pause execution (0-120s max) |

@@ -395,6 +395,25 @@ class AgentRegion:
         if pattern in ("@000", "000@"):
             return pattern
 
+        # @L{num} notation — resolve to line text or content ID
+        import re as _re
+
+        _m = _re.match(r"^@L(\d+)$", pattern)
+        if _m:
+            _line_num = int(_m.group(1)) - 1
+            if _line_num < 0 or _line_num >= len(lines):
+                raise ValueError(
+                    f"@L reference line {_m.group(1)} is out of range "
+                    f"(file has {len(lines)} lines)"
+                )
+            _line_text = lines[_line_num]
+            if lines.count(_line_text) == 1:
+                return _line_text  # Unique — let resolve_content_to_hashline_ids handle it
+            # Duplicate — get content ID directly via HashPos
+            _occurrence = 1 + sum(1 for i in range(_line_num) if lines[i] == _line_text)
+            _public_id = hp.generate_public_id(_line_text, _line_num, _occurrence)
+            return hp.get_wrapped_id(_public_id)
+
         if not self._looks_like_content_id(pattern):
             return pattern
 

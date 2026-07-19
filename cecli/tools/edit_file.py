@@ -290,6 +290,15 @@ class Tool(BaseTool):
                                             f"(file has {len(source_lines)} lines)"
                                         )
 
+                            # 2.6 Strip ~~ virtual prefixes from ReadFile output lines
+                            # These are display-only markers that confuse the resolution logic.
+                            if isinstance(edit_start_line, str) and edit_start_line.startswith(
+                                "~~"
+                            ):
+                                edit_start_line = edit_start_line.replace("~~", "").lstrip()
+                            if isinstance(edit_end_line, str) and edit_end_line.startswith("~~"):
+                                edit_end_line = edit_end_line.replace("~~", "").lstrip()
+
                             # 3. Resolve non-hashline content values to content IDs first
                             # (before normalize_hashline which would fail on arbitrary content)
                             edit_start_line, edit_end_line = resolve_content_to_hashline_ids(
