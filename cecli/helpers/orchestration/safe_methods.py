@@ -225,6 +225,26 @@ def _safe_dir(obj: Any) -> list:
     ]
 
 
+def _find_closing_quote(code: str, quote: str, start: int) -> int:
+    """Find the position of the closing *quote* in *code*, skipping
+    backslash-escaped characters so that ``\"`` (escaped quote) is not
+    mistaken for the string terminator.
+
+    Returns -1 if no unescaped closing quote is found.
+    """
+
+    i = start
+    while i < len(code):
+        if code[i] == chr(92):  # backslash — skip the next char
+            i += 2
+            continue
+        if code[i : i + len(quote)] == quote:
+            return i
+        i += 1
+
+    return -1
+
+
 def _naive_escape_newlines(code: str, NL: str, BSN: str) -> str:
     """Replace literal newlines with ``\\n`` inside all string literals.
 
@@ -242,7 +262,7 @@ def _naive_escape_newlines(code: str, NL: str, BSN: str) -> str:
                 quote = quote * 3
             result.append(quote)
             idx += len(quote)
-            end = code.find(quote, idx)
+            end = _find_closing_quote(code, quote, idx)
             if end == -1:
                 result.append(code[idx:])
                 idx = len(code)
@@ -330,7 +350,7 @@ def _process_fstring_body(code: str, idx: int, quote: str, NL: str, BSN: str, re
             if pos + 2 < len(code) and code[pos : pos + 3] == nq * 3:
                 nq = nq * 3
             pos += len(nq)
-            ne = code.find(nq, pos)
+            ne = _find_closing_quote(code, nq, pos)
             pos = (ne + len(nq)) if ne != -1 else len(code)
             continue
 
@@ -376,7 +396,7 @@ def _fstring_aware_escape_newlines(code: str, NL: str, BSN: str) -> str:
             if is_fstring:
                 idx = _process_fstring_body(code, idx, quote, NL, BSN, result)
             else:
-                end = code.find(quote, idx)
+                end = _find_closing_quote(code, quote, idx)
                 if end == -1:
                     result.append(code[idx:])
                     idx = len(code)
