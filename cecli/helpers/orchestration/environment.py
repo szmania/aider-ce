@@ -522,6 +522,8 @@ Pre-imported, read-only standard library modules:
 | `json` | Parse / serialize: `json.loads(s)`, `json.dumps(obj, indent=2)` |
 | `traceback` | Traceback formatting: `traceback.format_exc()`, `traceback.format_tb(...)` |
 
+All other module imports will fail.
+
 ### Usage
 
 ```python
