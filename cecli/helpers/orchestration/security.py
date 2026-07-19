@@ -14,11 +14,30 @@ class SecurityError(Exception):
     """Raised when generated code violates security constraints."""
 
 
-class SecurityFilter(ast.NodeVisitor):
-    """
-    AST node visitor that blocks dangerous constructs before they compile.
+def _security_raise(message: str):
+    """Runtime raise helper injected into sandbox globals.
 
-    Blocks:
+    Called by AST-rewritten forbidden expressions so that private-access
+    violations raise at *runtime* rather than rejecting the entire script
+    during the pre-execution AST walk.  This allows try/except blocks to
+    gracefully handle unreachable code paths.
+    """
+    raise SecurityError(message)
+
+
+class SecurityFilter(ast.NodeTransformer):
+    """
+    AST node transformer that rewrites dangerous constructs into runtime
+    ``__security_raise(...)`` calls.
+
+    Instead of rejecting the entire script during the pre-execution walk,
+    forbidden constructs are replaced with a call that raises
+    ``SecurityError`` at *runtime*.  This means code inside ``try/except``
+    blocks can gracefully handle unreachable paths while the security
+    boundary is preserved — any actual execution of private access still
+    fails.
+
+    Rewrites:
     - All import statements (import X, from X import Y)
     - Access to private/dunder attributes (__class__, __subclasses__, etc.)
     - Calls to eval, exec, open, __import__, compile, breakpoint
@@ -38,34 +57,74 @@ class SecurityFilter(ast.NodeVisitor):
         "delattr",
     }
 
-    def visit_Import(self, node: ast.Import) -> None:
-        raise SecurityError("Imports are disabled in the agent orchestration environment.")
-
-    def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
-        raise SecurityError("Imports are disabled in the agent orchestration environment.")
-
     _SAFE_DUNDER: set[str] = {"__name__", "__doc__"}
 
-    def visit_Attribute(self, node: ast.Attribute) -> None:
-        if node.attr.startswith("_"):
-            if node.attr in self._SAFE_DUNDER:
-                self.generic_visit(node)
-                return
-            raise SecurityError(f"Access to private/dunder attribute '{node.attr}' is forbidden.")
-        self.generic_visit(node)
+    # ------------------------------------------------------------------
+    # Helpers
+    # ------------------------------------------------------------------
 
-    def visit_Call(self, node: ast.Call) -> None:
-        if isinstance(node.func, ast.Name) and node.func.id in self._DANGEROUS_BUILTINS:
-            raise SecurityError(f"Calling '{node.func.id}' is forbidden.")
-        self.generic_visit(node)
+    @staticmethod
+    def _make_raise_expr(message: str) -> ast.Call:
+        """Return an AST Call node that invokes ``_security_raise(message)``.
 
-    def visit_Global(self, node: ast.Global) -> None:
-        raise SecurityError("The 'global' statement is disabled in the orchestration environment.")
+        The function ``_security_raise`` is injected into the sandbox
+        globals at execution time.
+        """
+        return ast.Call(
+            func=ast.Name(id="__security_raise", ctx=ast.Load()),
+            args=[ast.Constant(value=message)],
+            keywords=[],
+        )
 
-    def visit_Nonlocal(self, node: ast.Nonlocal) -> None:
-        raise SecurityError(
+    @staticmethod
+    def _make_raise_stmt(message: str) -> ast.Expr:
+        """Return an AST Expr statement wrapping ``_security_raise(message)``.
+
+        Used when the forbidden construct is itself a statement
+        (import / global / nonlocal) rather than an expression.
+        """
+        return ast.Expr(value=SecurityFilter._make_raise_expr(message))
+
+    # ------------------------------------------------------------------
+    # Statement visitors (import / global / nonlocal)
+    # ------------------------------------------------------------------
+
+    def visit_Import(self, node: ast.Import) -> ast.Expr:
+        return self._make_raise_stmt("Imports are disabled in the agent orchestration environment.")
+
+    def visit_ImportFrom(self, node: ast.ImportFrom) -> ast.Expr:
+        return self._make_raise_stmt("Imports are disabled in the agent orchestration environment.")
+
+    def visit_Global(self, node: ast.Global) -> ast.Expr:
+        return self._make_raise_stmt(
+            "The 'global' statement is disabled in the orchestration environment."
+        )
+
+    def visit_Nonlocal(self, node: ast.Nonlocal) -> ast.Expr:
+        return self._make_raise_stmt(
             "The 'nonlocal' statement is disabled in the orchestration environment."
         )
+
+    # ------------------------------------------------------------------
+    # Expression visitors (attribute access / dangerous calls)
+    # ------------------------------------------------------------------
+
+    def visit_Attribute(self, node: ast.Attribute):
+        if node.attr.startswith("_"):
+            if node.attr in self._SAFE_DUNDER:
+                return self.generic_visit(node)
+
+            return self._make_raise_expr(
+                f"Access to private/dunder attribute '{node.attr}' is forbidden."
+            )
+
+        return self.generic_visit(node)
+
+    def visit_Call(self, node: ast.Call):
+        if isinstance(node.func, ast.Name) and node.func.id in self._DANGEROUS_BUILTINS:
+            return self._make_raise_expr(f"Calling '{node.func.id}' is forbidden.")
+
+        return self.generic_visit(node)
 
 
 class LoopYieldInjector(ast.NodeTransformer):

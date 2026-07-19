@@ -38,6 +38,7 @@ from cecli.helpers.orchestration.security import (
     SecurityError,
     SecurityFilter,
     _cooperative_yield,
+    _security_raise,
 )
 from cecli.helpers.orchestration.tool_proxy import ToolProxy
 
@@ -272,6 +273,7 @@ class AgentExecutionEnv:
                 "state": self.state,
                 "shared_state": AgentExecutionEnv._shared_state,
                 "__yield": _cooperative_yield,
+                "__security_raise": _security_raise,
                 "NEWLINE": "\n",
                 "allowed_methods": _allowed_methods,
                 "allowed_tools": _allowed_tools,
@@ -403,12 +405,7 @@ class AgentExecutionEnv:
             code = f"Syntax Error in orchestration code: {e}"
             return {"results": code, "state_variables": self._state_snapshot()}
 
-        try:
-            SecurityFilter().visit(tree)
-        except SecurityError as e:
-            code = f"Security Error: {e}"
-            return {"results": code, "state_variables": self._state_snapshot()}
-
+        tree = SecurityFilter().visit(tree)
         tree = LoopYieldInjector().visit(tree)
         ast.fix_missing_locations(tree)
 
