@@ -3,6 +3,15 @@ import os
 from typing import Dict, List
 
 from cecli.helpers.hashline import hashline_formatted, strip_hashline
+from cecli.helpers.hashpos.transformations import (
+    apply_contextual_marker,
+    classify_search_type,
+    compute_best_pair,
+    extract_hint,
+    narrow_by_proximity,
+    reposition_indices,
+    search_in_lines,
+)
 from cecli.tools.utils.base_tool import BaseTool
 from cecli.tools.utils.helpers import (
     ToolError,
@@ -134,7 +143,7 @@ class Tool(BaseTool):
                 file_path = read_op.get("file_path")
                 range_start = read_op.get("range_start")
                 range_end = read_op.get("range_end")
-                padding = 5
+                padding = 0
 
                 if file_path is None:
                     error_outputs.append(
@@ -801,27 +810,8 @@ class Tool(BaseTool):
         Calculates the clamped start and end indices for a centered window.
         Returns a tuple of (slice_start, slice_end) compatible with python slicing.
         """
-        # 1. Calculate ideal half-window size
-        half_window = total_lines // 2
 
-        # 2. Calculate initial left/right bounds
-        left = target_idx - half_window
-        right = target_idx + half_window
-
-        # 3. Slide the window if it overflows boundaries
-        if left < start_idx:
-            right += start_idx - left
-            left = start_idx
-
-        if right > end_idx:
-            left -= right - end_idx
-            right = end_idx
-
-        # 4. Final safety clamp in case the range itself is smaller than total_lines
-        left = max(start_idx, left)
-
-        # Return right + 1 so it's ready-to-use for standard Python slicing [start:end]
-        return left, right + 1
+        return reposition_indices(target_idx, start_idx, end_idx, total_lines)
 
     @classmethod
     def clear_old_messages(cls, coder):
@@ -1082,32 +1072,7 @@ class Tool(BaseTool):
     def _classify_search_type(cls, range_start, range_end):
         """Classify range markers into structured, text, mixed, or contextual search types."""
 
-        def _is_line_ref(s):
-            return s.startswith("@L") and s[2:].isdigit() and len(s) > 2
-
-        start_is_lr = _is_line_ref(range_start)
-        end_is_lr = _is_line_ref(range_end)
-        start_is_sp = range_start in ("@000", "000@")
-        end_is_sp = range_end in ("@000", "000@")
-
-        return {
-            "start_is_line_ref": start_is_lr,
-            "end_is_line_ref": end_is_lr,
-            "start_is_special": start_is_sp,
-            "end_is_special": end_is_sp,
-            "start_is_text": not start_is_lr and not start_is_sp,
-            "end_is_text": not end_is_lr and not end_is_sp,
-            "both_structured": (start_is_lr or start_is_sp) and (end_is_lr or end_is_sp),
-            "mixed_special": (
-                (start_is_sp and not end_is_lr and not end_is_sp)
-                or (end_is_sp and not start_is_lr and not start_is_sp)
-            ),
-            "end_is_contextual": (
-                range_end.startswith(("@C", "@P", "@N"))
-                and len(range_end) > 2
-                and range_end[2:].isdigit()
-            ),
-        }
+        return classify_search_type(range_start, range_end)
 
     @classmethod
     def _extract_l_hint(cls, pattern, lines=None):
@@ -1121,45 +1086,8 @@ class Tool(BaseTool):
           - hint_value is a 0-based line number or None
           - hint_type is 'L', 'A', 'B', or None
         """
-        import re
 
-        # Try @L hint (direct line number - always resolvable)
-        m = re.search(r"[ \t]+@L([0-9]+)[ \t]*$", pattern)
-        if m:
-            return pattern[: m.start()], int(m.group(1)) - 1, "L"
-
-        # Try @A{{regex}} hint (first regex match — filter to lines AFTER)
-        m = re.search(r"[ \t]+@A\{\{(.+?)\}\}[ \t]*$", pattern)
-        if m:
-            stripped = pattern[: m.start()]
-            if lines is not None:
-                regex_str = m.group(1)
-                try:
-                    for i, line in enumerate(lines):
-                        if re.search(regex_str, line):
-                            return stripped, i, "A"
-                except re.error:
-                    pass
-            return stripped, None, None
-
-        # Try @B{{regex}} hint (last regex match — filter to lines BEFORE)
-        m = re.search(r"[ \t]+@B\{\{(.+?)\}\}[ \t]*$", pattern)
-        if m:
-            stripped = pattern[: m.start()]
-            if lines is not None:
-                regex_str = m.group(1)
-                try:
-                    last_match = None
-                    for i, line in enumerate(lines):
-                        if re.search(regex_str, line):
-                            last_match = i
-                    if last_match is not None:
-                        return stripped, last_match, "B"
-                except re.error:
-                    pass
-            return stripped, None, None
-
-        return pattern, None, None
+        return extract_hint(pattern, lines)
 
     @classmethod
     def _search_in_lines(cls, lines, pattern, return_last_line=False):
@@ -1167,14 +1095,12 @@ class Tool(BaseTool):
 
         Returns list of matching indices. When return_last_line is True,
         returns the index of the last line of each match instead of the first.
+
+        Delegates to the core ``search_in_lines`` in
+        ``cecli.helpers.hashpos.transformations`` for unified matching.
         """
-        pattern_lines = pattern.split("\n")
-        indices = []
-        offset = len(pattern_lines) - 1 if return_last_line else 0
-        for i in range(len(lines) - len(pattern_lines) + 1):
-            if all(p_line in lines[i + j] for j, p_line in enumerate(pattern_lines)):
-                indices.append(i + offset)
-        return indices
+
+        return search_in_lines(lines, pattern, return_last_line=return_last_line)
 
     @classmethod
     def _find_start_indices(cls, lines, range_start, classification, num_lines):
@@ -1216,36 +1142,23 @@ class Tool(BaseTool):
         Returns ((new_start_indices, new_end_indices), error).
         Error is None on success, or a formatted error string on failure.
         """
-        if len(start_indices) != 1:
+
+        try:
+            result = apply_contextual_marker(start_indices, range_start, range_end, num_lines)
+
+            return result, None
+
+        except ValueError as e:
             error = cls.format_error(
                 coder,
-                (
-                    f"Start pattern '{range_start}' must match exactly one"
-                    f" location when using @C/@P/@N end markers."
-                    f" Found {len(start_indices)} matches."
-                ),
+                str(e),
                 file_path,
                 range_start,
                 range_end,
                 read_index,
             )
+
             return None, error
-
-        ctx_s_idx = start_indices[0]
-        ctx_num = int(range_end[2:])
-        marker_type = range_end[1]
-
-        if marker_type == "C":
-            s_idx = max(0, ctx_s_idx - ctx_num)
-            e_idx = min(num_lines - 1, ctx_s_idx + ctx_num)
-        elif marker_type == "P":
-            s_idx = max(0, ctx_s_idx - ctx_num)
-            e_idx = ctx_s_idx
-        else:  # 'N'
-            s_idx = ctx_s_idx
-            e_idx = min(num_lines - 1, ctx_s_idx + ctx_num)
-
-        return ([s_idx], [e_idx]), None
 
     @classmethod
     def _disambiguate_start_indices(
@@ -1355,12 +1268,8 @@ class Tool(BaseTool):
         Returns up to max_results indices sorted by ascending distance
         from the target (0-based line number).
         """
-        if not indices:
-            return []
 
-        scored = [(abs(i - target), i) for i in indices]
-        scored.sort(key=lambda x: x[0])
-        return [idx for _, idx in scored[:max_results]]
+        return narrow_by_proximity(indices, target, max_results=max_results)
 
     @classmethod
     def _resolve_to_final_indices(
@@ -1482,21 +1391,8 @@ class Tool(BaseTool):
         When allow_inverted is True, also considers pairs where end < start
         (LLM swapped the order) and returns them in correct order.
         """
-        min_dist = float("inf")
-        best_pair = None
 
-        for s in start_indices:
-            valid_ends = end_indices if allow_inverted else [e for e in end_indices if e >= s]
-            for e in valid_ends:
-                dist = abs(e - s)
-                if dist < min_dist:
-                    min_dist = dist
-                    best_pair = (s, e)
-
-        if allow_inverted and best_pair and best_pair[1] < best_pair[0]:
-            best_pair = (best_pair[1], best_pair[0])
-
-        return best_pair
+        return compute_best_pair(start_indices, end_indices, allow_inverted=allow_inverted)
 
     @classmethod
     def _get_range_preview(cls, coder, abs_path, start_idx, end_idx, line_numbers=True):

@@ -8,6 +8,7 @@ from cecli.helpers.hashline import (
     strip_hashline,
 )
 from cecli.helpers.hashpos.hashpos import HashPos
+from cecli.helpers.hashpos.transformations import resolve_at_l, strip_hashline_prefix
 from cecli.tools.utils.base_tool import BaseTool
 from cecli.tools.utils.helpers import (
     ToolError,
@@ -584,33 +585,20 @@ class Tool(BaseTool):
         Returns the input unchanged if it's not an @L{num} spec.
         Raises ToolError if the line number is out of range.
         """
-        if not (
-            isinstance(line_spec, str)
-            and line_spec.startswith("@L")
-            and len(line_spec) > 2
-            and line_spec[2:].isdigit()
-        ):
-            return line_spec
 
-        line_num = int(line_spec[2:]) - 1
-        if line_num < 0 or line_num >= len(source_lines):
-            from cecli.tools.utils.helpers import ToolError
+        from cecli.tools.utils.helpers import ToolError
 
-            raise ToolError(
-                f"@L reference line {int(line_spec[2:])} is out of range "
-                f"(file has {len(source_lines)} lines)"
-            )
+        try:
+            return resolve_at_l(line_spec, hp, source_lines)
 
-        line_text = source_lines[line_num]
-        occurrence = 1 + sum(1 for i in range(line_num) if source_lines[i] == line_text)
-        return hp.get_wrapped_id(hp.generate_public_id(line_text, line_num, occurrence))
+        except ValueError as e:
+            raise ToolError(str(e)) from e
 
     @staticmethod
     def _strip_readfile_prefix(value):
         """Strip the ``~~`` virtual prefix from a ReadFile output line reference."""
-        if isinstance(value, str) and value.startswith("~~"):
-            return value[2:].lstrip()
-        return value
+
+        return strip_hashline_prefix(value)
 
     @classmethod
     def _categorize_edit_error(cls, error_msg: str) -> str:

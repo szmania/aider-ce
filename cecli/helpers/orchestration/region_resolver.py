@@ -10,6 +10,14 @@ from __future__ import annotations
 
 from typing import Any
 
+from cecli.helpers.hashpos.transformations import (
+    extract_hint,
+    is_content_id,
+    narrow_by_proximity,
+    resolve_at_l,
+    search_in_lines,
+)
+
 
 class AgentRegion:
     """
@@ -287,16 +295,14 @@ class AgentRegion:
     def _search_in_lines(lines: list[str], pattern: str) -> list[int]:
         """Return 0-based indices of all lines where *pattern* matches.
 
-        Supports multiline patterns (each line of *pattern* must be
-        a substring of the corresponding line in *lines*).
+        Supports multiline patterns (each line of *pattern* must appear
+        as a whole word in the corresponding line of *lines*).
+
+        Delegates to the core ``search_in_lines`` in
+        ``cecli.helpers.hashpos.transformations`` for unified matching.
         """
 
-        pattern_lines = pattern.split("\n")
-        indices = []
-        for i in range(len(lines) - len(pattern_lines) + 1):
-            if all(p_line in lines[i + j] for j, p_line in enumerate(pattern_lines)):
-                indices.append(i)
-        return indices
+        return search_in_lines(lines, pattern)
 
     @staticmethod
     def _extract_l_hint(
@@ -312,55 +318,14 @@ class AgentRegion:
           - hint_value is a 0-based line number or None
           - hint_type is 'L', 'A', 'B', or None
         """
-        import re
 
-        # Try @L hint (direct line number - always resolvable)
-        m = re.search(r"[ \t]+@L([0-9]+)[ \t]*$", pattern)
-        if m:
-            return pattern[: m.start()], int(m.group(1)) - 1, "L"
-
-        # Try @A{{regex}} hint (first regex match — filter to lines AFTER)
-        m = re.search(r"[ \t]+@A\{\{(.+?)\}\}[ \t]*$", pattern)
-        if m:
-            stripped = pattern[: m.start()]
-            if lines is not None:
-                regex_str = m.group(1)
-                try:
-                    for i, line in enumerate(lines):
-                        if re.search(regex_str, line):
-                            return stripped, i, "A"
-                except re.error:
-                    pass
-            return stripped, None, None
-
-        # Try @B{{regex}} hint (last regex match — filter to lines BEFORE)
-        m = re.search(r"[ \t]+@B\{\{(.+?)\}\}[ \t]*$", pattern)
-        if m:
-            stripped = pattern[: m.start()]
-            if lines is not None:
-                regex_str = m.group(1)
-                try:
-                    last_match = None
-                    for i, line in enumerate(lines):
-                        if re.search(regex_str, line):
-                            last_match = i
-                    if last_match is not None:
-                        return stripped, last_match, "B"
-                except re.error:
-                    pass
-            return stripped, None, None
-
-        return pattern, None, None
+        return extract_hint(pattern, lines)
 
     @staticmethod
     def _narrow_by_proximity(indices: list[int], target: int, max_results: int = 5) -> list[int]:
         """Return up to *max_results* indices closest to *target* (0-based)."""
 
-        if not indices:
-            return []
-        scored = [(abs(i - target), i) for i in indices]
-        scored.sort(key=lambda x: x[0])
-        return [idx for _, idx in scored[:max_results]]
+        return narrow_by_proximity(indices, target, max_results=max_results)
 
     def _validate_pattern_uniqueness(
         self,
@@ -449,17 +414,7 @@ class AgentRegion:
     def _looks_like_content_id(value: str) -> bool:
         """Return True if *value* appears to be a content ID rather than text."""
 
-        from cecli.helpers.hashline import ContentHashError, normalize_hashline
-
-        if value in ("@000", "000@"):
-            return True
-
-        try:
-            normalize_hashline(value)
-
-            return True
-        except (ContentHashError, ValueError):
-            return False
+        return is_content_id(value)
 
     def _resolve_pattern(
         self,
@@ -483,24 +438,12 @@ class AgentRegion:
         if pattern in ("@000", "000@"):
             return pattern
 
-        # @L{num} notation — resolve to line text or content ID
+        # @L{num} notation — resolve via shared utility
         import re as _re
 
         _m = _re.match(r"^@L(\d+)$", pattern)
         if _m:
-            _line_num = int(_m.group(1)) - 1
-            if _line_num < 0 or _line_num >= len(lines):
-                raise ValueError(
-                    f"@L reference line {_m.group(1)} is out of range "
-                    f"(file has {len(lines)} lines)"
-                )
-            _line_text = lines[_line_num]
-            if lines.count(_line_text) == 1:
-                return _line_text  # Unique — let resolve_content_to_hashline_ids handle it
-            # Duplicate — get content ID directly via HashPos
-            _occurrence = 1 + sum(1 for i in range(_line_num) if lines[i] == _line_text)
-            _public_id = hp.generate_public_id(_line_text, _line_num, _occurrence)
-            return hp.get_wrapped_id(_public_id)
+            return resolve_at_l(pattern, hp, lines)
 
         if not self._looks_like_content_id(pattern):
             return pattern
