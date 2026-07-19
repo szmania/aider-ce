@@ -12,6 +12,41 @@ import json
 from typing import Any
 
 
+class ToolResult(dict):
+    """A result dict that supports both key and attribute access.
+
+    Wraps tool call results so LLM code can use either style:
+
+        result = await tool.call(...)
+        print(result["result"])   # key access (dict-compatible)
+        print(result.result)      # attribute access (convenient)
+        print(result.errors)      # attribute access
+
+    Since ToolResult is a dict subclass, all dict methods
+    (``.get()``, ``.keys()``, ``in``, etc.) work as expected.
+    """
+
+    def __getattr__(self, key: str):
+        if key.startswith("_"):
+            raise AttributeError(f"Cannot access private attribute {key!r} on ToolResult")
+        try:
+            return self[key]
+        except KeyError:
+            raise AttributeError(
+                f"ToolResult has no key {key!r}. "
+                f"Available keys: {', '.join(sorted(self.keys()))}"
+            ) from None
+
+    def __setattr__(self, key: str, value) -> None:
+        self[key] = value
+
+    def __delattr__(self, key: str) -> None:
+        try:
+            del self[key]
+        except KeyError:
+            raise AttributeError(f"ToolResult has no key {key!r}") from None
+
+
 class ToolProxy:
     """
     Proxy for a single tool — local or MCP.
@@ -130,21 +165,25 @@ class ToolProxy:
         raise ValueError(f"No executor for tool '{self._tool_name}'")
 
     @staticmethod
-    def _normalize_result(result: Any) -> dict:
-        """Normalize a tool result into a unified dict with ``result``, ``errors``, ``details`` keys.
+    def _normalize_result(result: Any) -> "ToolResult":
+        """Normalize a tool result into a ToolResult with ``result``, ``errors``, ``details`` keys.
 
         Each item in the ``result`` list has the shape ``{"content": ..., "_": {...}}``.
+        Supports both key access (``result["result"]``) and
+        attribute access (``result.result``).
         """
 
         from cecli.tools.utils.responses import ToolResponse
 
         if isinstance(result, ToolResponse):
             data = result.to_dict()
-            return {
-                "result": data.get("result", []),
-                "errors": data.get("errors", []),
-                "details": data.get("details", []),
-            }
+            return ToolResult(
+                {
+                    "result": data.get("result", []),
+                    "errors": data.get("errors", []),
+                    "details": data.get("details", []),
+                }
+            )
 
         if isinstance(result, str):
             # Attempt to auto-parse a JSON-stringified ToolResponse
@@ -155,40 +194,48 @@ class ToolProxy:
                         result_list = parsed["result"]
                         if not isinstance(result_list, list):
                             result_list = [result_list] if result_list else []
-                        return {
-                            "result": [
-                                (
-                                    item
-                                    if isinstance(item, dict) and "content" in item
-                                    else {"content": item, "_": {}}
-                                )
-                                for item in result_list
-                            ],
-                            "errors": parsed.get("errors", []),
-                            "details": parsed.get("details", []),
+                        return ToolResult(
+                            {
+                                "result": [
+                                    (
+                                        item
+                                        if isinstance(item, dict) and "content" in item
+                                        else {"content": item, "_": {}}
+                                    )
+                                    for item in result_list
+                                ],
+                                "errors": parsed.get("errors", []),
+                                "details": parsed.get("details", []),
+                            }
+                        )
+                    return ToolResult(
+                        {
+                            "result": [{"content": parsed, "_": {}}],
+                            "errors": [],
+                            "details": [],
                         }
-                    return {
-                        "result": [{"content": parsed, "_": {}}],
-                        "errors": [],
-                        "details": [],
-                    }
+                    )
             except (json.JSONDecodeError, TypeError):
                 pass
 
             # Error strings from handle_tool_error
             if result.startswith("Error in "):
-                return {
-                    "result": [],
-                    "errors": [result],
-                    "details": [],
-                }
+                return ToolResult(
+                    {
+                        "result": [],
+                        "errors": [result],
+                        "details": [],
+                    }
+                )
 
             # Plain string result
-            return {
-                "result": [{"content": result, "_": {}}],
-                "errors": [],
-                "details": [],
-            }
+            return ToolResult(
+                {
+                    "result": [{"content": result, "_": {}}],
+                    "errors": [],
+                    "details": [],
+                }
+            )
 
         if isinstance(result, dict):
             if "result" in result:
@@ -207,17 +254,21 @@ class ToolProxy:
                 ]
                 out.setdefault("errors", [])
                 out.setdefault("details", [])
-                return out
+                return ToolResult(out)
 
-            return {
-                "result": [{"content": result, "_": {}}],
+            return ToolResult(
+                {
+                    "result": [{"content": result, "_": {}}],
+                    "errors": [],
+                    "details": [],
+                }
+            )
+
+        # Fallback: wrap anything else
+        return ToolResult(
+            {
+                "result": [{"content": str(result), "_": {}}] if result is not None else [],
                 "errors": [],
                 "details": [],
             }
-
-        # Fallback: wrap anything else
-        return {
-            "result": [{"content": str(result), "_": {}}] if result is not None else [],
-            "errors": [],
-            "details": [],
-        }
+        )
