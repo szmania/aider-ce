@@ -468,6 +468,7 @@ _PREIMPORTED_MODULES: frozenset[str] = frozenset(
         "collections",
         "datetime",
         "traceback",
+        "json",
     }
 )
 
@@ -476,7 +477,7 @@ def _strip_allowed_imports(code: str) -> tuple[str, dict[str, object]]:
     """Strip import lines for modules already pre-imported in the sandbox.
 
     The sandbox provides ``re``, ``math``, ``itertools``, ``collections``,
-    ``datetime``, and ``traceback`` as read-only proxies.
+    ``datetime``, ``traceback``, and ``json`` as read-only proxies.
 
     Returns ``(code, extra_globals)`` where *extra_globals* maps imported
     names to their resolved values.  The caller must inject these into the

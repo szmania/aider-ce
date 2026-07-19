@@ -134,6 +134,24 @@ class AgentProxy:
 
         return self._inspect_structure(result)
 
+    def get_value(self, result: Any, path: str, default: Any = None) -> Any:
+        """Safely access nested values in a tool result using dot-notation.
+
+        Tool results have deeply nested dicts (e.g., ``result["result"][0]["_"]["file_path"]``).
+        ``get_value()`` provides a concise shorthand using ``nested.getter()``.
+
+        Example:
+
+            output = await grep_tool.call(pattern="TODO", file_glob="*.py")
+            file_path = Agent.get_value(output, "result.0._.file_path")
+            content = Agent.get_value(output, "result.0.content")
+
+        Returns *default* if the path does not exist.
+        """
+        from cecli.helpers import nested
+
+        return nested.getter(result, path, default)
+
     @staticmethod
     def _content_preview(value: Any, max_chars: int = 20) -> str:
         """Return a short preview of a scalar value's stringified content."""

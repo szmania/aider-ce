@@ -224,6 +224,7 @@ class AgentExecutionEnv:
             "filter": filter,
             "map": map,
             "chr": chr,
+            "next": next,
             "Exception": Exception,
             "ValueError": ValueError,
             "TypeError": TypeError,
@@ -232,6 +233,10 @@ class AgentExecutionEnv:
             "AttributeError": AttributeError,
             "RuntimeError": RuntimeError,
             "NameError": NameError,
+            "ZeroDivisionError": ZeroDivisionError,
+            "StopIteration": StopIteration,
+            "ArithmeticError": ArithmeticError,
+            "LookupError": LookupError,
             "re": _SafeModuleProxy(re),
             "math": _SafeModuleProxy(math),
             "itertools": _SafeModuleProxy(itertools),
@@ -480,6 +485,7 @@ As such, results from previous calls can be reused and helper methods can be def
 | `Agent.get_tool(name)` | Get a tool proxy (case-insensitive, accepts `Local--` or `Server--` prefix) |
 | `await tool.call(**params)` | Execute a tool; returns `{"result": [...], "errors": [...], "details": [...]}` — each result item is `{"content": ..., "_": {...}}` |
 | `Agent.peek(result)` | Inspect a tool result's structure and leaf content — returns a string; use `print(Agent.peek(result))` to see it |
+| `Agent.get_value(result, path, default?)` | Safely access nested values in tool results using dot-notation (e.g. `"result.0.content"`)  |
 
 | `Agent.get_content_id(path, text)` | Resolve a content ID from `@L{num}` or line text for EditFile |
 | `Agent.resolve_regions(path, regions)` | Batch-resolve text patterns to content IDs; ambiguous patterns raise immediately with clear error messages. Use `start_line_hint` / `end_line_hint` to disambiguate. The returned `AgentRegion` has `.get_start(name)`, `.get_end(name)`, `.names()`, `.get(name)` |
