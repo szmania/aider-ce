@@ -21,6 +21,7 @@ import pytest
 
 from cecli.mcp.manager import McpServerManager
 from cecli.mcp.server import LocalServer, McpServer
+from cecli.commands.core import SwitchCoderSignal
 
 
 # ---------------------------------------------------------------------------
@@ -552,11 +553,8 @@ async def test_load_mcp_command_benefits_from_retry(
         with patch(
             "cecli.commands.load_mcp.update_server_registration"
         ):
-      try:
-        await LoadMcpCommand.execute(mock_io, coder, "test-server")
-      except Exception as e:
-        # SwitchCoderSignal is raised at the end
-        assert "SwitchCoderSignal" in type(e).__name__
+            with pytest.raises(SwitchCoderSignal):
+                await LoadMcpCommand.execute(mock_io, coder, "test-server")
 
 
 # ---------------------------------------------------------------------------
@@ -578,13 +576,8 @@ async def test_load_mcp_command_reports_failure_after_retries(
 
     with patch("cecli.commands.load_mcp.iter_all_coders", return_value=[coder]):
         with patch("cecli.commands.load_mcp.update_server_registration"):
-            try:
+            with pytest.raises(SwitchCoderSignal):
                 await LoadMcpCommand.execute(mock_io, coder, "test-server")
-            except Exception as e:
-                # SwitchCoderSignal is expected
-                assert "SwitchCoderSignal" in type(e).__name__ or "Switch" in type(
-                    e
-                ).__name__
 
     # Check that the results were output - "Unable to load server" should be in output
     output_calls = [str(call) for call in mock_io.tool_output.call_args_list]
