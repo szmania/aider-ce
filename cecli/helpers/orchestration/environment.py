@@ -536,6 +536,41 @@ print(tool_outputs.a)              # attribute access
 print(tool_outputs["b"])           # key access
 ```
 
+### Working with Results
+
+Use `Agent.peek()` to discover a result's structure, then `Agent.get_value()`
+to extract specific fields by dot-path::
+
+    result = await read_tool.call(file_path="foo.py", range_start="@000", range_end="000@")
+    print(Agent.peek(result))
+    # Shows: result[0].content: str = '...'
+    #        result[0]._.file_path: str = 'foo.py'
+
+    content = Agent.get_value(result, "result.0.content")
+    file_path = Agent.get_value(result, "result.0._.file_path", "unknown")
+
+Result list items are plain dicts — use item['content'] / item.get('content')
+and item['_'] / item.get('_') to access data and metadata respectively.
+
+### Creating New Files
+
+Use `ResourceManager` to create an empty file, then `EditFile` to write
+initial content (use `@000` for start/end on empty files)::
+
+    rm = Agent.get_tool("ResourceManager")
+    edit = Agent.get_tool("EditFile")
+
+    await rm.call(create=["path/to/new_file.py"])
+    await edit.call(edits=[{
+        "file_path": "path/to/new_file.py",
+        "operation": "replace",
+        "start_line": "@000",
+        "end_line": "@000",
+        "text": "def greet(name):\n    return f\"Hello, {name}!\"\n",
+    }])
+
+After creation, use `resolve_regions` and `edit_region` for targeted edits.
+
 ### Editing with Regions
 
 Use `Agent.resolve_regions()` to convert text patterns into content IDs, then `Agent.edit_region()` to apply edits using the resolved IDs.
@@ -562,18 +597,8 @@ await Agent.edit_region(
 
 #### Alternative: Call `EditFile` directly with `regions.get_start()` / `regions.get_end()`
 
-```python
-edit_tool = Agent.get_tool("EditFile")
-await edit_tool.call(edits=[{
-    "file_path": "foo.py",
-    "operation": "replace",
-    "start_line": regions.get_start("my_func"),
-    "end_line":   regions.get_end("my_func"),
-    "text": "def my_func():\n    return 42",
-}])
-```
-
 ### Gotchas
+
 - **Types**: compare with `typeof(x) == dict` or `isinstance(x, dict)` — NOT `typeof(x) == "dict"`
 - **Args**: use keyword args only — `tool.call(file_path="f", ...)`
 - **gather**: always use named `gather(x=a, y=b)` — positional args are not supported
