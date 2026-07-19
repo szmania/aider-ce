@@ -1807,6 +1807,106 @@ def _try_resolve_as_unique_line(
     return None
 
 
+def _raise_clear_hash_error(hp, op, key):
+    """Raise a ContentHashError with a clear message explaining why a value couldn't be resolved.
+
+    Checks if the value matches line content in the file and provides specific guidance
+    about how to fix the reference (use hashed ID prefix, check for duplicates, etc.).
+    """
+    value = op.get(key, "")
+    value_stripped = value.strip() if value else ""
+
+    if not hp or not value_stripped:
+        raise ContentHashError(
+            f"Could not resolve '{value}' as a content ID. "
+            "Use a hashed ID prefix (e.g., `~XXXX~`) to target the line."
+        )
+
+    # Count how many lines contain this value as a substring
+    matching_count = 0
+    for line in hp.lines:
+        if value_stripped in line:
+            matching_count += 1
+
+    if matching_count > 1:
+        raise ContentHashError(
+            f"Line '{value_stripped}' appears {matching_count} times in the file. "
+            "Use the hashed ID prefix (e.g., `~XXXX~`) to disambiguate "
+            "which occurrence to target."
+        )
+    elif matching_count == 1:
+        raise ContentHashError(
+            f"Line '{value_stripped}' was found once in the file but could not be "
+            "resolved as a unique content ID. Use the hashed ID prefix (e.g., `~XXXX~`) "
+            "to target it precisely."
+        )
+    else:
+        raise ContentHashError(
+            f"Line '{value_stripped}' was not found in the file. "
+            "Use the exact line content or a hashed ID prefix (e.g., `~XXXX~`) "
+            "to target the desired line."
+        )
+
+
+def _detect_overlapping_ranges(resolved_ops):
+    """Check resolved operations for genuinely overlapping ranges.
+
+    Detects operations where ranges overlap in a way that can't be resolved
+    by simple deduplication (same-start) or containment. These non-trivial
+    overlaps (e.g., a delete range partially overlapping a replace range)
+    are flagged and returned as failed operations with a clear message.
+    The overlapping operations' indices are also returned so the caller
+    can exclude them from `resolved_ops`.
+
+    Returns a tuple of (failed_ops, indices_to_remove).
+    - failed_ops: list of failed operation dicts with overlap errors
+    - indices_to_remove: set of operation indices to remove from resolved_ops
+    """
+    if len(resolved_ops) < 2:
+        return [], set()
+
+    failed_ops = []
+    indices_to_remove = set()
+    for i in range(len(resolved_ops)):
+        a = resolved_ops[i]
+        a_start = a["start_idx"]
+        a_end = a["end_idx"]
+
+        for j in range(i + 1, len(resolved_ops)):
+            b = resolved_ops[j]
+            b_start = b["start_idx"]
+            b_end = b["end_idx"]
+
+            # Skip trivial cases handled elsewhere:
+            # 1. Same start line - handled by _deduplicate_ranges
+            if a_start == b_start:
+                continue
+
+            # 2. One range fully contained within the other - handled by _merged_contained_ranges
+            if (a_start <= b_start and b_end <= a_end) or (b_start <= a_start and a_end <= b_end):
+                continue
+
+            # Check if ranges genuinely overlap (not just adjacent/contiguous)
+            # Two ranges [a_start, a_end] and [b_start, b_end] overlap if
+            # a_start <= b_end and b_start <= a_end
+            if a_start <= b_end and b_start <= a_end:
+                op_a = a["op"]
+                op_b = b["op"]
+                error_msg = (
+                    f"Operation {a['index'] + 1} ({op_a['operation']}, lines "
+                    f"{a_start}-{a_end}) overlaps with operation {b['index'] + 1} "
+                    f"({op_b['operation']}, lines {b_start}-{b_end}). "
+                    "Edits with overlapping ranges are not supported. "
+                    "Combine them into a single edit or use non-overlapping ranges."
+                )
+                failed_ops.append({"index": a["index"], "error": error_msg, "operation": op_a})
+                failed_ops.append({"index": b["index"], "error": error_msg, "operation": op_b})
+                indices_to_remove.add(i)
+                indices_to_remove.add(j)
+
+    return failed_ops, indices_to_remove
+
+
 def apply_hashline_operations(
     original_content: str,
     operations: list,
@@ -1847,7 +1947,7 @@ def apply_hashline_operations(
                 if resolved is not None:
                     normalized_op["start_line_hash"] = resolved
                 else:
-                    raise
+                    _raise_clear_hash_error(hp, op, "start_line_hash")
 
             if "end_line_hash" in op:
                 # Normalize end line hash if present
@@ -1859,7 +1959,7 @@ def apply_hashline_operations(
                     if resolved is not None:
                         normalized_op["end_line_hash"] = resolved
                     else:
-                        raise
+                        _raise_clear_hash_error(hp, op, "end_line_hash")
 
             normalized_operations.append(normalized_op)
         except Exception as e:
@@ -1954,6 +2054,14 @@ def apply_hashline_operations(
 
         except Exception as e:
             failed_ops.append({"index": i, "error": str(e), "operation": op})
+
+    # Check for overlapping ranges among resolved operations
+    overlap_failures, overlap_indices = _detect_overlapping_ranges(resolved_ops)
+    for overlap_failure in overlap_failures:
+        failed_ops.append(overlap_failure)
+    # Remove overlapping operations from resolved_ops so they don't get applied
+    if overlap_indices:
+        resolved_ops = [op for i, op in enumerate(resolved_ops) if i not in overlap_indices]
 
     # Honor cancellations: remove operations that are cancelled by later cancel operations
     resolved_ops = _honor_cancellations(resolved_ops)
