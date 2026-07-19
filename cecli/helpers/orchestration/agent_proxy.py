@@ -178,6 +178,19 @@ class AgentProxy:
                             lines.append(f"{path}: list[{len(value)}] {type(first).__name__}")
                     else:
                         lines.append(f"{path}: list (empty)")
+                elif (
+                    hasattr(value, "keys")
+                    and hasattr(value, "items")
+                    and not isinstance(value, (str, bytes))
+                ):
+                    sub_keys = list(value.keys())[:max_keys]
+                    sub_suffix = "..." if len(value) > max_keys else ""
+                    lines.append(
+                        f"{path}: {type(value).__name__}(keys: [{', '.join(sub_keys)}{sub_suffix}])"
+                    )
+                    inner = AgentProxy._inspect_structure(value, path, depth + 1)
+                    if inner:
+                        lines.append(inner)
                 else:
                     preview = AgentProxy._content_preview(value)
                     lines.append(f"{path}: {type(value).__name__} = {preview}")
@@ -196,6 +209,52 @@ class AgentProxy:
                     lines.append(f"list[{len(obj)}] {type(first).__name__}")
             else:
                 lines.append("list (empty)")
+
+        elif hasattr(obj, "keys") and hasattr(obj, "items") and not isinstance(obj, (str, bytes)):
+            keys = list(obj.keys())
+            display_keys = keys[:max_keys]
+            suffix = "..." if len(keys) > max_keys else ""
+            lines.append(f"{type(obj).__name__}(keys: [{', '.join(display_keys)}{suffix}])")
+            for key in display_keys:
+                value = obj[key]
+                path = f"{prefix}.{key}" if prefix else key
+
+                if isinstance(value, dict):
+                    sub_keys = list(value.keys())[:max_keys]
+                    sub_suffix = "..." if len(value) > max_keys else ""
+                    lines.append(f"{path}: dict[{' | '.join(sub_keys)}{sub_suffix}]")
+                    inner = AgentProxy._inspect_structure(value, path, depth + 1)
+                    if inner:
+                        lines.append(inner)
+                elif isinstance(value, list):
+                    if value:
+                        first = value[0]
+                        if isinstance(first, dict):
+                            lines.append(f"{path}: list[{len(value)}] dict")
+                            inner = AgentProxy._inspect_structure(first, f"{path}[0]", depth + 1)
+                            if inner:
+                                lines.append(inner)
+                        else:
+                            lines.append(f"{path}: list[{len(value)}] {type(first).__name__}")
+                    else:
+                        lines.append(f"{path}: list (empty)")
+                elif (
+                    hasattr(value, "keys")
+                    and hasattr(value, "items")
+                    and not isinstance(value, (str, bytes))
+                ):
+                    sub_keys = list(value.keys())[:max_keys]
+                    sub_suffix = "..." if len(value) > max_keys else ""
+                    lines.append(
+                        f"{path}: {type(value).__name__}(keys: [{', '.join(sub_keys)}{sub_suffix}])"
+                    )
+                    inner = AgentProxy._inspect_structure(value, path, depth + 1)
+                    if inner:
+                        lines.append(inner)
+                else:
+                    preview = AgentProxy._content_preview(value)
+                    lines.append(f"{path}: {type(value).__name__} = {preview}")
+
         else:
             lines.append(f"{type(obj).__name__}")
 
