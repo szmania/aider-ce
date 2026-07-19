@@ -19,10 +19,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from cecli.commands.core import SwitchCoderSignal
 from cecli.mcp.manager import McpServerManager
 from cecli.mcp.server import LocalServer, McpServer
-from cecli.commands.core import SwitchCoderSignal
-
 
 # ---------------------------------------------------------------------------
 # Fixtures (mirrors tests/mcp/test_manager.py for consistency)
@@ -275,9 +274,7 @@ async def test_connect_server_no_retry_already_connected(mock_server, mock_io):
 
 
 @pytest.mark.asyncio
-async def test_connect_server_propagates_cancelled_error_during_retry(
-    mock_server, mock_io
-):
+async def test_connect_server_propagates_cancelled_error_during_retry(mock_server, mock_io):
     """TC-007: connect_server re-raises CancelledError when interrupted during retry backoff."""
     manager = McpServerManager(servers=[mock_server], io=mock_io)
     mock_server.connect.side_effect = Exception("Connection failed")
@@ -298,9 +295,7 @@ async def test_connect_server_propagates_cancelled_error_during_retry(
 
 
 @pytest.mark.asyncio
-async def test_connect_server_propagates_cancelled_error_during_connect(
-    mock_server, mock_io
-):
+async def test_connect_server_propagates_cancelled_error_during_connect(mock_server, mock_io):
     """TC-008: connect_server re-raises CancelledError when server.connect() raises it."""
     manager = McpServerManager(servers=[mock_server], io=mock_io)
     mock_server.connect.side_effect = asyncio.CancelledError()
@@ -449,9 +444,7 @@ async def test_connect_server_no_error_log_unnamed_server(mock_io):
 
 
 @pytest.mark.asyncio
-async def test_connect_server_succeeds_first_attempt(
-    mock_server, mock_tools, mock_session
-):
+async def test_connect_server_succeeds_first_attempt(mock_server, mock_tools, mock_session):
     """TC-014: connect_server connects successfully on first attempt without any retries."""
     manager = McpServerManager(servers=[mock_server])
     mock_server.connect.return_value = mock_session
@@ -473,9 +466,7 @@ async def test_connect_server_succeeds_first_attempt(
 
 
 @pytest.mark.asyncio
-async def test_from_servers_calls_connect_once(
-    mock_server, mock_io, mock_tools, mock_session
-):
+async def test_from_servers_calls_connect_once(mock_server, mock_io, mock_tools, mock_session):
     """TC-015: from_servers add_server_with_retry no longer has its own retry loop."""
     mock_server.connect.return_value = mock_session
 
@@ -503,17 +494,13 @@ async def test_from_servers_warning_after_retries(mock_server, mock_io):
     mock_server.connect.side_effect = Exception("Connection failed")
 
     with patch("asyncio.sleep"):
-        manager = await McpServerManager.from_servers(
-            servers=[mock_server], io=mock_io
-        )
+        manager = await McpServerManager.from_servers(servers=[mock_server], io=mock_io)
 
     assert isinstance(manager, McpServerManager)
     assert mock_server not in manager._connected_servers
 
     warning_messages = [call[0][0] for call in mock_io.tool_warning.call_args_list]
-    found_init_warning = any(
-        "MCP tool initialization failed" in msg for msg in warning_messages
-    )
+    found_init_warning = any("MCP tool initialization failed" in msg for msg in warning_messages)
     assert found_init_warning
 
     assert mock_server.connect.call_count == 3
@@ -525,9 +512,7 @@ async def test_from_servers_warning_after_retries(mock_server, mock_io):
 
 
 @pytest.mark.asyncio
-async def test_load_mcp_command_benefits_from_retry(
-    mock_server, mock_io, mock_tools, mock_session
-):
+async def test_load_mcp_command_benefits_from_retry(mock_server, mock_io, mock_tools, mock_session):
     """TC-017: LoadMcpCommand.execute uses connect_server which now has built-in retry."""
     from cecli.commands.load_mcp import LoadMcpCommand
 
@@ -547,12 +532,8 @@ async def test_load_mcp_command_benefits_from_retry(
     coder.mcp_manager.get_server = MagicMock(return_value=mock_server)
     coder.mcp_manager.connected_servers = []
 
-    with patch(
-        "cecli.commands.load_mcp.iter_all_coders", return_value=[coder]
-    ):
-        with patch(
-            "cecli.commands.load_mcp.update_server_registration"
-        ):
+    with patch("cecli.commands.load_mcp.iter_all_coders", return_value=[coder]):
+        with patch("cecli.commands.load_mcp.update_server_registration"):
             with pytest.raises(SwitchCoderSignal):
                 await LoadMcpCommand.execute(mock_io, coder, "test-server")
 
@@ -563,9 +544,7 @@ async def test_load_mcp_command_benefits_from_retry(
 
 
 @pytest.mark.asyncio
-async def test_load_mcp_command_reports_failure_after_retries(
-    mock_server, mock_io
-):
+async def test_load_mcp_command_reports_failure_after_retries(mock_server, mock_io):
     """TC-018: LoadMcpCommand.execute reports 'Unable to load server' after retries exhausted."""
     from cecli.commands.load_mcp import LoadMcpCommand
 
@@ -591,9 +570,7 @@ async def test_load_mcp_command_reports_failure_after_retries(
 
 
 @pytest.mark.asyncio
-async def test_load_mcp_propagates_cancellation_during_retry(
-    mock_server, mock_io
-):
+async def test_load_mcp_propagates_cancellation_during_retry(mock_server, mock_io):
     """TC-019: LoadMcpCommand interruptible wrapper correctly propagates CancelledError."""
     from cecli.commands.load_mcp import LoadMcpCommand
 
@@ -624,9 +601,7 @@ async def test_load_mcp_propagates_cancellation_during_retry(
 
 
 @pytest.mark.asyncio
-async def test_load_session_benefits_from_retry(
-    mock_server, mock_io, mock_tools, mock_session
-):
+async def test_load_session_benefits_from_retry(mock_server, mock_io, mock_tools, mock_session):
     """TC-020: Session loading uses connect_server which now retries on transient failures.
 
     This test verifies that connect_server is called with the correct server name
@@ -653,9 +628,7 @@ async def test_load_session_benefits_from_retry(
 
 
 @pytest.mark.asyncio
-async def test_resource_manager_benefits_from_retry(
-    mock_server, mock_io, mock_tools, mock_session
-):
+async def test_resource_manager_benefits_from_retry(mock_server, mock_io, mock_tools, mock_session):
     """TC-021: ResourceManager _load_mcp uses connect_server which now retries."""
     from cecli.tools.resource_manager import Tool as ResourceManagerTool
 
