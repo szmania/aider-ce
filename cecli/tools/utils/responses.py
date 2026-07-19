@@ -15,7 +15,7 @@ class ToolResponse:
     Each result item has a ``content`` key (the primary output) and an
     ``_`` key (metadata).  Use ``append_result(content, metadata=None)``
 
-    Usage inside a tool's ``execute`` method::
+    Usage inside a tool's ``execute`` method:
 
         response = ToolResponse("my_tool", result_type="str")
         response.append_result("Operation completed successfully")

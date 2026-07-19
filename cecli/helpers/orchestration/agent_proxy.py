@@ -1,7 +1,7 @@
 """
 Singleton-like proxy injected into the orchestration environment.
 
-Usage in LLM-generated code::
+Usage in LLM-generated code:
 
     read_tool = Agent.get_tool("ReadFile")
     result = await read_tool.call(file_path="foo.py", range_start="@000", range_end="000@")
@@ -22,7 +22,7 @@ class AgentProxy:
     """
     Singleton-like proxy injected into the orchestration environment.
 
-    Usage in LLM-generated code::
+    Usage in LLM-generated code:
 
         read_tool = Agent.get_tool("ReadFile")
         result = await read_tool.call(file_path="foo.py", range_start="@000", range_end="000@")
@@ -105,7 +105,7 @@ class AgentProxy:
     def peek(self, result: Any) -> str:
         """Inspect the structure of a tool result and return a readable summary.
 
-        Tool results have a standard shape::
+        Tool results have a standard shape:
 
             {
                 "result": [{"content": ..., "_": {"file_path": ..., ...}}],
@@ -117,7 +117,7 @@ class AgentProxy:
         helping the LLM navigate deeply nested tool outputs.  Leaf values
         include a short content snippet so you can see actual data.
 
-        Example::
+        Example:
 
             output = await grep_tool.call(pattern="TODO", file_glob="*.py")
             print(Agent.peek(output))
@@ -207,7 +207,7 @@ class AgentProxy:
         Supports three modes:
         - **@L{number}**: e.g., `Agent.get_content_id("foo.py", "@L42")`
           returns the content ID of line 42 (1-based).
-        - **content ID passthrough**: e.g., `Agent.get_content_id("foo.py", "abc::")`
+        - **content ID passthrough**: e.g., `Agent.get_content_id("foo.py", "~abcd~")`
           verifies and returns an existing content ID string.
         - **text match**: e.g., `Agent.get_content_id("foo.py", "def greet(")`
           returns the content ID of the unique line containing that text.
@@ -216,7 +216,7 @@ class AgentProxy:
         import re
 
         from cecli.helpers.hashline import resolve_content_to_hashline_ids
-        from cecli.helpers.hashpos.hashpos import HashPos
+        from cecli.helpers.hashpos.hashpos import HASH_DELIMITER, HashPos
         from cecli.tools.utils.helpers import resolve_paths
 
         abs_path, rel_path = resolve_paths(self._coder, file_path)
@@ -236,10 +236,12 @@ class AgentProxy:
             line_num = int(m.group(1)) - 1
             if line_num < 0 or line_num >= len(lines):
                 raise ValueError(f"Line {m.group(1)} out of range (file has {len(lines)} lines)")
-            return hp.generate_public_id(lines[line_num], line_num) + "::"
+            line_text = lines[line_num]
+            occurrence = 1 + sum(1 for i in range(line_num) if lines[i] == line_text)
+            return hp.get_wrapped_id(hp.generate_public_id(line_text, line_num, occurrence))
 
         # Content ID passthrough: already looks like a content ID
-        if "::" in line_content:
+        if HashPos.FRAGMENT_RE.match(line_content):
             from cecli.helpers.hashline import ContentHashError, normalize_hashline
 
             try:
@@ -249,11 +251,20 @@ class AgentProxy:
                     return line_content
             except (ContentHashError, ValueError):
                 pass
+
+            # Fall back: value looks like a content ID (contains "~") but couldn't be
+            # resolved. Strip the prefix and try to match the remaining content.
+            stripped = HashPos.strip_prefix(line_content)
+            if stripped != line_content and stripped.strip():
+                result, _ = resolve_content_to_hashline_ids(content, stripped, None)
+                if result != stripped and HASH_DELIMITER in str(result):
+                    return result
+
             raise ValueError(f"Content ID '{line_content}' not found in {file_path}")
 
         # Text match via resolve_content_to_hashline_ids
         result, _ = resolve_content_to_hashline_ids(content, line_content, None)
-        if result == line_content or "::" not in str(result):
+        if result == line_content or HASH_DELIMITER not in str(result):
             # Find all matching lines for a helpful error message
             matching = [i + 1 for i, line in enumerate(lines) if line_content in line]
             if len(matching) > 1:
@@ -301,7 +312,7 @@ class AgentProxy:
         """
         Thin wrapper around `EditFile` that accepts `{"start": content_id, "end": content_id}` region dicts.
 
-        Use with `Agent.resolve_regions()` and `regions.get(name)`::
+        Use with `Agent.resolve_regions()` and `regions.get(name)`:
 
             regions = Agent.resolve_regions("foo.py", [
                 {"name": "my_func", "start": "def my_func", "end": "return result"},

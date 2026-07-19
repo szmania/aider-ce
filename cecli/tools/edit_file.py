@@ -1,4 +1,6 @@
 from cecli.helpers.hashline import (
+    HASH_DELIMITER,
+    UNIQUE_HASH_DELIMITER,
     ContentHashError,
     apply_hashline_operations,
     get_hashline_diff,
@@ -44,15 +46,16 @@ class Tool(BaseTool):
         "function": {
             "name": "EditFile",
             "description": (
-                "Edit text in one or more files using content ID markers. "
+                "Edit text in one or more files using virtual identifiers. "
                 "You can perform multiple 'replace' or 'delete' operations in a single call. "
                 "CRITICAL RULES: "
-                "1. Start and end content IDs are INCLUSIVE. Both will be modified or deleted. "
-                "2. Content IDs MUST include the `::` demarcator. "
-                "3. Edits within the same file MUST NOT be adjacent or overlapping. "
-                "4. For empty files, you MUST use '@000' as the content ID reference. "
-                "5. After an edit, only IDs within ~5 lines of the change are regenerated. "
-                "IDs farther from the edit site remain usable."
+                "1. Start and end markers are INCLUSIVE. Both will be modified or deleted. "
+                f"2. To target unique lines (prefixed with '{UNIQUE_HASH_DELIMITER}'), use their exact literal text as the marker. "  # noqa
+                f"3. To target duplicate lines, you MUST include the exact hashed prefix (e.g., '{HASH_DELIMITER}“0车加{HASH_DELIMITER}'). "  # noqa
+                "4. Edits within the same file MUST NOT be adjacent or overlapping. "
+                "5. For empty files, you MUST use '@000' as the reference. "
+                "6. Identifiers track global occurrences. Adding, modifying, or deleting a line can instantly "
+                "change the prefixes of identical lines anywhere else in the file. Re-read to get fresh IDs after editing."  # noqa
             ),
             "parameters": {
                 "type": "object",
@@ -92,14 +95,14 @@ class Tool(BaseTool):
                                     "type": "string",
                                     "description": (
                                         "The exact content ID and demarcator for the start of the edit "
-                                        "(e.g., 'abc::'). For empty files, use '@000'."
+                                        f"(e.g., '{HASH_DELIMITER}abcd{HASH_DELIMITER}'). For empty files, use '@000'."
                                     ),
                                 },
                                 "end_line": {
                                     "type": "string",
                                     "description": (
                                         "The exact content ID and demarcator for the end of the edit "
-                                        "(e.g., 'xyz::'). For empty files, use '@000'."
+                                        f"(e.g., '{HASH_DELIMITER}wxyz{HASH_DELIMITER}'). For empty files, use '@000'."
                                     ),
                                 },
                             },
@@ -226,12 +229,13 @@ class Tool(BaseTool):
                             edit_start_line, edit_end_line = resolve_content_to_hashline_ids(
                                 original_content, edit_start_line, edit_end_line
                             )
-
                             # 4. Auto-sanitize malformed boundaries (strip accidentally appended code)
-                            if isinstance(edit_start_line, str) and "::" in edit_start_line:
-                                edit_start_line = normalize_hashline(edit_start_line)
-                            if isinstance(edit_end_line, str) and "::" in edit_end_line:
-                                edit_end_line = normalize_hashline(edit_end_line)
+                            if isinstance(edit_start_line, str):
+                                test_line = normalize_hashline(edit_start_line, throw=False)
+                                edit_start_line = test_line if test_line else edit_start_line
+                            if isinstance(edit_end_line, str):
+                                test_line = normalize_hashline(edit_end_line, throw=False)
+                                edit_end_line = test_line if test_line else edit_end_line
 
                             # ---------------------------------------------------------
 

@@ -3,7 +3,11 @@ import json
 import re
 from collections import Counter
 
-from cecli.helpers.hashpos.hashpos import HashPos
+from cecli.helpers.hashpos.hashpos import (  # noqa
+    HASH_DELIMITER,
+    UNIQUE_HASH_DELIMITER,
+    HashPos,
+)
 
 HASHLINE_PREFIX_RE = HashPos.HASH_PREFIX_RE
 
@@ -72,14 +76,14 @@ def strip_hashline(text: str) -> str:
     return HashPos.strip_prefix(text)
 
 
-def normalize_hashline(hashline_str: str) -> str:
+def normalize_hashline(hashline_str: str, throw=True) -> str:
     """
     Normalize a hashline string to the content id hash fragment.
     """
     if hashline_str in ("@000", "000@"):
         return hashline_str
     try:
-        return HashPos.normalize(hashpos_str=hashline_str)
+        return HashPos.normalize(hashpos_str=hashline_str, throw=throw)
     except ValueError as e:
         raise ContentHashError(str(e))
 
@@ -331,8 +335,11 @@ def resolve_content_to_hashline_ids(
 
     def _resolve_to_hash_id(lines, idx, hp):
         """Generate a hash ID for the line at the given index."""
-        hash_id = hp.generate_public_id(lines[idx], idx)
-        return hash_id + "::"
+        line_text = lines[idx]
+        # Compute the occurrence number (1-based) of this line instance
+        occurrence = 1 + sum(1 for i in range(idx) if lines[i] == line_text)
+        hash_id = hp.generate_public_id(line_text, idx, occurrence)
+        return HashPos.get_wrapped_id(hash_id)
 
     lines = original_content.splitlines()
     hp = HashPos(original_content)
@@ -363,7 +370,15 @@ def resolve_content_to_hashline_ids(
             if candidates:
                 resolved_start_idx = candidates[0]
         except (ContentHashError, ValueError):
-            pass
+            # The value looks like a content ID but normalized to UNIQUE_HASH_DELIMITER which can't
+            # be spatially resolved. Fall back: strip the UNIQUE_HASH_DELIMITER prefix and treat the
+            # remaining content as line content to match.
+            content = HashPos.strip_prefix(start_value)
+            if content != start_value and content.strip():
+                containing_indices = _find_substring_matches(lines, content)
+                if len(containing_indices) == 1:
+                    resolved_start_idx = containing_indices[0]
+                    resolved_start = _resolve_to_hash_id(lines, resolved_start_idx, hp)
 
     # Resolve end_value based on proximity to start position
     resolved_end = end_value
@@ -389,6 +404,30 @@ def resolve_content_to_hashline_ids(
                     key=lambda idx: abs(idx - resolved_start_idx),
                 )
                 resolved_end = _resolve_to_hash_id(lines, closest_idx, hp)
+    elif end_value is not None and _looks_like_content_id(end_value):
+        # Already a content ID - try to resolve it
+        try:
+            normalized = normalize_hashline(end_value)
+            candidates = hp.resolve_to_lines(normalized)
+            if candidates and resolved_start_idx is not None:
+                # Pick candidate closest to start position
+                resolved_end = _resolve_to_hash_id(lines, candidates[0], hp)
+        except (ContentHashError, ValueError):
+            # The value looks like a content ID but normalized to UNIQUE_HASH_DELIMITER which can't
+            # be spatially resolved. Fall back: strip the UNIQUE_HASH_DELIMITER prefix and treat the
+            # remaining content as line content to match.
+            content = HashPos.strip_prefix(end_value)
+            if content != end_value and content.strip():
+                containing_indices = _find_substring_matches(lines, content)
+                if len(containing_indices) == 1:
+                    idx = containing_indices[0]
+                    resolved_end = _resolve_to_hash_id(lines, idx, hp)
+                elif len(containing_indices) > 1 and resolved_start_idx is not None:
+                    closest_idx = min(
+                        containing_indices,
+                        key=lambda idx: abs(idx - resolved_start_idx),
+                    )
+                    resolved_end = _resolve_to_hash_id(lines, closest_idx, hp)
 
     return resolved_start, resolved_end
 
@@ -1705,6 +1744,52 @@ def _apply_closure_safeguard(
     return safe_resolved_ops, rejected_ops
 
 
+def _try_resolve_as_unique_line(
+    hp: HashPos,
+    value: str,
+) -> str | None:
+    """
+    Try to resolve a value by matching it against unique lines in the source content.
+
+    If the value (after stripping) matches exactly one line in the source
+    AND that line appears only once (unique), returns a tilde-wrapped hash ID
+    that can be resolved to line indices by the HashPos engine.
+
+    This serves as a preliminary resolution step that can salvage operations
+    whose hash references could not be normalized, by checking if the value
+    corresponds to unique line content in the file.
+
+    Args:
+        hp: HashPos instance for the source content
+        value: The value to resolve (typically line content rather than a hash)
+
+    Returns:
+        A tilde-wrapped hash ID if resolution succeeds, None otherwise
+    """
+    if not hp or not value:
+        return None
+
+    value_stripped = value.strip()
+    if not value_stripped:
+        return None
+
+    # Find all lines that exactly match this value
+    matching_lines = []
+    for i, line in enumerate(hp.lines):
+        if line.strip() == value_stripped:
+            matching_lines.append((i, line))
+
+    # Only resolve if it matches exactly one unique line
+    if len(matching_lines) == 1:
+        idx, matched_line = matching_lines[0]
+        # Verify the line is actually unique in the source (appears only once)
+        if hp.line_counts.get(matched_line, 0) == 1:
+            hash_id = hp.generate_public_id(matched_line, idx, 1)
+            return HashPos.get_wrapped_id(hash_id)
+
+    return None
+
+
 def apply_hashline_operations(
     original_content: str,
     operations: list,
@@ -1730,15 +1815,35 @@ def apply_hashline_operations(
     # Normalize hashline inputs in operations
     normalized_operations = []
     failed_ops = []
+    # Create a single HashPos instance for preliminary resolution and content hashing
+    hp = HashPos(original_content) if original_content else HashPos("")
     # Loop through each operation to normalize hashline strings
     for i, op in enumerate(operations):
         try:
             normalized_op = op.copy()
             # Normalize start line hash to ensure consistent format
-            normalized_op["start_line_hash"] = normalize_hashline(op["start_line_hash"])
+            try:
+                normalized_op["start_line_hash"] = normalize_hashline(op["start_line_hash"])
+            except (ContentHashError, ValueError):
+                # Preliminary resolution: check if the value matches a unique line
+                resolved = _try_resolve_as_unique_line(hp, op["start_line_hash"])
+                if resolved is not None:
+                    normalized_op["start_line_hash"] = resolved
+                else:
+                    raise
+
             if "end_line_hash" in op:
                 # Normalize end line hash if present
-                normalized_op["end_line_hash"] = normalize_hashline(op["end_line_hash"])
+                try:
+                    normalized_op["end_line_hash"] = normalize_hashline(op["end_line_hash"])
+                except (ContentHashError, ValueError):
+                    # Preliminary resolution: check if the value matches a unique line
+                    resolved = _try_resolve_as_unique_line(hp, op["end_line_hash"])
+                    if resolved is not None:
+                        normalized_op["end_line_hash"] = resolved
+                    else:
+                        raise
+
             normalized_operations.append(normalized_op)
         except Exception as e:
             failed_ops.append({"index": i, "error": str(e), "operation": op})
@@ -1755,7 +1860,7 @@ def apply_hashline_operations(
 
     # Apply hashline to original content once
     # This converts content to hashed lines for line tracking
-    hashed_content = hashline(original_content)
+    hashed_content = hp.format_content()
     hashed_lines = hashed_content.splitlines(keepends=True)
 
     # Resolve all operations to indices first

@@ -111,7 +111,7 @@ async def _safe_gather(*args: Any, **named_awaitables: Any):
     Safely execute multiple awaitables concurrently.
 
     All awaitables must be passed as keyword arguments. Results are returned
-    as a ``GatherResult`` with attribute and key access::
+    as a ``GatherResult`` with attribute and key access:
 
         results = await gather(read_a=task_a, grep_b=task_b)
         print(results.read_a)       # attribute access

@@ -2,6 +2,10 @@ import re
 
 import xxhash
 
+# Delimiter used to wrap public hash IDs
+HASH_DELIMITER = "~"
+UNIQUE_HASH_DELIMITER = "~~"
+
 
 class HashPos:
     # 1024-character Base1024 corpus
@@ -60,131 +64,127 @@ class HashPos:
         "ÂÃÄÇ"
     )
 
-    # We escape every individual character just to be completely safe from regex metacharacters
     _B1024_REGEX_SET = "".join(re.escape(c) for c in B1024)
 
-    # Regex pattern for HashPos format: {3-char-hash}::
-    HASH_PREFIX_RE = re.compile(rf"^([{_B1024_REGEX_SET}]{{3}})::")
-    # Regex for normalization: 3 hash chars optionally followed by '::'
-    NORMALIZE_RE = re.compile(rf"^([{_B1024_REGEX_SET}]{{3}})(?:)?::")
-    # Regex for a raw 3-character fragment
-    FRAGMENT_RE = re.compile(rf"^[{_B1024_REGEX_SET}]{{3}}$")
+    # Regex matches EITHER the exact string '~~' OR a tilde-wrapped 4-character Base1024 hash
+    HASH_PREFIX_RE = re.compile(
+        rf"^({UNIQUE_HASH_DELIMITER}|{HASH_DELIMITER}[{_B1024_REGEX_SET}]{{4}}{HASH_DELIMITER})"
+    )
+    FRAGMENT_RE = re.compile(
+        rf"^({UNIQUE_HASH_DELIMITER}|{HASH_DELIMITER}[{_B1024_REGEX_SET}]{{4}}{HASH_DELIMITER})$"
+    )
 
-    # Looser pattern: any 3 chars with at least one non-ASCII followed by ::
-    _LOOSE_PREFIX_RE = re.compile(r"^(?=.{0,2}[^\x00-\x7f]).{3}::")
+    # Loose prefix for robust stripping: Matches a tilde-wrapped 4-char string containing non-ASCII
+    _LOOSE_PREFIX_RE = re.compile(
+        rf"^{HASH_DELIMITER}(?=.{{0,3}}[^\x00-\x7f]).{{4}}{HASH_DELIMITER}"
+    )
 
     def __init__(self, source_text: str = ""):
         self.lines = source_text.splitlines()
         self.total = len(self.lines)
 
+        self.line_counts = {}
+        for line in self.lines:
+            if line.strip():
+                self.line_counts[line] = self.line_counts.get(line, 0) + 1
+
     def _get_line_hash(self, text: str) -> int:
-        """
-        Creates a 20-bit digest of the current line's text.
-        """
         return xxhash.xxh3_64_intdigest(text.encode("utf-8")) & 0xFFFFF
 
-    def _get_adjacent_hash(self, line_idx: int) -> int:
-        """
-        Creates a 10-bit digest of specific surrounding lines at offsets
-        -7, -5, -3, -2, +2, +3, +5, +7 to provide local context.
-        """
-        offsets = [-7, -5, -3, -2, 2, 3, 5, 7]
-        adjacent_lines = []
-
-        for offset in offsets:
-            target_idx = line_idx + offset
-            if 0 <= target_idx < self.total:
-                adjacent_lines.append(self.lines[target_idx])
-
-        context = "\n".join(adjacent_lines)
-        return xxhash.xxh3_64_intdigest(context.encode("utf-8")) & 0x3FF
-
-    def generate_private_id(self, text: str) -> str:
-        """
-        Generates a fast 12-bit (3 hex chars) hash based purely on the line text.
-        """
-        bits = xxhash.xxh3_64_intdigest(text.encode("utf-8")) & 0xFFF
-        return f"{bits:03x}"
-
-    def generate_public_id(self, text: str, line_idx: int) -> str:
-        """
-        Generates a 3-character Base1024 ID.
-        Layout: [20-bit Line Hash] [10-bit Adjacent Hash] = 30 bits total.
-        Each Base1024 character holds 10 bits.
-        """
+    def generate_public_id(self, text: str, line_idx: int, occurrence: int) -> str:
         line_hash = self._get_line_hash(text)
-        adj_hash = self._get_adjacent_hash(line_idx)
 
-        # Pack the 30-bit integer
-        packed = (line_hash << 10) | adj_hash
+        # Explicit modulo for bounds wrapping
+        idx_bits = line_idx % 16384
+        occ_bits = occurrence % 64
+
+        packed = (line_hash << 20) | (idx_bits << 6) | occ_bits
 
         res = ""
-        for _ in range(3):
-            # Extract 10 bits at a time using modulo 1024
+        for _ in range(4):
             res += self.B1024[packed % 1024]
             packed //= 1024
         return res
 
-    def unpack_public_id(self, public_id: str) -> tuple[int, int]:
-        """
-        Reverses the Public ID back into its (Line Hash, Adjacent Hash) values.
-        """
+    def unpack_public_id(self, public_id: str) -> tuple[int, int, int]:
         packed = 0
         for i, char in enumerate(public_id):
-            # Each character restores 10 bits
             packed |= self.B1024.index(char) << (10 * i)
 
-        # Extract bits based on layout
-        line_hash = (packed >> 10) & 0xFFFFF
-        adj_hash = packed & 0x3FF
+        occ_bits = packed & 0x3F
+        idx_bits = (packed >> 6) & 0x3FFF
+        line_hash = (packed >> 20) & 0xFFFFF
 
-        return line_hash, adj_hash
+        return line_hash, idx_bits, occ_bits
 
-    def format_content(self, use_private_ids: bool = False, start_line: int = 1) -> str:
+    def format_content(self, start_line: int = 1) -> str:
         formatted_lines = []
+        seen = {}
+
         for i, line in enumerate(self.lines):
-            prefix = (
-                self.generate_private_id(line)
-                if use_private_ids
-                else self.generate_public_id(line, i)
-            )
-            if line.strip():
-                formatted_lines.append(f"{prefix}::{line}")
-            else:
+            if not line.strip():
                 formatted_lines.append(f"{line}")
+                continue
+
+            count = self.line_counts[line]
+
+            if count == 1:
+                # Flush directly against code using the unique token
+                formatted_lines.append(f"{UNIQUE_HASH_DELIMITER}{line}")
+            else:
+                occ = seen.get(line, 0) + 1
+                seen[line] = occ
+                prefix = self.generate_public_id(line, i, occ)
+                # Wrap the generated Base1024 hash in tildes
+                formatted_lines.append(f"{self.get_wrapped_id(prefix)}{line}")
 
         return "\n".join(formatted_lines)
 
     def resolve_to_lines(self, public_id: str, start_line: int = 1) -> list[int]:
-        target_line_hash, target_adj_hash = self.unpack_public_id(public_id)
-        matches = []
+        if public_id == UNIQUE_HASH_DELIMITER:
+            raise ValueError(
+                f"Cannot spatially resolve the unique '{UNIQUE_HASH_DELIMITER}' identifier without line text."
+            )
 
-        # 1. Primary Filter: Find all lines whose 20-bit line content hash matches
+        # Strip the surrounding tildes to unpack the core 4 characters
+        clean_id = public_id.strip(HASH_DELIMITER)
+        if len(clean_id) != 4:
+            raise ValueError(f"Invalid public ID string for unpacking: {public_id}")
+
+        target_line_hash, target_idx, target_occ = self.unpack_public_id(clean_id)
+
+        matches = []
         for i, line in enumerate(self.lines):
             if self._get_line_hash(line) == target_line_hash:
-                matches.append(i)
+                matches.append((i, line))
 
         if not matches:
             return []
 
-        # If perfectly unique (highly likely given 20 bits of line entropy), return immediately
         if len(matches) == 1:
-            return matches
+            return [matches[0][0]]
 
-        # 2. Tie-Breaking Heuristic:
-        # If multiple identical lines exist, score them based on adjacency match.
-        def score_match(idx: int) -> int:
-            # Adjacency match: 0 means exact match, 1 means mismatch (we want lower scores)
-            return 0 if self._get_adjacent_hash(idx) == target_adj_hash else 1
+        current_seen = {}
+        scored_matches = []
 
-        matches.sort(key=score_match)
+        for i, line in matches:
+            current_seen[line] = current_seen.get(line, 0) + 1
+            current_occ = current_seen[line]
 
-        return matches
+            # Apply identical modulo to current spatial data before comparing
+            current_idx_mod = i % 16384
+            current_occ_mod = current_occ % 64
+
+            # Cartesian distance squared
+            distance_sq = ((current_idx_mod - target_idx) ** 2) + (
+                (current_occ_mod - target_occ) ** 2
+            )
+            scored_matches.append((distance_sq, i))
+
+        scored_matches.sort(key=lambda x: x[0])
+        return [m[1] for m in scored_matches]
 
     def resolve_range(self, start_id: str, end_id: str) -> tuple[int, int]:
-        """
-        Resolves a block range from two Public IDs.
-        """
         starts = self.resolve_to_lines(start_id)
         ends = self.resolve_to_lines(end_id)
 
@@ -197,15 +197,16 @@ class HashPos:
                     return s, e
 
         raise ValueError(
-            f"Found matches for {start_id} and {end_id}, but no logically ordered range or unique matches."
+            f"Found matches for {start_id} and {end_id}, but no logically ordered range."
         )
 
     @staticmethod
+    def get_wrapped_id(public_id: str) -> str:
+        """Wrap a public ID with the HashPos delimiters for use in hashline content."""
+        return f"{HASH_DELIMITER}{public_id}{HASH_DELIMITER}"
+
+    @staticmethod
     def strip_prefix(text: str) -> str:
-        """
-        Remove HashPos prefixes from the start of every line.
-        Also strips any 3-char sequence with at least one non-ASCII char followed by ::.
-        """
         lines = text.splitlines(keepends=True)
         result_lines = []
         for line in lines:
@@ -213,35 +214,25 @@ class HashPos:
             if stripped_line == line:
                 stripped_line = HashPos._LOOSE_PREFIX_RE.sub("", line, count=1)
             result_lines.append(stripped_line)
-
         return "".join(result_lines)
 
     @staticmethod
     def extract_prefix(line: str) -> str:
-        """
-        Extract the hash prefix from a line if it has a HashPos prefix.
-        """
         match = HashPos.HASH_PREFIX_RE.match(line)
         if match:
             return match.group(1)
         return ""
 
     @staticmethod
-    def normalize(hashpos_str: str) -> str:
-        """
-        Normalize a HashPos string to the 3-character hash fragment.
-        """
+    def normalize(hashpos_str: str, throw=True) -> str:
         if hashpos_str is None:
             raise ValueError("HashPos string cannot be None")
 
-        if HashPos.FRAGMENT_RE.match(hashpos_str):
-            return hashpos_str
-
-        match = HashPos.NORMALIZE_RE.match(hashpos_str)
+        match = HashPos.HASH_PREFIX_RE.match(hashpos_str)
         if match:
             return match.group(1)
 
-        raise ValueError(
-            f"Invalid HashPos format '{hashpos_str}'. "
-            r"Expected a 3-character string from the Base1024 character set."
-        )
+        if throw:
+            raise ValueError(f"Invalid HashPos format '{hashpos_str}'.")
+        else:
+            return False

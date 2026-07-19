@@ -575,7 +575,7 @@ class AgentService:
 
         Args:
 
-        .. note::
+        .. note:
 
             **Ordering dependency with mark_sub_agent_finished()**
 
