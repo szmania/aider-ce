@@ -318,25 +318,43 @@ class AgentRegion:
         else:
             matches_for_display = matches
 
-        line_nums = [str(i + 1) for i in sorted(matches_for_display)]
-        display = ", ".join(line_nums[:10])
-        if len(line_nums) > 10:
-            display += f", ... ({len(line_nums)} total)"
+        # Build detailed match display with line content
+        max_preview = 10
+        sorted_matches = sorted(matches_for_display)
+        all_line_nums = [str(i + 1) for i in sorted_matches]
+        line_nums_display = ", ".join(all_line_nums)
+        if len(all_line_nums) > 50:
+            line_nums_display = (
+                ", ".join(all_line_nums[:50]) + f", ... ({len(all_line_nums)} total)"
+            )
+
+        # Only show content previews for the first 10 matches
+        match_lines = []
+        for i in sorted_matches[:max_preview]:
+            line_content = lines[i]
+            if len(line_content) > 120:
+                line_content = line_content[:117] + "..."
+            match_lines.append(f"  @L{i + 1}:    {line_content}")
+        match_details = "\n".join(match_lines)
+        if len(sorted_matches) > max_preview:
+            match_details += f"\n  ... and {len(sorted_matches) - max_preview} more match(es)"
 
         if hint is not None:
             raise ValueError(
                 f"{boundary.capitalize()} pattern '{pattern}' for region "
-                f"'{name}' has {len(matches)} matches; @L{hint + 1} hint ties "
-                f"between {len(matches_for_display)} equally-close locations "
-                f"(lines {display}). Use a more specific pattern."
+                f"'{name}' has {len(matches)} matches (lines {line_nums_display}); "
+                f"@L{hint + 1} hint ties between "
+                f"{len(matches_for_display)} equally-close locations:\n"
+                f"{match_details}\n"
+                f"Use a more specific pattern."
             )
 
         raise ValueError(
             f"{boundary.capitalize()} pattern '{pattern}' for region "
-            f"'{name}' matches {len(matches)} locations "
-            f"(lines {display}). "
+            f"'{name}' matches {len(matches)} locations (lines {line_nums_display}):\n"
+            f"{match_details}\n"
             f"Use a more specific pattern or append ' @L<num>' to "
-            f"disambiguate (e.g., '{pattern} @L{line_nums[0]}')."
+            f"disambiguate (e.g., '{pattern} @L{all_line_nums[0]}')."
         )
 
     @staticmethod
