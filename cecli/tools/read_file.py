@@ -34,7 +34,9 @@ class Tool(BaseTool):
                 "file boundaries (@000, 000@), or exact line numbers (@L10). "
                 "Contextual end markers (@C{num}, @P{num}, @N{num}) expand symmetrically, previously, or next "
                 "around a single unique range_start match."
-                " Use line hints (e.g., 'my_func @L150') to disambiguate text matches. "
+                " Use line hints (e.g., 'my_func @L150', '@A{{def foo}}', '@B{{return x}}') to disambiguate. "
+                "@A{{regex}} keeps only the closest match **after** the regex hit; "
+                "@B{{regex}} keeps only the closest match **before** the regex hit. "
                 ""
                 "File lines are prefixed with virtual, deterministic identifiers generated on-the-fly: "
                 "Because identifiers track global occurrences, "
@@ -182,8 +184,6 @@ class Tool(BaseTool):
 
                 start_hint = None
                 end_hint = None
-                range_start, start_hint = cls._extract_l_hint(range_start)
-                range_end, end_hint = cls._extract_l_hint(range_end)
 
                 # 2. Resolve path
                 abs_path, rel_path = resolve_paths(coder, file_path)
@@ -220,6 +220,10 @@ class Tool(BaseTool):
                 lines = content.splitlines()
                 num_lines = len(lines)
 
+                # Resolve hints after file content available (@A/@B regex hints need lines)
+                range_start, start_hint, start_hint_type = cls._extract_l_hint(range_start, lines)
+                range_end, end_hint, end_hint_type = cls._extract_l_hint(range_end, lines)
+
                 if num_lines == 0:
                     new_context_details.append(
                         {
@@ -250,6 +254,27 @@ class Tool(BaseTool):
                     # Step 2: Find start and end indices
                     start_indices = cls._find_start_indices(lines, range_start, rt, num_lines)
                     end_indices = cls._find_end_indices(lines, range_end, rt, num_lines)
+
+                    # Step 2a: Apply @A/@B directional filtering — keep only closest match in direction
+                    if start_hint_type == "A" and start_hint is not None:
+                        after = [i for i in start_indices if i > start_hint]
+                        start_indices = [min(after)] if after else []
+                        start_hint = None
+                    elif start_hint_type == "B" and start_hint is not None:
+                        before = [i for i in start_indices if i < start_hint]
+                        start_indices = [max(before)] if before else []
+                        start_hint = None
+
+                    if end_hint_type == "A" and end_hint is not None:
+                        after = [i for i in end_indices if i > end_hint]
+                        end_indices = [min(after)] if after else []
+                        end_hint = None
+                    elif end_hint_type == "B" and end_hint is not None:
+                        before = [i for i in end_indices if i < end_hint]
+                        end_indices = [max(before)] if before else []
+                        end_hint = None
+                        end_indices = [i for i in end_indices if i < end_hint]
+                        end_hint = None
 
                     # Step 3: Apply contextual marker (@C/@P/@N)
                     if rt["end_is_contextual"]:
@@ -1085,21 +1110,56 @@ class Tool(BaseTool):
         }
 
     @classmethod
-    def _extract_l_hint(cls, pattern):
-        """Extract @L line hint suffix from a pattern string.
+    def _extract_l_hint(cls, pattern, lines=None):
+        """Extract hint suffix from a pattern string.
 
-        Supports patterns like 'my_function @L1506' where the @L suffix
-        provides a proximity hint for disambiguation.
+        Supports @L<num> (direct line number), @A{{regex}} (filter to matches AFTER
+        the first regex match), and @B{{regex}} (filter to matches BEFORE the last
+        regex match) hints.
 
-        Returns (stripped_pattern, line_hint) where line_hint is a 0-based
-        line number or None if no @L suffix is found.
+        Returns (stripped_pattern, hint_value, hint_type) where:
+          - hint_value is a 0-based line number or None
+          - hint_type is 'L', 'A', 'B', or None
         """
         import re
 
+        # Try @L hint (direct line number - always resolvable)
         m = re.search(r"[ \t]+@L([0-9]+)[ \t]*$", pattern)
         if m:
-            return pattern[: m.start()], int(m.group(1)) - 1
-        return pattern, None
+            return pattern[: m.start()], int(m.group(1)) - 1, "L"
+
+        # Try @A{{regex}} hint (first regex match — filter to lines AFTER)
+        m = re.search(r"[ \t]+@A\{\{(.+?)\}\}[ \t]*$", pattern)
+        if m:
+            stripped = pattern[: m.start()]
+            if lines is not None:
+                regex_str = m.group(1)
+                try:
+                    for i, line in enumerate(lines):
+                        if re.search(regex_str, line):
+                            return stripped, i, "A"
+                except re.error:
+                    pass
+            return stripped, None, None
+
+        # Try @B{{regex}} hint (last regex match — filter to lines BEFORE)
+        m = re.search(r"[ \t]+@B\{\{(.+?)\}\}[ \t]*$", pattern)
+        if m:
+            stripped = pattern[: m.start()]
+            if lines is not None:
+                regex_str = m.group(1)
+                try:
+                    last_match = None
+                    for i, line in enumerate(lines):
+                        if re.search(regex_str, line):
+                            last_match = i
+                    if last_match is not None:
+                        return stripped, last_match, "B"
+                except re.error:
+                    pass
+            return stripped, None, None
+
+        return pattern, None, None
 
     @classmethod
     def _search_in_lines(cls, lines, pattern, return_last_line=False):

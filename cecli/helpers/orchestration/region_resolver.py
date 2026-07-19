@@ -183,10 +183,41 @@ class AgentRegion:
 
         # Always strip @L hints from patterns — they are metadata, not literal text.
         # Explicit hints (start_line_hint / end_line_hint) override any @L in patterns.
-        start_pattern, extracted_start = self._extract_l_hint(start_pattern)
-        end_pattern, extracted_end = self._extract_l_hint(end_pattern)
-        start_hint = (explicit_start - 1) if explicit_start is not None else extracted_start
-        end_hint = (explicit_end - 1) if explicit_end is not None else extracted_end
+        start_pattern, extracted_start, start_hint_type = self._extract_l_hint(start_pattern, lines)
+        end_pattern, extracted_end, end_hint_type = self._extract_l_hint(end_pattern, lines)
+
+        # Handle explicit hints (start_line_hint / end_line_hint)
+        # Integers are treated as @L (1-based line numbers).
+        # Strings support the full @L, @A, @B syntax (same as ReadFile).
+        if explicit_start is not None:
+            if isinstance(explicit_start, str):
+                # String hint — parse through _extract_l_hint
+                _, start_hint, start_hint_type = self._extract_l_hint(explicit_start, lines)
+                if start_hint is None:
+                    raise ValueError(
+                        f"start_line_hint '{explicit_start}' for region "
+                        f"'{name}' could not be resolved"
+                    )
+            else:
+                # Integer hint — treat as @L (1-based, converted to 0-based)
+                start_hint = explicit_start - 1
+                start_hint_type = "L"
+        else:
+            start_hint = extracted_start
+
+        if explicit_end is not None:
+            if isinstance(explicit_end, str):
+                _, end_hint, end_hint_type = self._extract_l_hint(explicit_end, lines)
+                if end_hint is None:
+                    raise ValueError(
+                        f"end_line_hint '{explicit_end}' for region "
+                        f"'{name}' could not be resolved"
+                    )
+            else:
+                end_hint = explicit_end - 1
+                end_hint_type = "L"
+        else:
+            end_hint = extracted_end
 
         # Strip hashline prefixes from text patterns — the LLM may have copied
         # content-ID-prefixed lines from a ReadFile response (e.g. ~XYZ12::text).
@@ -197,8 +228,10 @@ class AgentRegion:
             end_pattern = HashPos.strip_prefix(end_pattern)
 
         # Validate uniqueness for text-based patterns (not content IDs or special markers).
-        self._validate_pattern_uniqueness(start_pattern, start_hint, "start", name, lines)
-        self._validate_pattern_uniqueness(end_pattern, end_hint, "end", name, lines)
+        self._validate_pattern_uniqueness(
+            start_pattern, start_hint, "start", name, lines, start_hint_type
+        )
+        self._validate_pattern_uniqueness(end_pattern, end_hint, "end", name, lines, end_hint_type)
 
         start_id, end_id = resolve_content_to_hashline_ids(content, start_pattern, end_pattern)
 
@@ -261,18 +294,58 @@ class AgentRegion:
         return indices
 
     @staticmethod
-    def _extract_l_hint(pattern: str) -> tuple[str, int | None]:
-        """Extract an @L line hint suffix from a pattern.
+    def _extract_l_hint(
+        pattern: str, lines: list[str] | None = None
+    ) -> tuple[str, int | None, str | None]:
+        """Extract a hint suffix from a pattern string.
 
-        Returns (stripped_pattern, 0_based_line_number_or_None).
+        Supports @L<num> (direct line number), @A{{regex}} (filter to matches AFTER
+        the first regex match), and @B{{regex}} (filter to matches BEFORE the last
+        regex match) hints.
+
+        Returns (stripped_pattern, hint_value, hint_type) where:
+          - hint_value is a 0-based line number or None
+          - hint_type is 'L', 'A', 'B', or None
         """
-
         import re
 
+        # Try @L hint (direct line number - always resolvable)
         m = re.search(r"[ \t]+@L([0-9]+)[ \t]*$", pattern)
         if m:
-            return pattern[: m.start()], int(m.group(1)) - 1
-        return pattern, None
+            return pattern[: m.start()], int(m.group(1)) - 1, "L"
+
+        # Try @A{{regex}} hint (first regex match — filter to lines AFTER)
+        m = re.search(r"[ \t]+@A\{\{(.+?)\}\}[ \t]*$", pattern)
+        if m:
+            stripped = pattern[: m.start()]
+            if lines is not None:
+                regex_str = m.group(1)
+                try:
+                    for i, line in enumerate(lines):
+                        if re.search(regex_str, line):
+                            return stripped, i, "A"
+                except re.error:
+                    pass
+            return stripped, None, None
+
+        # Try @B{{regex}} hint (last regex match — filter to lines BEFORE)
+        m = re.search(r"[ \t]+@B\{\{(.+?)\}\}[ \t]*$", pattern)
+        if m:
+            stripped = pattern[: m.start()]
+            if lines is not None:
+                regex_str = m.group(1)
+                try:
+                    last_match = None
+                    for i, line in enumerate(lines):
+                        if re.search(regex_str, line):
+                            last_match = i
+                    if last_match is not None:
+                        return stripped, last_match, "B"
+                except re.error:
+                    pass
+            return stripped, None, None
+
+        return pattern, None, None
 
     @staticmethod
     def _narrow_by_proximity(indices: list[int], target: int, max_results: int = 5) -> list[int]:
@@ -291,6 +364,7 @@ class AgentRegion:
         boundary: str,
         name: str,
         lines: list[str],
+        hint_type: str | None = None,
     ) -> None:
         """Raise ValueError if *pattern* matches multiple locations.
 
@@ -304,11 +378,20 @@ class AgentRegion:
             return
 
         matches = self._search_in_lines(lines, pattern)
+
+        # Apply @A/@B directional filtering — keep only closest match in direction
+        if hint_type == "A" and hint is not None:
+            after = [m for m in matches if m > hint]
+            matches = [min(after)] if after else []
+        elif hint_type == "B" and hint is not None:
+            before = [m for m in matches if m < hint]
+            matches = [max(before)] if before else []
+
         if len(matches) <= 1:
             return
 
-        # Try @L hint narrowing — find the unique closest match
-        if hint is not None:
+        # Try proximity narrowing — find the unique closest match (only for @L hints)
+        if hint is not None and hint_type == "L":
             best = min(matches, key=lambda i: abs(i - hint))
             best_dist = abs(best - hint)
             conflicts = [i for i in matches if i != best and abs(i - hint) == best_dist]
