@@ -2149,6 +2149,8 @@ class Coder(metaclass=UsageMeta):
                 self.io.tool_output(
                     "...context is already at minimum size, cannot compact further."
                 )
+                self.io.update_spinner(self.io.last_spinner_text)
+                return False
 
             self.io.update_spinner(self.io.last_spinner_text)
 

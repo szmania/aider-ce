@@ -263,6 +263,12 @@ The target maximum number of tokens for the generated summary. (default: 4096)
 Default: 4096  
 Environment variable: `CECLI_CONTEXT_COMPACTION_SUMMARY_TOKENS`  
 
+### `--max-compaction-retries VALUE`
+Maximum number of automatic compaction and retry attempts when a context window error occurs (default: 3, range: 1-10).  
+In agent mode, this is capped at 2 retries for safety.  
+Default: 3  
+Environment variable: `CECLI_MAX_COMPACTION_RETRIES`  
+
 ## Cache settings:
 
 ### `--cache-prompts`
