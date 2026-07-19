@@ -380,7 +380,7 @@ def _naive_escape_newlines(code: str, NL: str, BSN: str) -> str:
                 idx = len(code)
                 break
             inner = code[idx:end]
-            inner = inner.replace(NL, BSN)
+            inner = json.dumps(inner, ensure_ascii=False)[1:-1]
             result.append(inner)
             result.append(quote)
             idx = end + len(quote)
@@ -433,7 +433,7 @@ def _process_fstring_body(code: str, idx: int, quote: str, NL: str, BSN: str, re
             if brace_depth == 0:
                 # Flush the string-literal portion up to {
                 inner = code[literal_start:pos]
-                inner = inner.replace(NL, BSN)
+                inner = json.dumps(inner, ensure_ascii=False)[1:-1]
                 result.append(inner)
                 result.append(c)
                 literal_start = pos + 1
@@ -471,7 +471,7 @@ def _process_fstring_body(code: str, idx: int, quote: str, NL: str, BSN: str, re
     # Flush the final string-literal portion
     if literal_start < pos:
         inner = code[literal_start:pos]
-        inner = inner.replace(NL, BSN)
+        inner = json.dumps(inner, ensure_ascii=False)[1:-1]
         result.append(inner)
 
     if pos < len(code):
@@ -514,7 +514,7 @@ def _fstring_aware_escape_newlines(code: str, NL: str, BSN: str) -> str:
                     idx = len(code)
                     break
                 inner = code[idx:end]
-                inner = inner.replace(NL, BSN)
+                inner = json.dumps(inner, ensure_ascii=False)[1:-1]
                 result.append(inner)
                 result.append(quote)
                 idx = end + len(quote)
