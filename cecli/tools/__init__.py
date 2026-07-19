@@ -4,7 +4,6 @@
 from . import (
     _yield,
     command,
-    command_interactive,
     delegate,
     edit_file,
     explore_code,
@@ -27,7 +26,6 @@ from . import (
 # List of all available tool modules for dynamic discovery
 TOOL_MODULES = [
     command,
-    command_interactive,
     delegate,
     edit_file,
     explore_code,

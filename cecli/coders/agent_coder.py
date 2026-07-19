@@ -62,7 +62,6 @@ class AgentCoder(Coder):
         self.max_tool_vector_history = 20
         self.read_tools = {
             "command",
-            "commandinteractive",
             "explorecode",
             "ls",
             "readfile",
@@ -72,7 +71,6 @@ class AgentCoder(Coder):
         }
         self.write_tools = {
             "command",
-            "commandinteractive",
             "editfile",
             "undochange",
         }
