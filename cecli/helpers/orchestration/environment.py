@@ -31,6 +31,7 @@ from cecli.helpers.orchestration.safe_methods import (
     _safe_vars,
     _SafeJson,
     _SafeModuleProxy,
+    _SafePathlib,
     _strip_allowed_imports,
 )
 from cecli.helpers.orchestration.security import (
@@ -243,6 +244,7 @@ class AgentExecutionEnv:
             "collections": _SafeModuleProxy(collections),
             "datetime": _SafeModuleProxy(datetime),
             "traceback": _SafeModuleProxy(traceback),
+            "pathlib": _SafePathlib,
         }
 
         def _allowed_methods():
@@ -512,6 +514,7 @@ Pre-imported, read-only standard library modules:
 | `itertools` | Combinatorics: `itertools.chain(a, b)`, `itertools.product(...)` |
 | `collections` | Container helpers: `collections.Counter(...)`, `collections.defaultdict(...)` |
 | `datetime` | Date/time: `datetime.datetime.now()`, `datetime.timedelta(...)` |
+| `pathlib` | Safe filesystem paths: `pathlib.Path("/tmp/foo")`, `.parent`, `.name`, `/` joining. I/O methods (``read_text``, ``write_text``, etc.) blocked |
 | `traceback` | Traceback formatting: `traceback.format_exc()`, `traceback.format_tb(...)` |
 
 ### Usage

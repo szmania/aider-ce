@@ -9,9 +9,121 @@ from __future__ import annotations
 
 import asyncio
 import json
+import pathlib
 from typing import Any
 
 # ---------------------------------------------------------------------------
+# Safe Path wrapper
+# ---------------------------------------------------------------------------
+
+
+class _SafePath:
+    """Wrapper around pathlib.Path that blocks dangerous I/O methods.
+
+    The following methods are blocked and raise SecurityError:
+    - ``read_text()``, ``read_bytes()`` — file reads
+    - ``write_text()``, ``write_bytes()`` — file writes
+    - ``open()`` — file handle access
+
+    All other Path properties and methods (``.parent``, ``/`` joining,
+    ``.exists()``, ``.is_dir()``, ``.glob()``, etc.) work normally.
+    Path-like return values are automatically wrapped to maintain safety.
+    """
+
+    _BLOCKED_METHODS: frozenset[str] = frozenset(
+        {"read_text", "read_bytes", "write_text", "write_bytes", "open"}
+    )
+
+    def __init__(self, *args, **kwargs):
+        import pathlib as _pathlib
+
+        object.__setattr__(self, "_path", _pathlib.Path(*args, **kwargs))
+
+    def __getattr__(self, name: str):
+        if name.startswith("_"):
+            raise AttributeError(f"Cannot access private attribute {name!r} on Path wrapper")
+        if name in self._BLOCKED_METHODS:
+            from cecli.helpers.orchestration.security import SecurityError
+
+            raise SecurityError(
+                f"Cannot call '{name}' on Path objects in the sandbox. "
+                f"Filesystem I/O is restricted to the Command tool."
+            )
+        import pathlib as _pathlib
+
+        attr = getattr(self._path, name)
+        if callable(attr):
+
+            def _wrapped(*a, **kw):
+                result = attr(*a, **kw)
+                if isinstance(result, _pathlib.PurePath):
+                    return _SafePath._from_path(result)
+                return result
+
+            return _wrapped
+        if isinstance(attr, _pathlib.PurePath):
+            return _SafePath._from_path(attr)
+        return attr
+
+    def __truediv__(self, other):
+        return _SafePath._from_path(self._path / other)
+
+    def __rtruediv__(self, other):
+        import pathlib as _pathlib
+
+        return _SafePath._from_path(_pathlib.Path(other) / self._path)
+
+    def __repr__(self):
+        return repr(self._path)
+
+    def __str__(self):
+        return str(self._path)
+
+    def __fspath__(self):
+        import os
+
+        return os.fspath(self._path)
+
+    def __eq__(self, other):
+        if isinstance(other, _SafePath):
+            return self._path == other._path
+        return self._path == other
+
+    def __hash__(self):
+        return hash(self._path)
+
+    @staticmethod
+    def _from_path(p):
+        sp = object.__new__(_SafePath)
+        object.__setattr__(sp, "_path", p)
+        return sp
+
+
+class _SafePathlib:
+    """Drop-in ``pathlib`` module proxy with Path I/O methods blocked.
+
+    Usage in sandbox code::
+
+        p = pathlib.Path("/tmp/foo")
+        parent = p.parent          # works, returns wrapped Path
+        name = p.name              # works
+        content = p.read_text()    # raises SecurityError
+
+    ``pathlib.Path()`` returns ``_SafePath`` wrappers. Pure path classes
+    (``PurePath``, ``PurePosixPath``, ``PureWindowsPath``) are safe to pass
+    through directly — they have no I/O methods. Concrete ``PosixPath`` and
+    ``WindowsPath`` are intentionally excluded; use ``Path()`` instead.
+    """
+
+    PurePath = pathlib.PurePath
+    PurePosixPath = pathlib.PurePosixPath
+    PureWindowsPath = pathlib.PureWindowsPath
+
+    @staticmethod
+    def Path(*args, **kwargs):
+        return _SafePath(*args, **kwargs)
+
+
 # Safe primitives exposed to the sandbox
 # ---------------------------------------------------------------------------
 
@@ -469,6 +581,7 @@ _PREIMPORTED_MODULES: frozenset[str] = frozenset(
         "datetime",
         "traceback",
         "json",
+        "pathlib",
     }
 )
 
