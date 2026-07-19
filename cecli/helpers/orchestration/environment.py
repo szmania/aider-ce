@@ -410,9 +410,14 @@ class AgentExecutionEnv:
             code = f"Syntax Error in orchestration code: {e}"
             return {"results": code, "state_variables": self._state_snapshot()}
 
-        tree = SecurityFilter().visit(tree)
-        tree = LoopYieldInjector().visit(tree)
-        ast.fix_missing_locations(tree)
+        try:
+            tree = SecurityFilter().visit(tree)
+            tree = LoopYieldInjector().visit(tree)
+            ast.fix_missing_locations(tree)
+        except SecurityError as e:
+            return _build_result(f"Security Error: {e}")
+        except Exception as e:
+            return _build_result(f"AST Transform Error: {e}")
 
         wrapper_func = ast.AsyncFunctionDef(
             name="__agent_async_runner",

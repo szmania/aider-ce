@@ -90,18 +90,26 @@ class SecurityFilter(ast.NodeTransformer):
     # ------------------------------------------------------------------
 
     def visit_Import(self, node: ast.Import) -> ast.Expr:
-        return self._make_raise_stmt("Imports are disabled in the agent orchestration environment.")
+        return self._make_raise_stmt(
+            f"Security filter error at line {node.lineno}: "
+            "Imports are disabled in the agent orchestration environment."
+        )
 
     def visit_ImportFrom(self, node: ast.ImportFrom) -> ast.Expr:
-        return self._make_raise_stmt("Imports are disabled in the agent orchestration environment.")
+        return self._make_raise_stmt(
+            f"Security filter error at line {node.lineno}: "
+            "Imports are disabled in the agent orchestration environment."
+        )
 
     def visit_Global(self, node: ast.Global) -> ast.Expr:
         return self._make_raise_stmt(
+            f"Security filter error at line {node.lineno}: "
             "The 'global' statement is disabled in the orchestration environment."
         )
 
     def visit_Nonlocal(self, node: ast.Nonlocal) -> ast.Expr:
         return self._make_raise_stmt(
+            f"Security filter error at line {node.lineno}: "
             "The 'nonlocal' statement is disabled in the orchestration environment."
         )
 
@@ -114,7 +122,15 @@ class SecurityFilter(ast.NodeTransformer):
             if node.attr in self._SAFE_DUNDER:
                 return self.generic_visit(node)
 
+            if isinstance(node.ctx, (ast.Store, ast.Del)):
+                verb = "assign to" if isinstance(node.ctx, ast.Store) else "delete"
+                raise SecurityError(
+                    f"Security filter error at line {node.lineno}: "
+                    f"cannot {verb} private attribute '{node.attr}'"
+                )
+
             return self._make_raise_expr(
+                f"Security filter error at line {node.lineno}: "
                 f"Access to private/dunder attribute '{node.attr}' is forbidden."
             )
 
@@ -122,7 +138,10 @@ class SecurityFilter(ast.NodeTransformer):
 
     def visit_Call(self, node: ast.Call):
         if isinstance(node.func, ast.Name) and node.func.id in self._DANGEROUS_BUILTINS:
-            return self._make_raise_expr(f"Calling '{node.func.id}' is forbidden.")
+            return self._make_raise_expr(
+                f"Security filter error at line {node.lineno}: "
+                f"Calling '{node.func.id}' is forbidden."
+            )
 
         return self.generic_visit(node)
 
