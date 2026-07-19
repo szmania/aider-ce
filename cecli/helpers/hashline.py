@@ -279,6 +279,7 @@ def resolve_content_to_hashline_ids(
     original_content: str,
     start_value: str,
     end_value: str = None,
+    start_hint_line: int | None = None,
 ) -> tuple:
     """
     Resolve potential line content values to proper hashline content IDs.
@@ -299,6 +300,8 @@ def resolve_content_to_hashline_ids(
         original_content: Original file content (without hash prefixes)
         start_value: The start_line value from the edit
         end_value: The end_line value from the edit (optional)
+        start_hint_line: 0-based line number hint used to disambiguate
+                        non-unique start_value matches (optional)
 
     Returns:
         tuple: (resolved_start, resolved_end) with hash IDs or original values
@@ -361,6 +364,13 @@ def resolve_content_to_hashline_ids(
             if len(containing_indices) == 1:
                 resolved_start_idx = containing_indices[0]
                 resolved_start = _resolve_to_hash_id(lines, resolved_start_idx, hp)
+            elif len(containing_indices) > 1 and start_hint_line is not None:
+                # Multiple matches - pick closest to hint line
+                resolved_start_idx = min(
+                    containing_indices,
+                    key=lambda idx: abs(idx - start_hint_line),
+                )
+                resolved_start = _resolve_to_hash_id(lines, resolved_start_idx, hp)
     elif start_value is not None and _looks_like_content_id(start_value):
         # Already a content ID - try to resolve it to find the line position
         # for proximity matching with end_value
@@ -378,6 +388,13 @@ def resolve_content_to_hashline_ids(
                 containing_indices = _find_substring_matches(lines, content)
                 if len(containing_indices) == 1:
                     resolved_start_idx = containing_indices[0]
+                    resolved_start = _resolve_to_hash_id(lines, resolved_start_idx, hp)
+                elif len(containing_indices) > 1 and start_hint_line is not None:
+                    # Multiple matches - pick closest to hint line
+                    resolved_start_idx = min(
+                        containing_indices,
+                        key=lambda idx: abs(idx - start_hint_line),
+                    )
                     resolved_start = _resolve_to_hash_id(lines, resolved_start_idx, hp)
 
     # Resolve end_value based on proximity to start position

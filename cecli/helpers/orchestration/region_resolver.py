@@ -233,7 +233,12 @@ class AgentRegion:
         )
         self._validate_pattern_uniqueness(end_pattern, end_hint, "end", name, lines, end_hint_type)
 
-        start_id, end_id = resolve_content_to_hashline_ids(content, start_pattern, end_pattern)
+        start_id, end_id = resolve_content_to_hashline_ids(
+            content,
+            start_pattern,
+            end_pattern,
+            start_hint_line=start_hint if start_hint_type == "L" else None,
+        )
 
         # Resolve line numbers from content IDs
         def _line_from_id(content_id: str, default_if_not_found: int) -> int:
