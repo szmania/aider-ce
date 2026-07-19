@@ -1,9 +1,11 @@
 from cecli.helpers.hashline import (
     HASH_DELIMITER,
+    HASHLINE_PREFIX_RE,
     UNIQUE_HASH_DELIMITER,
     ContentHashError,
     apply_hashline_operations,
     get_hashline_diff,
+    hashline,
     normalize_hashline,
     resolve_content_to_hashline_ids,
     strip_hashline,
@@ -231,6 +233,62 @@ class Tool(BaseTool):
                             if not original_content or not original_content.strip():
                                 edit_start_line = "@000"
                                 edit_end_line = "@000"
+
+                            # 2.5 Resolve @L{num} notation to line content or hash ID
+                            if (
+                                isinstance(edit_start_line, str)
+                                and edit_start_line.startswith("@L")
+                                and len(edit_start_line) > 2
+                                and edit_start_line[2:].isdigit()
+                            ):
+                                if original_content and original_content.strip():
+                                    source_lines = original_content.splitlines()
+                                    line_num = (
+                                        int(edit_start_line[2:]) - 1
+                                    )  # 1-indexed to 0-indexed
+                                    if 0 <= line_num < len(source_lines):
+                                        line_text = source_lines[line_num]
+                                        if source_lines.count(line_text) == 1:
+                                            # Unique line — let resolve_content_to_hashline_ids handle it
+                                            edit_start_line = line_text
+                                        else:
+                                            # Duplicate line — resolve directly to content ID
+                                            hashed_content = hashline(original_content)
+                                            hashed_lines = hashed_content.splitlines()
+                                            match = HASHLINE_PREFIX_RE.match(hashed_lines[line_num])
+                                            if match:
+                                                edit_start_line = match.group(1)
+                                    else:
+                                        raise ToolError(
+                                            f"@L reference line {int(edit_start_line[2:])} is out of range "
+                                            f"(file has {len(source_lines)} lines)"
+                                        )
+                            if (
+                                isinstance(edit_end_line, str)
+                                and edit_end_line.startswith("@L")
+                                and len(edit_end_line) > 2
+                                and edit_end_line[2:].isdigit()
+                            ):
+                                if original_content and original_content.strip():
+                                    source_lines = original_content.splitlines()
+                                    line_num = int(edit_end_line[2:]) - 1
+                                    if 0 <= line_num < len(source_lines):
+                                        line_text = source_lines[line_num]
+                                        if source_lines.count(line_text) == 1:
+                                            # Unique line — let resolve_content_to_hashline_ids handle it
+                                            edit_end_line = line_text
+                                        else:
+                                            # Duplicate line — resolve directly to content ID
+                                            hashed_content = hashline(original_content)
+                                            hashed_lines = hashed_content.splitlines()
+                                            match = HASHLINE_PREFIX_RE.match(hashed_lines[line_num])
+                                            if match:
+                                                edit_end_line = match.group(1)
+                                    else:
+                                        raise ToolError(
+                                            f"@L reference line {int(edit_end_line[2:])} is out of range "
+                                            f"(file has {len(source_lines)} lines)"
+                                        )
 
                             # 3. Resolve non-hashline content values to content IDs first
                             # (before normalize_hashline which would fail on arbitrary content)

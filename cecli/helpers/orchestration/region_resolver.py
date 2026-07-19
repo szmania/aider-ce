@@ -188,6 +188,14 @@ class AgentRegion:
         start_hint = (explicit_start - 1) if explicit_start is not None else extracted_start
         end_hint = (explicit_end - 1) if explicit_end is not None else extracted_end
 
+        # Strip hashline prefixes from text patterns — the LLM may have copied
+        # content-ID-prefixed lines from a ReadFile response (e.g. ~XYZ12::text).
+        # Content-ID patterns and special markers are left untouched.
+        if not self._looks_like_content_id(start_pattern) and start_pattern not in ("@000", "000@"):
+            start_pattern = HashPos.strip_prefix(start_pattern)
+        if not self._looks_like_content_id(end_pattern) and end_pattern not in ("@000", "000@"):
+            end_pattern = HashPos.strip_prefix(end_pattern)
+
         # Validate uniqueness for text-based patterns (not content IDs or special markers).
         self._validate_pattern_uniqueness(start_pattern, start_hint, "start", name, lines)
         self._validate_pattern_uniqueness(end_pattern, end_hint, "end", name, lines)

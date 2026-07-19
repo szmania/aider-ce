@@ -779,8 +779,8 @@ def test_agent_region_basic(tmp_path):
     start_id = regions.get_start("foo")
     end_id = regions.get_end("foo")
 
-    assert "::" in start_id
-    assert "::" in end_id
+    assert "~" in start_id
+    assert "~" in end_id
 
     start_line = regions.get_start_line("foo")
     end_line = regions.get_end_line("foo")
@@ -878,8 +878,8 @@ def main():
         start_id = regions.get_start(name)
         end_id = regions.get_end(name)
 
-        assert "::" in start_id, f"{name} start_id should be a content ID: {start_id}"
-        assert "::" in end_id, f"{name} end_id should be a content ID: {end_id}"
+        assert "~" in start_id, f"{name} start_id should be a content ID: {start_id}"
+        assert "~" in end_id, f"{name} end_id should be a content ID: {end_id}"
 
         assert regions.get_start_line(name) > 0
         assert regions.get_end_line(name) > 0
@@ -974,7 +974,7 @@ def farewell(name):
 
     # First resolution should snapshot the line content
     result_id = regions2.get_start("greet")
-    assert "::" in result_id
+    assert "~" in result_id
 
     # Now modify the file (simulating an edit that shifts hashlines)
     new_source = """\
@@ -993,7 +993,7 @@ def farewell(name):
     # The original content ID is now stale, but the snapshot should let
     # us resolve via content matching
     result_id2 = regions2.get_start("greet")
-    assert "::" in result_id2, f"Should resolve via fallback content match, got: {result_id2!r}"
+    assert "~" in result_id2, f"Should resolve via fallback content match, got: {result_id2!r}"
 
 
 def test_agent_region_rejects_ambiguous_pattern(tmp_path):
@@ -1072,8 +1072,8 @@ def baz():
     start_id = regions.get_start("bar")
     end_id = regions.get_end("bar")
 
-    assert "::" in start_id
-    assert "::" in end_id
+    assert "~" in start_id
+    assert "~" in end_id
     assert regions.get_start_line("bar") == 4
     assert regions.get_end_line("bar") == 5
 
@@ -1150,8 +1150,8 @@ def baz():
     start_id = regions.get_start("bar")
     end_id = regions.get_end("bar")
 
-    assert "::" in start_id
-    assert "::" in end_id
+    assert "~" in start_id
+    assert "~" in end_id
     assert regions.get_start_line("bar") == 4
     assert regions.get_end_line("bar") == 5
 
