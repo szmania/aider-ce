@@ -132,6 +132,27 @@ class TrackedDict(dict):
             self._owner._record_mutation(key, is_shared=self._is_shared)
         return super().popitem()
 
+    def get(self, key, default=None):
+        """Return value for *key*, falling through to ``shared_state`` if not found locally.
+
+        When called on a local state dict (i.e., ``state``, not ``shared_state``
+        itself), keys not present locally are looked up in the shared state
+        before returning *default*.  This makes it easy to read globally-set
+        values without an explicit fallback::
+
+            val = state.get("my_global")  # checks local, then shared_state
+        """
+        if key in self:
+            return self[key]
+        # Don't fall through when this IS the shared_state (avoid infinite loop)
+        if self._is_shared:
+            return default
+        if self._owner is not None:
+            shared = type(self._owner)._shared_state
+            if key in shared:
+                return shared[key]
+        return default
+
 
 # ---------------------------------------------------------------------------
 # Safe primitives exposed to the sandbox
@@ -495,7 +516,7 @@ As such, results from previous calls can be reused and helper methods can be def
 
 
 | `gather(**named_tasks)` | Run tasks concurrently; returns an iterable with `.key` / `["key"]` access |
-| `state` / `shared_state` | `state` persists across *all* `Orchestrate` calls within the same agent session (not just one call). `shared_state` persists across *all* agent sessions globally |
+| `state` / `shared_state` | `state` persists across *all* `Orchestrate` calls within the same agent session (not just one call). `state.get(key)` falls through to ``shared_state`` when the key is not local. `shared_state` persists across *all* agent sessions globally |
 | `json.loads(s)` / `json.dumps(obj, indent=..., sort_keys=...)` | Parse / serialize JSON with optional formatting |
 | `sleep(seconds)` | Pause execution (0-120s max) |
 | `print(...)` / `reset(local_vars=True, state=False)` | Output messages; clear local namespace (and optionally state) |
