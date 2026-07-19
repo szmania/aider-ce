@@ -94,15 +94,23 @@ class Tool(BaseTool):
                                 "start_line": {
                                     "type": "string",
                                     "description": (
-                                        "The exact content ID and demarcator for the start of the edit "
-                                        f"(e.g., '{HASH_DELIMITER}abcd{HASH_DELIMITER}'). For empty files, use '@000'."
+                                        "The exact reference for the start of the edit. "
+                                        "For duplicate lines with a specific hash, "
+                                        "use the 4-character hash wrapped in tildes (e.g., '~WecX~'). "
+                                        "For unique lines marked with the generic '~~' prefix, "
+                                        "provide the exact full text of the line. "
+                                        "For empty files, use '@000'."
                                     ),
                                 },
                                 "end_line": {
                                     "type": "string",
                                     "description": (
-                                        "The exact content ID and demarcator for the end of the edit "
-                                        f"(e.g., '{HASH_DELIMITER}wxyz{HASH_DELIMITER}'). For empty files, use '@000'."
+                                        "The exact reference for the end of the edit. "
+                                        "For duplicate lines with a specific hash, "
+                                        "use the 4-character hash wrapped in tildes (e.g., '~WecX~'). "
+                                        "For unique lines marked with the generic '~~' prefix, "
+                                        "provide the exact full text of the line. "
+                                        "For empty files, use '@000'."
                                     ),
                                 },
                             },
