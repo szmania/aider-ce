@@ -445,7 +445,7 @@ def get_parser(default_config_files, git_root):
     group.add_argument(
         "--enable-context-compaction",
         action=argparse.BooleanOptionalAction,
-        default=True,
+        default=False,
         help="Enable automatic compaction of chat history to conserve tokens (default: False)",
     )
     group.add_argument(
@@ -618,18 +618,6 @@ def get_parser(default_config_files, git_root):
         "--assistant-output-color",
         default="#0088ff",
         help="Set the color for assistant output (default: #0088ff)",
-    )
-    group.add_argument(
-        "--show-speed",
-        action="store_true",
-        help="Show token processing and generation speed in usage report (default: False)",
-        default=False,
-    )
-    group.add_argument(
-        "--use-reminders",
-        action=argparse.BooleanOptionalAction,
-        default=True,
-        help="Enable/disable injecting reminder messages (default: True)",
     )
     group.add_argument(
         "--completion-menu-color",
@@ -958,7 +946,7 @@ def get_parser(default_config_files, git_root):
         "--voice-language",
         metavar="VOICE_LANGUAGE",
         default="en",
-        help="Specify the language for voice using ISO 639-1 code (default: auto)",
+        help="Specify the language for voice (default: auto)",
     )
     group.add_argument(
         "--voice-input-device",
