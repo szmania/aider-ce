@@ -1,15 +1,13 @@
 from cecli.helpers.hashline import (
     HASH_DELIMITER,
-    HASHLINE_PREFIX_RE,
     UNIQUE_HASH_DELIMITER,
     ContentHashError,
     apply_hashline_operations,
     get_hashline_diff,
-    hashline,
-    normalize_hashline,
     resolve_content_to_hashline_ids,
     strip_hashline,
 )
+from cecli.helpers.hashpos.hashpos import HashPos
 from cecli.tools.utils.base_tool import BaseTool
 from cecli.tools.utils.helpers import (
     ToolError,
@@ -202,6 +200,18 @@ class Tool(BaseTool):
                         coder, file_path_key
                     )
 
+                    # Build HashPos index once per file for @L{num} resolution
+                    hp = (
+                        HashPos(original_content)
+                        if original_content and original_content.strip()
+                        else None
+                    )
+                    source_lines = (
+                        original_content.splitlines()
+                        if original_content and original_content.strip()
+                        else []
+                    )
+
                     # Process all edits for this file using batch operations
                     operations = []
                     file_metadata = []
@@ -234,83 +244,22 @@ class Tool(BaseTool):
                                 edit_start_line = "@000"
                                 edit_end_line = "@000"
 
-                            # 2.5 Resolve @L{num} notation to line content or hash ID
-                            if (
-                                isinstance(edit_start_line, str)
-                                and edit_start_line.startswith("@L")
-                                and len(edit_start_line) > 2
-                                and edit_start_line[2:].isdigit()
-                            ):
-                                if original_content and original_content.strip():
-                                    source_lines = original_content.splitlines()
-                                    line_num = (
-                                        int(edit_start_line[2:]) - 1
-                                    )  # 1-indexed to 0-indexed
-                                    if 0 <= line_num < len(source_lines):
-                                        line_text = source_lines[line_num]
-                                        if source_lines.count(line_text) == 1:
-                                            # Unique line — let resolve_content_to_hashline_ids handle it
-                                            edit_start_line = line_text
-                                        else:
-                                            # Duplicate line — resolve directly to content ID
-                                            hashed_content = hashline(original_content)
-                                            hashed_lines = hashed_content.splitlines()
-                                            match = HASHLINE_PREFIX_RE.match(hashed_lines[line_num])
-                                            if match:
-                                                edit_start_line = match.group(1)
-                                    else:
-                                        raise ToolError(
-                                            f"@L reference line {int(edit_start_line[2:])} is out of range "
-                                            f"(file has {len(source_lines)} lines)"
-                                        )
-                            if (
-                                isinstance(edit_end_line, str)
-                                and edit_end_line.startswith("@L")
-                                and len(edit_end_line) > 2
-                                and edit_end_line[2:].isdigit()
-                            ):
-                                if original_content and original_content.strip():
-                                    source_lines = original_content.splitlines()
-                                    line_num = int(edit_end_line[2:]) - 1
-                                    if 0 <= line_num < len(source_lines):
-                                        line_text = source_lines[line_num]
-                                        if source_lines.count(line_text) == 1:
-                                            # Unique line — let resolve_content_to_hashline_ids handle it
-                                            edit_end_line = line_text
-                                        else:
-                                            # Duplicate line — resolve directly to content ID
-                                            hashed_content = hashline(original_content)
-                                            hashed_lines = hashed_content.splitlines()
-                                            match = HASHLINE_PREFIX_RE.match(hashed_lines[line_num])
-                                            if match:
-                                                edit_end_line = match.group(1)
-                                    else:
-                                        raise ToolError(
-                                            f"@L reference line {int(edit_end_line[2:])} is out of range "
-                                            f"(file has {len(source_lines)} lines)"
-                                        )
+                            # Resolve @L{num} notation directly to content ID
+                            edit_start_line = cls._resolve_at_l_num(
+                                edit_start_line, hp, source_lines, file_path_key
+                            )
+                            edit_end_line = cls._resolve_at_l_num(
+                                edit_end_line, hp, source_lines, file_path_key
+                            )
 
-                            # 2.6 Strip ~~ virtual prefixes from ReadFile output lines
-                            # These are display-only markers that confuse the resolution logic.
-                            if isinstance(edit_start_line, str) and edit_start_line.startswith(
-                                "~~"
-                            ):
-                                edit_start_line = edit_start_line.replace("~~", "").lstrip()
-                            if isinstance(edit_end_line, str) and edit_end_line.startswith("~~"):
-                                edit_end_line = edit_end_line.replace("~~", "").lstrip()
+                            # Strip ~~ virtual prefixes from ReadFile output lines
+                            edit_start_line = cls._strip_readfile_prefix(edit_start_line)
+                            edit_end_line = cls._strip_readfile_prefix(edit_end_line)
 
-                            # 3. Resolve non-hashline content values to content IDs first
-                            # (before normalize_hashline which would fail on arbitrary content)
+                            # Resolve remaining non-hashline content values to content IDs
                             edit_start_line, edit_end_line = resolve_content_to_hashline_ids(
                                 original_content, edit_start_line, edit_end_line
                             )
-                            # 4. Auto-sanitize malformed boundaries (strip accidentally appended code)
-                            if isinstance(edit_start_line, str):
-                                test_line = normalize_hashline(edit_start_line, throw=False)
-                                edit_start_line = test_line if test_line else edit_start_line
-                            if isinstance(edit_end_line, str):
-                                test_line = normalize_hashline(edit_end_line, throw=False)
-                                edit_end_line = test_line if test_line else edit_end_line
 
                             # ---------------------------------------------------------
 
@@ -627,6 +576,41 @@ class Tool(BaseTool):
                         coder.io.tool_output("")
 
         tool_footer(coder=coder, tool_response=tool_response, params=params)
+
+    @classmethod
+    def _resolve_at_l_num(cls, line_spec, hp, source_lines, file_path):
+        """Resolve @L{num} notation to a content ID using a pre-built HashPos index.
+
+        Returns the input unchanged if it's not an @L{num} spec.
+        Raises ToolError if the line number is out of range.
+        """
+        if not (
+            isinstance(line_spec, str)
+            and line_spec.startswith("@L")
+            and len(line_spec) > 2
+            and line_spec[2:].isdigit()
+        ):
+            return line_spec
+
+        line_num = int(line_spec[2:]) - 1
+        if line_num < 0 or line_num >= len(source_lines):
+            from cecli.tools.utils.helpers import ToolError
+
+            raise ToolError(
+                f"@L reference line {int(line_spec[2:])} is out of range "
+                f"(file has {len(source_lines)} lines)"
+            )
+
+        line_text = source_lines[line_num]
+        occurrence = 1 + sum(1 for i in range(line_num) if source_lines[i] == line_text)
+        return hp.get_wrapped_id(hp.generate_public_id(line_text, line_num, occurrence))
+
+    @staticmethod
+    def _strip_readfile_prefix(value):
+        """Strip the ``~~`` virtual prefix from a ReadFile output line reference."""
+        if isinstance(value, str) and value.startswith("~~"):
+            return value[2:].lstrip()
+        return value
 
     @classmethod
     def _categorize_edit_error(cls, error_msg: str) -> str:

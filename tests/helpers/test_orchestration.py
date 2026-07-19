@@ -20,6 +20,7 @@ from cecli.helpers.orchestration.security import (
     LoopYieldInjector,
     SecurityError,
     SecurityFilter,
+    _security_raise,
 )
 
 # ---------------------------------------------------------------------------
@@ -38,9 +39,42 @@ def _make_mock_coder():
 
 
 def _run_security_filter_on(code: str) -> None:
-    """Run the SecurityFilter on a code snippet. Raises SecurityError if blocked."""
-    tree = ast.parse(code, mode="exec")
-    SecurityFilter().visit(tree)
+    """Run the SecurityFilter and execute the rewritten AST. Raises SecurityError if blocked.
+
+    Only executes code that was actually rewritten by the SecurityFilter
+    (i.e., contains ``__security_raise`` calls).  Safe code that passes
+    through the filter unmodified is not executed, avoiding NameError/
+    TypeError issues from test-scope variable names in the namespace.
+    """
+    import copy
+
+    original_tree = ast.parse(code, mode="exec")
+    original_tree = copy.deepcopy(original_tree)
+    rewritten_tree = SecurityFilter().visit(copy.deepcopy(original_tree))
+    ast.fix_missing_locations(rewritten_tree)
+
+    # Compare AST dumps to detect whether the filter rewrote anything.
+    # We deep-copy because ast.NodeTransformer.visit() mutates in place.
+    original_dump = ast.dump(original_tree, indent=0)
+    rewritten_dump = ast.dump(rewritten_tree, indent=0)
+    if original_dump == rewritten_dump:
+        return
+
+    # Compile with top-level await support (needed for snippets like
+    # ``await gather()`` which may appear in user code).
+    compiled_code = compile(
+        rewritten_tree,
+        "<test>",
+        "exec",
+        flags=ast.PyCF_ALLOW_TOP_LEVEL_AWAIT,
+    )
+
+    # Provide a minimal namespace with ``__security_raise`` so that
+    # rewritten constructs actually raise SecurityError at runtime.
+    ns: dict = {
+        "__security_raise": _security_raise,
+    }
+    exec(compiled_code, ns)
 
 
 def _run_security_filter_safe(code: str) -> bool:

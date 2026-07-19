@@ -97,7 +97,7 @@ def test_position_top_succeeds_with_no_patterns(coder_with_file):
         ],
     )
 
-    assert "Applied" in result.to_dict()["result"][0]
+    assert "Applied" in result.to_dict()["result"][0]["content"]
     lines = file_path.read_text().splitlines()
     # Inserted line replaces first line (inclusive bounds) assert lines[1] == "second line"
     # Original second line shifts up
@@ -221,7 +221,7 @@ def test_line_number_beyond_file_length_appends(coder_with_file):
         ],
     )
 
-    assert "Applied" in result.to_dict()["result"][0]
+    assert "Applied" in result.to_dict()["result"][0]["content"]
     content = file_path.read_text()
     assert content == "first line\nappended line\n"
     coder.io.tool_error.assert_not_called()
