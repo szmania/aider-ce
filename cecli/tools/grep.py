@@ -90,20 +90,48 @@ def _parse_content_into_files(output):
 
     Returns list of dicts with keys: path, match_count, content_lines
     Content lines preserve the original grep format (with : for matches, - for context).
+    Merges entries for the same file that appear in non-contiguous match groups.
     """
     if not output:
         return []
 
-    files = []
     lines = output.splitlines()
     if not lines:
         return []
+
+    # Use a dict to accumulate file groups, keyed by filepath
+    # This handles interleaved results (file1 -> file2 -> file1) by merging
+    file_groups = {}  # filepath -> {path, match_count, content_parts}
+    file_order = []  # ordered list of filepaths as they first appear
 
     current_file = None
     current_lines = []
     match_count = 0
 
-    for i, line in enumerate(lines):
+    def _flush_current():
+        nonlocal current_file, current_lines, match_count
+        if current_file is None or not current_lines:
+            return
+
+        if current_file in file_groups:
+            # Merge into existing entry
+            existing = file_groups[current_file]
+            existing["match_count"] += match_count
+            existing["content_parts"].append("\n".join(current_lines))
+        else:
+            # New file entry
+            file_groups[current_file] = {
+                "path": current_file,
+                "match_count": match_count,
+                "content_parts": ["\n".join(current_lines)],
+            }
+            file_order.append(current_file)
+
+        current_file = None
+        current_lines = []
+        match_count = 0
+
+    for line in lines:
         # Skip separator lines ("--" between non-contiguous match groups)
         if line == "--":
             continue
@@ -129,14 +157,8 @@ def _parse_content_into_files(output):
                 if is_match_line:
                     match_count += 1
             else:
-                # New file - save previous, start new
-                files.append(
-                    {
-                        "path": current_file,
-                        "match_count": match_count,
-                        "content": "\n".join(current_lines),
-                    }
-                )
+                # Different file - flush current block before switching
+                _flush_current()
                 current_file = filepath
                 match_count = 1 if is_match_line else 0
                 current_lines = [line]
@@ -145,13 +167,18 @@ def _parse_content_into_files(output):
             if current_file is not None:
                 current_lines.append(line)
 
-    # Don't forget the last file
-    if current_file is not None and current_lines:
+    # Flush the last file's accumulated block
+    _flush_current()
+
+    # Build final list preserving first-seen order
+    files = []
+    for fpath in file_order:
+        group = file_groups[fpath]
         files.append(
             {
-                "path": current_file,
-                "match_count": match_count,
-                "content": "\n".join(current_lines),
+                "path": group["path"],
+                "match_count": group["match_count"],
+                "content": "\n".join(group["content_parts"]),
             }
         )
 
@@ -432,8 +459,8 @@ class Tool(BaseTool):
                 # --- PASS 2: Get content with context ---
                 content_cmd = (
                     base_cmd
-                    + (["-B", str(context_before)] if context_before > 0 else [])
-                    + (["-A", str(context_after)] if context_after > 0 else [])
+                    + (["-B", str(context_before)] if context_before >= 0 else [])
+                    + (["-A", str(context_after)] if context_after >= 0 else [])
                     + case_flag
                     + pattern_flag
                     + exclude_args
@@ -486,13 +513,13 @@ class Tool(BaseTool):
                         match_line_re = re.compile(r"^" + filepath_escaped + r":\d+:")
                         match_lines_found = [ln for ln in file_lines if match_line_re.match(ln)]
 
+                        # Normalize path to be relative to repo root
+                        pf["path"] = os.path.relpath(pf["path"], repo.root)
+
                         if len(match_lines_found) > MAX_MATCHES_PER_FILE:
                             truncated_files.append(pf["path"])
                             trimmed = "\n".join(match_lines_found[:MAX_MATCHES_PER_FILE])
                             pf["content"] = trimmed
-
-                        # Normalize path to be relative to repo root
-                        pf["path"] = os.path.relpath(pf["path"], repo.root)
                         total_matches += pf.get("count_from_pass", 0)
                         total_files += 1
 
