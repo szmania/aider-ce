@@ -201,12 +201,11 @@ class Tool(BaseTool):
                         coder, file_path_key
                     )
 
+                    if abs_path:
+                        coder.file_read_cache.discard(abs_path)
+
                     # Build HashPos index once per file for @L{num} resolution
-                    hp = (
-                        HashPos(original_content)
-                        if original_content and original_content.strip()
-                        else None
-                    )
+                    hp = HashPos(original_content or "")
                     source_lines = (
                         original_content.splitlines()
                         if original_content and original_content.strip()
@@ -437,6 +436,7 @@ class Tool(BaseTool):
             if total_successful_edits == 0:
                 coder.edit_allowed = True
                 error_msg = "No edits were successfully applied:\n" + "\n".join(all_failed_edits)
+                response.append_error(all_failed_edits)
                 raise ToolError(error_msg)
 
             # 5. Format and return result

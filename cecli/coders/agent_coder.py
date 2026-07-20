@@ -81,6 +81,7 @@ class AgentCoder(Coder):
         self.change_tracker = ChangeTracker()
         self.args = kwargs.get("args")
         self.files_added_in_exploration = set()
+        self.file_read_cache = set()
         self.tool_call_count = 0
         self.turn_count = 0
         self.max_reflections = 15

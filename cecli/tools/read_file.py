@@ -133,6 +133,7 @@ class Tool(BaseTool):
             all_outputs = []
             already_up_to_details = []
             new_context_details = []
+            seen_files = set()
             all_outputs_set = set()
             new_context_set = set()
             already_up_to_set = set()
@@ -209,6 +210,13 @@ class Tool(BaseTool):
                         )
                     )
                     continue
+
+                if abs_path not in seen_files:
+                    seen_files.add(abs_path)
+
+                    if abs_path not in coder.file_read_cache:
+                        coder.file_read_cache.add(abs_path)
+                        ConversationService.get_files(coder).clear_ranges(abs_path)
 
                 # 3. Read file content
                 content: str = coder.io.read_text(abs_path)
@@ -545,7 +553,8 @@ class Tool(BaseTool):
                 ConversationService.get_files(coder).clear_ranges(abs_path)
                 ConversationService.get_files(coder).push_range(abs_path, tuples)
 
-            ConversationService.get_chunks(coder).add_file_context_messages()
+            if new_context_details:
+                ConversationService.get_chunks(coder).add_file_context_messages()
 
             # if (
             #    ConversationService.get_chunks(coder).last_clear_count > 20
