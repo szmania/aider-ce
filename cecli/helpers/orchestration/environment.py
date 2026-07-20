@@ -478,7 +478,8 @@ def build_orchestration_context_block(agent_config: dict[str, Any]) -> str | Non
         return None
 
     return """<context name="orchestration" from="agent">
-The `Orchestrate` tool lets you coordinate chains of sub agents and tools with Python code in a limited, secure sandbox across multiple turns.
+The `Orchestrate` tool lets you batch multiple tool calls in a single step by writing Python code in a limited, secure sandbox.
+This is much more efficient than making individual tool calls for loop-heavy workflows.
 Variables and methods defined in a script are persisted in subsequent turns.
 As such, results from previous calls can be reused and helper methods can be defined to enhance ease of use within the environment.
 
@@ -494,6 +495,10 @@ As such, results from previous calls can be reused and helper methods can be def
 
 | `Agent.peek(result)` | Inspect a tool result's structure and leaf content — returns a string; use `print(Agent.peek(result))` to see it |
 | `Agent.get_value(result, path, default?)` | Safely access nested values in tool results using dot-notation (e.g. `"result.0.content"`)  |
+
+| `Agent.get_content_id(path, text)` | Resolve a content ID from `@L{num}` or line text for EditFile |
+| `Agent.resolve_regions(path, regions)` | Batch-resolve text patterns to content IDs. Use `start_line_hint` / `end_line_hint` in region spec entries for disambiguation (supports `@L<num>`, `@A{{regex}}`, `@B{{regex}}` — same hint syntax as ReadFile). Ambiguous patterns raise immediately. The returned `AgentRegion` has `.get_start(name)`, `.get_end(name)`, `.names()`, `.get(name)` |
+| `Agent.edit_region(path, edits)` | Thin wrapper around EditFile that accepts pre-resolved region dicts `{"start": content_id, "end": content_id}`. Use with `Agent.resolve_regions()` and `regions.get(name)` |
 
 | `await Agent.sleep(seconds)` | Pause execution (0-120s max) |
 
@@ -524,8 +529,8 @@ All other module imports will fail.
 ```python
 tool = Agent.get_tool("delegate")
 tool_outputs = await gather(
-    a=tool.call(prompt="A", async=False),
-    b=tool.call(prompt="B", async=False),
+    a=tool.call(prompt="A"),
+    b=tool.call(prompt="B"),
 )
 print(tool_outputs.a)              # attribute access
 print(tool_outputs["b"])           # key access
@@ -546,6 +551,51 @@ to extract specific fields by dot-path::
 
 Result list items are plain dicts — use item['content'] / item.get('content')
 and item['_'] / item.get('_') to access data and metadata respectively.
+
+### Creating New Files
+
+Use `ResourceManager` to create an empty file, then `EditFile` to write
+initial content (use `@000` for start/end on empty files)::
+
+    rm = Agent.get_tool("ResourceManager")
+    edit = Agent.get_tool("EditFile")
+
+    await rm.call(create=["path/to/new_file.py"])
+    await edit.call(edits=[{
+        "file_path": "path/to/new_file.py",
+        "operation": "replace",
+        "start_line": "@000",
+        "end_line": "@000",
+        "text": "def greet(name):\n    return f\"Hello, {name}!\"\n",
+    }])
+
+After creation, use `resolve_regions` and `edit_region` for targeted edits.
+
+### Editing with Regions
+
+Use `Agent.resolve_regions()` to convert text patterns into content IDs, then `Agent.edit_region()` to apply edits using the resolved IDs.
+
+#### Step 1 —  resolve region boundaries once
+
+```python
+regions = Agent.resolve_regions("foo.py", [
+    {"name": "my_func", "start": "def my_func", "end": "return result"},
+    {"name": "init",    "start": "def __init__", "end": "self.x = x"},
+])
+```
+
+#### Step 2 — Use `regions.get(name)` with `Agent.edit_region()` (recommended shorthand)
+
+```python
+await Agent.edit_region(
+    file_path="foo.py",
+    edits=[
+        {"region": regions.get("my_func"), "text": "def my_func():\n    return 42"},
+    ],
+)
+```
+
+#### Alternative: Call `EditFile` directly with `regions.get_start()` / `regions.get_end()`
 
 ### Gotchas
 

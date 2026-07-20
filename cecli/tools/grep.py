@@ -228,25 +228,18 @@ class Tool(BaseTool):
                                     "default": True,
                                     "description": "Whether to perform a case-insensitive search.",
                                 },
-                                "count": {
-                                    "type": "boolean",
-                                    "default": True,
-                                    "description": (
-                                        "Include match counts per file in the output summary."
-                                    ),
-                                },
                                 "context_before": {
                                     "type": "integer",
                                     "default": 2,
                                     "description": (
-                                        "Number of context lines to show before each match."
+                                        "Number of context lines to show before each match. Max 5"
                                     ),
                                 },
                                 "context_after": {
                                     "type": "integer",
                                     "default": 2,
                                     "description": (
-                                        "Number of context lines to show after each match."
+                                        "Number of context lines to show after each match. Max 5"
                                     ),
                                 },
                             },
@@ -362,8 +355,8 @@ class Tool(BaseTool):
             directory = search_op.get("directory", search_op.get("path", "."))
             use_regex = search_op.get("use_regex", False)
             case_insensitive = search_op.get("case_insensitive", True)
-            context_before = search_op.get("context_before", 2)
-            context_after = search_op.get("context_after", 2)
+            context_before = max(min(int(search_op.get("context_before", 2)), 5), 0)
+            context_after = max(min(int(search_op.get("context_after", 2)), 5), 0)
             count_enabled = search_op.get("count", True)
 
             op_result = {
@@ -502,7 +495,7 @@ class Tool(BaseTool):
                     MAX_MATCHES_PER_FILE = 10
                     MAX_FILES = 20
 
-                    truncated_files = []
+                    truncated_files = {}
                     total_matches = 0
                     total_files = 0
 
@@ -510,14 +503,21 @@ class Tool(BaseTool):
                         file_lines = pf["content"].splitlines()
                         # Find actual match lines (lines with `:LINE:` pattern)
                         filepath_escaped = re.escape(pf["path"])
-                        match_line_re = re.compile(r"^" + filepath_escaped + r":\d+:")
+                        match_line_re = re.compile(r"^" + filepath_escaped + r":(\d+):")
                         match_lines_found = [ln for ln in file_lines if match_line_re.match(ln)]
 
                         # Normalize path to be relative to repo root
                         pf["path"] = os.path.relpath(pf["path"], repo.root)
 
                         if len(match_lines_found) > MAX_MATCHES_PER_FILE:
-                            truncated_files.append(pf["path"])
+                            # Extract line numbers from excess matches (beyond first 10)
+                            extra_lines = match_lines_found[MAX_MATCHES_PER_FILE:]
+                            extra_line_nums = []
+                            for xline in extra_lines:
+                                xm = match_line_re.match(xline)
+                                if xm:
+                                    extra_line_nums.append(int(xm.group(1)))
+                            truncated_files[pf["path"]] = extra_line_nums
                             trimmed = "\n".join(match_lines_found[:MAX_MATCHES_PER_FILE])
                             pf["content"] = trimmed
                         total_matches += pf.get("count_from_pass", 0)
@@ -536,7 +536,7 @@ class Tool(BaseTool):
                         {
                             "file": pf["path"],
                             "match_count": pf.get("count_from_pass", 0),
-                            "truncated": pf["path"] in truncated_files,
+                            "additional_matched_lines": truncated_files.get(pf["path"], []),
                             "content": pf["content"],
                         }
                         for pf in parsed_files[:MAX_FILES]
@@ -573,7 +573,7 @@ class Tool(BaseTool):
         response = ToolResponse(cls.NORM_NAME, result_type=cls.RESULT_TYPE)
         for op_result in all_operation_results:
             files = op_result.get("files", [])
-            metadata = {k: v for k, v in op_result.items() if k != "files"}
+            metadata = op_result.copy()
 
             # Build a human-readable string summary as content
             pattern = op_result.get("pattern", "")
@@ -584,7 +584,7 @@ class Tool(BaseTool):
             else:
                 lines = [f"[{pattern}]"]
                 for f in files:
-                    truncated_mark = " (truncated)" if f.get("truncated") else ""
+                    truncated_mark = " (truncated)" if f.get("additional_matched_lines") else ""
                     lines.append(f"{f['file']}: {f['match_count']} match(es){truncated_mark}")
                 if op_result.get("has_more_files"):
                     lines.append(f"... ({op_result['total_files']} files total)")
@@ -616,7 +616,7 @@ class Tool(BaseTool):
             for i, search_op in enumerate(searches):
                 pattern = search_op.get("pattern", "")
                 file_pattern = search_op.get("file_glob", "*")
-                directory = search_op.get("directory", ".")
+                directory = search_op.get("directory", search_op.get("path", "."))
                 use_regex = search_op.get("use_regex", False)
                 case_insensitive = search_op.get("case_insensitive", True)
                 context_before = search_op.get("context_before", 2)
