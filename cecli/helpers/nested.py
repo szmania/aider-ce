@@ -1,3 +1,6 @@
+import copy
+import json
+import os
 from typing import Any, Dict, List, Union
 
 
@@ -83,16 +86,171 @@ def getter(
     return default
 
 
-def deep_merge(dict1, dict2):
+DEEP_MERGE_LIST_FIELDS: frozenset[str] = frozenset(
+    {
+        # ── Top-level argparse action="append" args ──────────────────
+        # These are excluded from configargparse for .cecli.conf.yml files
+        # (to prevent shallow overwrite), so they must be deep-merged here.
+        "rules",
+        "file",
+        "read",
+        "mcp_servers_files",
+        "set_env",
+        "api_key",
+        "alias",
+        "exempt_paths",
+        "lint_cmd",
+        # ── Nested agent-config array fields ─────────────────────────
+        "skills_paths",
+        "skills_includelist",
+        "skills_excludelist",
+        "skills_init",
+        "subagent_paths",
+        "tools_paths",
+        "tools_includelist",
+        "tools_excludelist",
+        "servers_includelist",
+        "servers_excludelist",
+        "allowed_commands",
+    }
+)
+
+DEEP_MERGE_JSON_FIELDS: frozenset[str] = frozenset(
+    {
+        "agent_config",
+        "mcp_servers",
+        "hooks",
+        "model_providers",
+        "security_config",
+        "retries",
+        "custom",
+        "tui_config",
+    }
+)
+
+
+def _deduplicate_list(merged_list: list, new_list: list) -> list:
     """
-    Recursively merges dict2 into dict1.
-    If a key exists in both and both values are dicts, it merges the sub-dicts.
-    Otherwise, the value from dict2 overwrites the value from dict1.
+    Append elements from new_list to merged_list, skipping duplicates.
+
+    Deduplication is value-based:
+    - Primitives (str, int, float, bool, None): compared with ``==``
+    - Dicts: compared via ``json.dumps(obj, sort_keys=True)`` for stable
+      structural equality
+    - Other types: compared with ``==``
+
+    First-occurrence order is preserved: elements already in merged_list
+    keep their position; new unique elements are appended at the end.
+
+    Each appended element is deep-copied via ``copy.deepcopy()`` to
+    prevent reference sharing between the merged result and the source
+    lists.
     """
-    merged = dict1.copy()  # Create a copy to avoid modifying original dict1 in place
+    # Build a set of canonical representations for fast lookup
+    seen: set = set()
+    for item in merged_list:
+        seen.add(_canonical_repr(item))
+
+    for item in new_list:
+        key = _canonical_repr(item)
+        if key not in seen:
+            seen.add(key)
+            merged_list.append(copy.deepcopy(item))
+
+    return merged_list
+
+
+def _canonical_repr(item: Any) -> Any:
+    """
+    Return a hashable, equality-comparable canonical representation
+    of *item* for deduplication purposes.
+
+    - Primitives (str, int, float, bool, None, tuple): returned as-is
+    - Dicts: serialized to a JSON string with sorted keys
+    - Lists: recursively converted to a tuple of canonical representations
+    - Everything else: returned as-is (falls back to ``==``)
+    """
+    if isinstance(item, dict):
+        return json.dumps(item, sort_keys=True, default=str)
+    if isinstance(item, list):
+        return tuple(_canonical_repr(e) for e in item)
+    return item
+
+
+def deep_merge(dict1, dict2, deep_merge_arrays=True):
+    """
+    Recursively merges *dict2* into *dict1*.
+
+    Parameters
+    ----------
+    dict1 : dict
+        The base dictionary (earlier / lower-precedence config).
+    dict2 : dict
+        The overlay dictionary (later / higher-precedence config).
+    deep_merge_arrays : bool, optional
+        When ``True`` (the default), list values are concatenated with
+        deduplication instead of being overwritten.  When ``False``,
+        the existing shallow-overwrite behaviour is preserved.
+
+    Returns
+    -------
+    dict
+        A new dictionary (deep-copied from *dict1*) with *dict2* merged
+        in.  Neither *dict1* nor *dict2* is mutated.
+
+    Merge rules (per key)
+    ---------------------
+    * Both values are dicts → recursively ``deep_merge`` the sub-dicts.
+    * Both values are lists **and** ``deep_merge_arrays=True`` →
+      concatenate with deduplication (first-occurrence order preserved).
+    * Otherwise → *dict2*'s value overwrites *dict1*'s value.
+    """
+    merged = copy.deepcopy(dict1)
     for key, value in dict2.items():
         if key in merged and isinstance(merged[key], dict) and isinstance(value, dict):
-            merged[key] = deep_merge(merged[key], value)
+            merged[key] = deep_merge(merged[key], value, deep_merge_arrays=deep_merge_arrays)
+        elif (
+            deep_merge_arrays
+            and key in merged
+            and isinstance(merged[key], list)
+            and isinstance(value, list)
+        ):
+            merged[key] = _deduplicate_list(merged[key], value)
         else:
-            merged[key] = value
+            merged[key] = copy.deepcopy(value)
+    return merged
+
+
+def is_cecli_conf_file(filepath: str) -> bool:
+    """
+    Return ``True`` if *filepath* refers to a ``.cecli.conf.yml`` file
+    (which should receive deep-merge treatment), ``False`` otherwise
+    (e.g. ``.cecli/conf.yml`` or unknown patterns).
+
+    The check is based solely on the basename of the path.
+    """
+    basename = os.path.basename(filepath)
+    return basename == ".cecli.conf.yml"
+
+
+def deep_merge_config_dicts(
+    config_dicts: List[Dict[str, Any]],
+) -> Dict[str, Any]:
+    """
+    Cumulatively deep-merge a list of raw config dictionaries.
+
+    Each successive dict is merged into the accumulator using
+    ``deep_merge(acc, next_dict, deep_merge_arrays=True)``.  The
+    accumulator is deep-copied before each merge to prevent mutation
+    of intermediate results.
+
+    Returns the final merged dictionary.  If *config_dicts* is empty,
+    returns an empty dict.
+    """
+    if not config_dicts:
+        return {}
+
+    merged = copy.deepcopy(config_dicts[0])
+    for next_dict in config_dicts[1:]:
+        merged = deep_merge(merged, next_dict, deep_merge_arrays=True)
     return merged
