@@ -101,15 +101,14 @@ class HashPos:
         packed = (line_hash << 20) | (idx_bits << 6) | occ_bits
 
         res = ""
-        for _ in range(4):
-            res += self.B1024[packed % 1024]
-            packed //= 1024
+        for i in range(3, -1, -1):
+            res += self.B1024[(packed >> (10 * i)) & 0x3FF]
         return res
 
     def unpack_public_id(self, public_id: str) -> tuple[int, int, int]:
         packed = 0
         for i, char in enumerate(public_id):
-            packed |= self.B1024.index(char) << (10 * i)
+            packed |= self.B1024.index(char) << (10 * (3 - i))
 
         occ_bits = packed & 0x3F
         idx_bits = (packed >> 6) & 0x3FFF
