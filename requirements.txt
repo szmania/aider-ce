@@ -240,6 +240,10 @@ openai==2.8.1
     # via
     #   -c requirements/common-constraints.txt
     #   litellm
+orjson==3.11.9
+    # via
+    #   -c requirements/common-constraints.txt
+    #   -r requirements/requirements.in
 oslex==0.1.3
     # via
     #   -c requirements/common-constraints.txt
