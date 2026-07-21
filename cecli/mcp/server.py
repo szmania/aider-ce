@@ -141,9 +141,7 @@ class McpServer:
             ClientSession: The new active session
         """
         if self.io:
-            self.io.tool_warning(
-                f"MCP session expired for {self.name}, reconnecting..."
-            )
+            self.io.tool_warning(f"MCP session expired for {self.name}, reconnecting...")
         await self.disconnect()
         self.exit_stack = AsyncExitStack()
         return await self.connect()
@@ -173,6 +171,7 @@ class McpServer:
             return True
 
         return False
+
 
 class HttpBasedMcpServer(McpServer):
     """Base class for HTTP-based MCP servers (HTTP streaming and SSE)."""

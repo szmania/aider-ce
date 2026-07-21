@@ -167,7 +167,7 @@ class McpServerManager:
         # When io is None (e.g., during from_servers before IO is assigned),
         # _log_warning and _log_error silently return — retries still happen
         # but with no user-visible feedback. This is intentional.
-        max_retries = 3
+        max_retries = 3 if server.name != "unnamed-server" else 1
         delay = 1.0
         backoff = 2.0
         max_delay = 30.0
@@ -185,11 +185,12 @@ class McpServerManager:
             except asyncio.CancelledError:
                 raise
             except Exception as e:
-                if attempt < max_retries:
+                if attempt < max_retries and server.name != "unnamed-server":
                     self._log_warning(
                         f"Connection attempt {attempt} failed for {name}, "
                         f"retrying in {delay}s... ({e})"
                     )
+
                     await asyncio.sleep(delay)
                     delay = min(delay * backoff, max_delay)
                 else:

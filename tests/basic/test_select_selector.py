@@ -15,7 +15,6 @@ import pytest
 
 from cecli.interruptible_input import InterruptibleInput
 
-
 # ---------------------------------------------------------------------------
 # InterruptibleInput selector tests
 # ---------------------------------------------------------------------------
@@ -24,6 +23,7 @@ from cecli.interruptible_input import InterruptibleInput
 class TestInterruptibleInputSelector:
     """InterruptibleInput should pick SelectSelector for non-TTY stdin."""
 
+    @pytest.mark.skipif(os.name == "nt", reason="Unix-only")
     def test_uses_select_selector_when_not_a_tty(self):
         with mock.patch.object(sys.stdin, "isatty", return_value=False):
             obj = InterruptibleInput()
@@ -32,6 +32,7 @@ class TestInterruptibleInputSelector:
             finally:
                 obj.close()
 
+    @pytest.mark.skipif(os.name == "nt", reason="Unix-only")
     def test_uses_default_selector_when_tty(self):
         with mock.patch.object(sys.stdin, "isatty", return_value=True):
             obj = InterruptibleInput()
@@ -40,6 +41,7 @@ class TestInterruptibleInputSelector:
             finally:
                 obj.close()
 
+    @pytest.mark.skipif(os.name == "nt", reason="Unix-only")
     def test_selector_registers_wakeup_pipe(self):
         with mock.patch.object(sys.stdin, "isatty", return_value=False):
             obj = InterruptibleInput()
@@ -51,6 +53,7 @@ class TestInterruptibleInputSelector:
             finally:
                 obj.close()
 
+    @pytest.mark.skipif(os.name == "nt", reason="Unix-only")
     def test_close_is_safe_to_call_twice(self):
         with mock.patch.object(sys.stdin, "isatty", return_value=False):
             obj = InterruptibleInput()
@@ -58,6 +61,7 @@ class TestInterruptibleInputSelector:
             # Second close should not raise
             obj.close()
 
+    @pytest.mark.skipif(os.name == "nt", reason="Unix-only")
     def test_interrupt_sets_cancel_and_wakes_selector(self):
         with mock.patch.object(sys.stdin, "isatty", return_value=False):
             obj = InterruptibleInput()
@@ -70,6 +74,7 @@ class TestInterruptibleInputSelector:
             finally:
                 obj.close()
 
+    @pytest.mark.skipif(os.name == "nt", reason="Unix-only")
     def test_input_raises_interrupted_when_cancelled_before_call(self):
         with mock.patch.object(sys.stdin, "isatty", return_value=False):
             obj = InterruptibleInput()

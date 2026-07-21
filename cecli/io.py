@@ -500,6 +500,7 @@ class InputOutput:
             fancy_input = False
 
         # Spinner state
+        self.spinner_active = show_spinner
         self.spinner_running = False
         self.spinner_text = ""
         self.last_spinner_text = ""
@@ -570,6 +571,9 @@ class InputOutput:
         """Start the spinner."""
         self.stop_spinner()
 
+        if not self.spinner_active:
+            return
+
         if self.prompt_session:
             if not self.fallback_spinner_enabled:
                 return
@@ -585,9 +589,15 @@ class InputOutput:
             self.fallback_spinner.step()
 
     def update_spinner(self, text):
+        if not self.spinner_active:
+            return
+
         self.spinner_text = text
 
     def update_spinner_suffix(self, text=None):
+        if not self.spinner_active:
+            return
+
         if text:
             self.spinner_suffix = f" • {text[:16].strip()}"
         else:

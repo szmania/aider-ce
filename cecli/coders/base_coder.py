@@ -206,7 +206,6 @@ class Coder(metaclass=UsageMeta):
     yield_stream = False
     temperature = None
     auto_lint = True
-    _deferred_cost_text = None
     auto_test = False
     test_cmd = None
     lint_outcome = None
@@ -222,6 +221,7 @@ class Coder(metaclass=UsageMeta):
     message_tokens_sent = 0
     message_tokens_received = 0
     message_cached_tokens = 0
+    message_cost_deferred = None
     add_cache_headers = False
     cache_warming_thread = None
     num_cache_warming_pings = 0
@@ -576,7 +576,6 @@ class Coder(metaclass=UsageMeta):
                     fnames,
                     None,
                     models=main_model.commit_message_models(),
-                    show_spinner=nested.getter(self.args, "spinner", True),
                 )
             except FileNotFoundError:
                 pass
@@ -1271,8 +1270,7 @@ class Coder(metaclass=UsageMeta):
         if not self.repo_map or not self.repo:
             return
 
-        if nested.getter(self.args, "spinner", True):
-            self.io.update_spinner("Updating repo map")
+        self.io.update_spinner("Updating repo map")
 
         cur_msg_text = self.get_cur_message_text()
         try:
@@ -1374,8 +1372,7 @@ class Coder(metaclass=UsageMeta):
                 combined_dict = repo_result.get("combined_dict", {})
                 new_dict = repo_result.get("new_dict", {})
 
-        if nested.getter(self.args, "spinner", True):
-            self.io.update_spinner(self.io.last_spinner_text)
+        self.io.update_spinner(self.io.last_spinner_text)
 
         # Build the return dict for backward compatibility
         if combined_dict or new_dict:
@@ -1501,9 +1498,9 @@ class Coder(metaclass=UsageMeta):
                         self.show_announcements()
                     self.suppress_announcements_for_next_prompt = True
 
-                    if self._deferred_cost_text:
-                        self.io.tool_output(self._deferred_cost_text)
-                        self._deferred_cost_text = None
+                    if self.message_cost_deferred and not self.io.spinner_active:
+                        self.io.tool_output(self.message_cost_deferred)
+                        self.message_cost_deferred = None
 
                     await self.io.recreate_input()
                     await self.io.input_task
@@ -1653,9 +1650,9 @@ class Coder(metaclass=UsageMeta):
                         self.show_announcements()
                     self.suppress_announcements_for_next_prompt = True
 
-                    if self._deferred_cost_text:
-                        self.io.tool_output(self._deferred_cost_text)
-                        self._deferred_cost_text = None
+                    if self.message_cost_deferred and not self.io.spinner_active:
+                        self.io.tool_output(self.message_cost_deferred)
+                        self.message_cost_deferred = None
 
                     # Stop spinner before showing announcements or getting input
                     self.io.stop_spinner()
@@ -2046,8 +2043,7 @@ class Coder(metaclass=UsageMeta):
         else:
             self.io.tool_output("Compacting chat history to make room for new messages...")
 
-        if nested.getter(self.args, "spinner", True):
-            self.io.update_spinner("Compacting...")
+        self.io.update_spinner("Compacting...")
 
         try:
             compaction_prompt = self.gpt_prompts.compaction_prompt
@@ -2137,8 +2133,7 @@ class Coder(metaclass=UsageMeta):
                 await summarize_and_update(cur_messages, MessageTag.CUR)
 
             self.io.tool_output("...chat history compacted.")
-            if nested.getter(self.args, "spinner", True):
-                self.io.update_spinner(self.io.last_spinner_text)
+            self.io.update_spinner(self.io.last_spinner_text)
 
             manager.clear_tag(MessageTag.DIFFS)
             manager.clear_tag(MessageTag.FILE_CONTEXTS)
@@ -2526,10 +2521,10 @@ class Coder(metaclass=UsageMeta):
             if not self.tui:
                 spinner_text += f" • ${self.format_cost(self.total_cost)} session"
 
-            if nested.getter(self.args, "spinner", True):
+            if self.io.spinner_active:
                 self.io.start_spinner(spinner_text, coder_uuid=getattr(self, "uuid", None))
             else:
-                self._deferred_cost_text = spinner_text
+                self.message_cost_deferred = spinner_text
 
             if self.stream:
                 self.mdstream = True
@@ -2652,8 +2647,7 @@ class Coder(metaclass=UsageMeta):
             self.mdstream = None
 
             # Ensure any waiting spinner is stopped
-            if nested.getter(self.args, "spinner", True):
-                self.io.start_spinner("Processing Answer...", coder_uuid=getattr(self, "uuid", None))
+            self.io.start_spinner("Processing Answer...", coder_uuid=getattr(self, "uuid", None))
 
             self.partial_response_content = self.get_multi_response_content_in_progress(True)
 
@@ -3659,18 +3653,17 @@ class Coder(metaclass=UsageMeta):
                             for tool_call_chunk in chunk.choices[0].delta.tool_calls:
                                 self.tool_reflection = True
 
-                                if nested.getter(self.args, "spinner", True):
-                                    if tool_call_chunk.type:
-                                        self.io.update_spinner_suffix(tool_call_chunk.type)
+                                if tool_call_chunk.type:
+                                    self.io.update_spinner_suffix(tool_call_chunk.type)
 
-                                    if tool_call_chunk.function:
-                                        if tool_call_chunk.function.name:
-                                            self.io.update_spinner_suffix(tool_call_chunk.function.name)
+                                if tool_call_chunk.function:
+                                    if tool_call_chunk.function.name:
+                                        self.io.update_spinner_suffix(tool_call_chunk.function.name)
 
-                                        if tool_call_chunk.function.arguments:
-                                            self.io.update_spinner_suffix(
-                                                tool_call_chunk.function.arguments
-                                            )
+                                    if tool_call_chunk.function.arguments:
+                                        self.io.update_spinner_suffix(
+                                            tool_call_chunk.function.arguments
+                                        )
 
                     except (AttributeError, IndexError):
                         # Handle cases where the response structure doesn't match expectations
@@ -3682,8 +3675,7 @@ class Coder(metaclass=UsageMeta):
                         if func:
                             for k, v in func.items():
                                 self.tool_reflection = True
-                                if nested.getter(self.args, "spinner", True):
-                                    self.io.update_spinner_suffix(v)
+                                self.io.update_spinner_suffix(v)
 
                             received_content = True
                             self.token_profiler.on_token()
@@ -3710,8 +3702,7 @@ class Coder(metaclass=UsageMeta):
                             text += content
                             received_content = True
                             self.token_profiler.on_token()
-                            if nested.getter(self.args, "spinner", True):
-                                self.io.update_spinner_suffix(content)
+                            self.io.update_spinner_suffix(content)
                     except AttributeError:
                         pass
 

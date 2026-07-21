@@ -319,7 +319,9 @@ class AgentCoder(Coder):
                         )
                         return f"Error executing tool call {tool_name}: {retry_exc}"
                 else:
-                    self.io.tool_warning(f"Executing {tool_name} on {server.name} failed:\nError: {e}")
+                    self.io.tool_warning(
+                        f"Executing {tool_name} on {server.name} failed:\nError: {e}"
+                    )
                     return f"Error executing tool call {tool_name}: {e}"
             try:
                 content_parts = []
