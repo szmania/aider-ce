@@ -88,6 +88,13 @@ class Tool(BaseTool):
                         ),
                         "default": False,
                     },
+                    "timeout": {
+                        "type": "integer",
+                        "description": (
+                            "Timeout in seconds for command execution. " "Default is 30 seconds."
+                        ),
+                        "default": 30,
+                    },
                 },
                 "required": [],
             },
@@ -114,6 +121,7 @@ class Tool(BaseTool):
         stdin=None,
         pty=False,
         user_input_required=False,
+        timeout=0,
         **kwargs,
     ):
         """
@@ -125,7 +133,7 @@ class Tool(BaseTool):
         or navigate terminal interfaces.
         For background interactions: provide 'background_key' + 'action' (stdin/stop).
 
-        Commands run with timeout based on agent_config['command_timeout'] (default: 30 seconds).
+        Commands run with timeout from agent_config['command_timeout'] (default: 30 seconds),
         """
         response = ToolResponse(
             "command",
@@ -181,10 +189,15 @@ class Tool(BaseTool):
 
         command = coder.format_command_with_prefix(command)
 
-        # Determine timeout from agent_config (default: 30 seconds)
-        timeout = 0
+        # Determine timeout from agent_config (default: 30 seconds) as fallback
+        config_timeout = 0
         if hasattr(coder, "agent_config"):
-            timeout = coder.agent_config.get("command_timeout", 30)
+            config_timeout = coder.agent_config.get("command_timeout", 30)
+        # Use LLM-specified timeout if provided, otherwise fallback to config
+        if timeout == 0:
+            timeout = config_timeout
+        # Clamp LLM timeout between config_timeout (minimum) and max(300, config_timeout) (maximum)
+        timeout = max(config_timeout, min(timeout, max(300, config_timeout)))
 
         if user_input_required:
             return await cls._execute_interactive(coder, command)
@@ -641,6 +654,7 @@ class Tool(BaseTool):
         action = params.get("action")
         stdin = params.get("stdin")
         pty = params.get("pty", False)
+        timeout = params.get("timeout", 30)
         user_input_required = params.get("user_input_required", False)
 
         coder.io.tool_output("")
@@ -655,6 +669,8 @@ class Tool(BaseTool):
             extras.append(f"action={action}")
         if pty:
             extras.append("pty=True")
+        if timeout != 30:
+            extras.append(f"timeout={timeout}s")
         if user_input_required:
             extras.append("user_input_required=True")
 
