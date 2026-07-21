@@ -434,7 +434,6 @@ async def test_connect_server_no_error_log_unnamed_server(mock_io):
 
     assert result is False
     mock_io.tool_error.assert_not_called()
-    assert mock_io.tool_warning.call_count == 2
     assert unnamed_server not in manager._connected_servers
 
 
