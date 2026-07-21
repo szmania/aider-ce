@@ -59,6 +59,41 @@ class SecurityFilter(ast.NodeTransformer):
 
     _SAFE_DUNDER: set[str] = {"__name__", "__doc__"}
 
+    _SAFE_CLASS_DUNDERS: frozenset[str] = frozenset(
+        {
+            "__init__",
+            "__str__",
+            "__repr__",
+            "__iter__",
+            "__next__",
+            "__len__",
+            "__getitem__",
+            "__setitem__",
+            "__contains__",
+            "__enter__",
+            "__exit__",
+            "__aenter__",
+            "__aexit__",
+            "__await__",
+            "__anext__",
+            "__aiter__",
+            "__del__",
+            "__init_subclass__",
+            "__set_name__",
+            "__class_getitem__",
+        }
+    )
+
+    def __init__(
+        self,
+        allowed_imports: frozenset[str] | None = None,
+        allow_classes: bool = False,
+    ):
+        super().__init__()
+        self._allowed_imports = allowed_imports or frozenset()
+        self._allow_classes = allow_classes
+        self._class_depth = 0
+
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
@@ -89,17 +124,24 @@ class SecurityFilter(ast.NodeTransformer):
     # Statement visitors (import / global / nonlocal)
     # ------------------------------------------------------------------
 
-    def visit_Import(self, node: ast.Import) -> ast.Expr:
-        return self._make_raise_stmt(
-            f"Security filter error at line {node.lineno}: "
-            "Imports are disabled in the agent orchestration environment."
-        )
+    def visit_Import(self, node: ast.Import) -> ast.Expr | ast.Import:
+        for alias in node.names:
+            if alias.name not in self._allowed_imports:
+                return self._make_raise_stmt(
+                    f"Security filter error at line {node.lineno}: "
+                    f"Import '{alias.name}' is not in allowed_imports."
+                )
 
-    def visit_ImportFrom(self, node: ast.ImportFrom) -> ast.Expr:
-        return self._make_raise_stmt(
-            f"Security filter error at line {node.lineno}: "
-            "Imports are disabled in the agent orchestration environment."
-        )
+        return node
+
+    def visit_ImportFrom(self, node: ast.ImportFrom) -> ast.Expr | ast.ImportFrom:
+        if node.module is None or node.module not in self._allowed_imports:
+            return self._make_raise_stmt(
+                f"Security filter error at line {node.lineno}: "
+                f"Import from '{node.module}' is not in allowed_imports."
+            )
+
+        return node
 
     def visit_Global(self, node: ast.Global) -> ast.Expr:
         return self._make_raise_stmt(
@@ -114,17 +156,47 @@ class SecurityFilter(ast.NodeTransformer):
         )
 
     # ------------------------------------------------------------------
-    # Expression visitors (attribute access / dangerous calls)
+    def visit_ClassDef(self, node: ast.ClassDef) -> ast.ClassDef | ast.Expr:
+        if self._allow_classes:
+            self._class_depth += 1
+            self.generic_visit(node)
+            self._class_depth -= 1
+            return node
+
+        return self._make_raise_stmt(
+            f"Security filter error at line {node.lineno}: "
+            "Class definitions are disabled in the orchestration environment."
+        )
+
+    def visit_FunctionDef(self, node: ast.FunctionDef) -> ast.FunctionDef | ast.Expr:
+        if self._allow_classes and self._class_depth > 0 and node.name.startswith("__"):
+            if node.name not in self._SAFE_CLASS_DUNDERS:
+                return self._make_raise_stmt(
+                    f"Security filter error at line {node.lineno}: "
+                    f"Method name '{node.name}' is not allowed. "
+                    f"Only safe dunder methods are permitted inside class bodies."
+                )
+
+        return self.generic_visit(node)
+
     # ------------------------------------------------------------------
+    # Expression visitors (attribute access / dangerous calls)
 
     def visit_Attribute(self, node: ast.Attribute):
         if node.attr.startswith("_"):
             if node.attr in self._SAFE_DUNDER:
                 return self.generic_visit(node)
 
+            if (
+                self._allow_classes
+                and self._class_depth > 0
+                and node.attr in self._SAFE_CLASS_DUNDERS
+            ):
+                return self.generic_visit(node)
+
             if isinstance(node.ctx, (ast.Store, ast.Del)):
                 verb = "assign to" if isinstance(node.ctx, ast.Store) else "delete"
-                raise SecurityError(
+                return self._make_raise_expr(
                     f"Security filter error at line {node.lineno}: "
                     f"cannot {verb} private attribute '{node.attr}'"
                 )

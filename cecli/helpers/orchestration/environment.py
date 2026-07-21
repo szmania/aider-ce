@@ -202,16 +202,30 @@ class AgentExecutionEnv:
     # Shared across all AgentExecutionEnv instances — any agent can read/write
     _shared_state: TrackedDict = TrackedDict()
 
-    def __init__(self, coder: Any) -> None:
+    def __init__(self, coder: Any, orchestration_config: dict[str, Any] | None = None) -> None:
+        from typing import Any as _Any
+
+        self._orchestration_config: dict[str, _Any] = orchestration_config or {}
+        self._DANGEROUS_BUILTINS: set[str] = {
+            "eval",
+            "exec",
+            "open",
+            "__import__",
+            "compile",
+            "breakpoint",
+            "globals",
+            "locals",
+        }
+
         self.state = TrackedDict()
         self.state._set_owner(self)
         self._shared_state._set_owner(self, is_shared=True)
 
         # Initialize early so _safe_builtins can reference them
-        self.globals: dict[str, Any] = {}
-        self.locals: dict[str, Any] = {}
+        self.globals: dict[str, _Any] = {}
+        self.locals: dict[str, _Any] = {}
 
-        self._safe_builtins: dict[str, Any] = {
+        self._safe_builtins: dict[str, _Any] = {
             "print": print,
             "range": range,
             "len": len,
@@ -266,6 +280,32 @@ class AgentExecutionEnv:
             "traceback": _SafeModuleProxy(traceback),
             "pathlib": _SafePathlib,
         }
+
+        # Task 3: allowed_builtins — extend _safe_builtins with user-requested builtins
+        allowed_builtins: list[str] = self._orchestration_config.get("allowed_builtins", [])
+        for name in allowed_builtins:
+            if name.startswith("_"):
+                raise ValueError(f"Cannot allow private builtin '{name}'")
+            if name in self._DANGEROUS_BUILTINS and not self._orchestration_config.get(
+                "disable_security"
+            ):
+                raise ValueError(f"Cannot allow dangerous builtin '{name}'")
+            self._safe_builtins[name] = __builtins__[name]
+
+        # When security is fully disabled, expose dangerous builtins
+        if self._orchestration_config.get("disable_security", False):
+            for name in self._DANGEROUS_BUILTINS:
+                self._safe_builtins[name] = __builtins__[name]
+
+        # When allow_classes is enabled, expose __build_class__ needed by Python
+        if self._orchestration_config.get("allow_classes", False):
+            self._safe_builtins["__build_class__"] = __builtins__["__build_class__"]
+
+        # When allowed_imports is configured, expose __import__ so imports work,
+        # and add __name__ since imported modules reference it.
+        if self._orchestration_config.get("allowed_imports"):
+            self._safe_builtins["__import__"] = __builtins__["__import__"]
+            self._safe_builtins["__name__"] = "__sandbox__"
 
         self.globals.clear()
         _agent = AgentProxy(coder)
@@ -382,7 +422,8 @@ class AgentExecutionEnv:
 
         code_str = code_str.strip()
         code_str = _escape_newlines_in_strings(code_str)
-        code_str, extra_globals = _strip_allowed_imports(code_str)
+        extra_allowed = frozenset(self._orchestration_config.get("allowed_imports", []))
+        code_str, extra_globals = _strip_allowed_imports(code_str, extra_allowed=extra_allowed)
         self.globals.update(extra_globals)
         if not code_str:
             return {"results": "", "state_variables": self._state_snapshot()}
@@ -411,8 +452,13 @@ class AgentExecutionEnv:
             return {"results": code, "state_variables": self._state_snapshot()}
 
         try:
-            tree = SecurityFilter().visit(tree)
-            tree = LoopYieldInjector().visit(tree)
+            if not self._orchestration_config.get("disable_security", False):
+                tree = SecurityFilter(
+                    allowed_imports=extra_allowed,
+                    allow_classes=self._orchestration_config.get("allow_classes", False),
+                ).visit(tree)
+            if not self._orchestration_config.get("disable_loop_protection", False):
+                tree = LoopYieldInjector().visit(tree)
             ast.fix_missing_locations(tree)
         except SecurityError as e:
             return _build_result(f"Security Error: {e}")
@@ -477,7 +523,9 @@ def build_orchestration_context_block(agent_config: dict[str, Any]) -> str | Non
     if not agent_config.get("allow_orchestration", True):
         return None
 
-    return """<context name="orchestration" from="agent">
+    orchestration_config = agent_config.get("orchestration", {})
+
+    context = """<context name="orchestration" from="agent">
 The `Orchestrate` tool lets you batch multiple tool calls in a single step by writing Python code in a limited, secure sandbox.
 This is much more efficient than making individual tool calls for loop-heavy workflows.
 Variables and methods defined in a script are persisted in subsequent turns.
@@ -610,6 +658,28 @@ await Agent.edit_region(
 3. All tool calls must be awaited
 4. Use `print(...)` to output results — only printed output is returned
 </context>"""
+
+    # Task 6: Append sandbox configuration overrides when non-empty
+    if orchestration_config:
+        overrides: list[str] = []
+        if orchestration_config.get("allowed_imports"):
+            overrides.append(
+                f"- Allowed extra imports: {orchestration_config['allowed_imports']}"
+            )
+        if orchestration_config.get("allowed_builtins"):
+            overrides.append(
+                f"- Allowed extra builtins: {orchestration_config['allowed_builtins']}"
+            )
+        if orchestration_config.get("allow_classes"):
+            overrides.append("- Class definitions are allowed (__init__, __str__, etc.)")
+        if orchestration_config.get("disable_security"):
+            overrides.append("- ⚠ Security filtering is DISABLED")
+        if orchestration_config.get("disable_loop_protection"):
+            overrides.append("- ⚠ Loop protection is DISABLED")
+        if overrides:
+            context += "\n### Sandbox Configuration Overrides\n" + "\n".join(overrides) + "\n"
+
+    return context
 
 
 # flake8: noqa

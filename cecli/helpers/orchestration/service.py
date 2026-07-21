@@ -24,7 +24,11 @@ class OrchestrationService:
             cls._instances[coder] = instance
             return instance
 
-        instance = AgentExecutionEnv(coder)
+        orchestration_config = {}
+        if hasattr(coder, "agent_config"):
+            orchestration_config = coder.agent_config.get("orchestration", {})
+
+        instance = AgentExecutionEnv(coder, orchestration_config=orchestration_config)
         cls._instances[coder] = instance
         cls._uuid_index[coder.uuid] = instance
         return instance

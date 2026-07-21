@@ -586,11 +586,20 @@ _PREIMPORTED_MODULES: frozenset[str] = frozenset(
 )
 
 
-def _strip_allowed_imports(code: str) -> tuple[str, dict[str, object]]:
+def _strip_allowed_imports(
+    code: str,
+    extra_allowed: frozenset[str] | None = None,
+) -> tuple[str, dict[str, object]]:
     """Strip import lines for modules already pre-imported in the sandbox.
 
     The sandbox provides ``re``, ``math``, ``itertools``, ``collections``,
     ``datetime``, ``traceback``, and ``json`` as read-only proxies.
+
+    When *extra_allowed* is provided, import statements for those modules
+    are also allowed through (neither stripped nor commented out).  The caller
+    is responsible for ensuring those names are resolvable at execution time
+    (either by pre-importing them into the sandbox globals or letting the
+    ``SecurityFilter`` allow the ``import`` statement through).
 
     Returns ``(code, extra_globals)`` where *extra_globals* maps imported
     names to their resolved values.  The caller must inject these into the
@@ -606,7 +615,11 @@ def _strip_allowed_imports(code: str) -> tuple[str, dict[str, object]]:
 
     import re as _re
 
+    preimported = _PREIMPORTED_MODULES
+    skip_allowed = extra_allowed or frozenset()
+
     lines = code.splitlines()
+
     result = []
     extra_globals: dict[str, object] = {}
 
@@ -619,7 +632,11 @@ def _strip_allowed_imports(code: str) -> tuple[str, dict[str, object]]:
             r"import\s+(\w+)(?:\s+as\s+(\w+))?\s*$",
             stripped,
         )
-        if m and m.group(1) in _PREIMPORTED_MODULES:
+        if m and m.group(1) in skip_allowed:
+            result.append(line)
+            continue
+
+        if m and m.group(1) in preimported:
             mod_name = m.group(1)
             alias = m.group(2) or mod_name
 
@@ -637,7 +654,11 @@ def _strip_allowed_imports(code: str) -> tuple[str, dict[str, object]]:
             r"from\s+(\w+)\s+import\s+(.*)$",
             stripped,
         )
-        if m and m.group(1) in _PREIMPORTED_MODULES:
+        if m and m.group(1) in skip_allowed:
+            result.append(line)
+            continue
+
+        if m and m.group(1) in preimported:
             mod_name = m.group(1)
             names_clause = m.group(2)
 

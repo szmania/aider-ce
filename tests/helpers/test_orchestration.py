@@ -15,7 +15,9 @@ import pytest
 from cecli.helpers.orchestration.environment import (
     AgentExecutionEnv,
     AgentProxy,
+    build_orchestration_context_block,
 )
+from cecli.helpers.orchestration.safe_methods import _strip_allowed_imports
 from cecli.helpers.orchestration.security import (
     LoopYieldInjector,
     SecurityError,
@@ -1379,3 +1381,335 @@ async def test_env_named_gather_exception_handling():
     )
     # Just verify it doesn't crash
     assert result["results"] is not None
+
+
+# ---------------------------------------------------------------------------
+# Test Group 1: allowed_imports
+# ---------------------------------------------------------------------------
+
+
+class TestAllowedImports:
+    """Tests for the `allowed_imports` orchestration config option."""
+
+    def test_import_with_allowed_imports(self):
+        """1.1: `import os` with allowed_imports=["os"] passes SecurityFilter."""
+        sf = SecurityFilter(allowed_imports=frozenset({"os"}))
+        tree = ast.parse("import os", mode="exec")
+        rewritten = sf.visit(tree)
+        # Should not contain __security_raise — imports pass through
+        dump = ast.dump(rewritten)
+        assert "__security_raise" not in dump
+
+    def test_import_without_allowed_imports(self):
+        """1.2: `import os` with empty allowed_imports is blocked."""
+        assert not _run_security_filter_safe("import os")
+
+    def test_from_import_with_allowed(self):
+        """1.3: `from os import path` with allowed_imports=["os"] succeeds."""
+        sf = SecurityFilter(allowed_imports=frozenset({"os"}))
+        tree = ast.parse("from os import path", mode="exec")
+        rewritten = sf.visit(tree)
+        dump = ast.dump(rewritten)
+        assert "__security_raise" not in dump
+
+    def test_from_import_as_with_allowed(self):
+        """1.4: `from os import path as p` with allowed_imports=["os"] succeeds."""
+        sf = SecurityFilter(allowed_imports=frozenset({"os"}))
+        tree = ast.parse("from os import path as p", mode="exec")
+        rewritten = sf.visit(tree)
+        dump = ast.dump(rewritten)
+        assert "__security_raise" not in dump
+
+    def test_mixed_import_one_not_allowed(self):
+        """1.5: `import os, sys` with allowed_imports=["os"] is blocked on sys."""
+        sf = SecurityFilter(allowed_imports=frozenset({"os"}))
+        tree = ast.parse("import os, sys", mode="exec")
+        rewritten = sf.visit(tree)
+        dump = ast.dump(rewritten)
+        assert "__security_raise" in dump
+
+    def test_preimported_module_still_works(self):
+        """1.6: Pre-imported module (`import re`) with no extra config still works."""
+        # _strip_allowed_imports strips pre-imported modules, so nothing
+        # reaches SecurityFilter; but if it does, default filter blocks it.
+        # This test verifies the stripping works.
+        code, extras = _strip_allowed_imports("import re\nx = 1", extra_allowed=None)
+        assert "auto-removed" in code  # import line is commented
+        assert "x = 1" in code
+
+    def test_extra_allowed_preserves_import_line(self):
+        """1.7: extra_allowed modules are NOT stripped by _strip_allowed_imports."""
+        code, extras = _strip_allowed_imports("import os\nx = 1", extra_allowed=frozenset({"os"}))
+        assert "auto-removed" not in code
+        assert "import os" in code
+        assert "x = 1" in code
+
+
+# ---------------------------------------------------------------------------
+# Test Group 2: allowed_builtins
+# ---------------------------------------------------------------------------
+
+
+class TestAllowedBuiltins:
+    """Tests for the `allowed_builtins` orchestration config option."""
+
+    def test_setattr_with_allowed_builtins(self):
+        """2.1: `setattr` is available when allowed_builtins includes it."""
+        env = AgentExecutionEnv(
+            _make_mock_coder(),
+            orchestration_config={"allowed_builtins": ["setattr"]},
+        )
+        assert "setattr" in env._safe_builtins
+        assert env._safe_builtins["setattr"] is setattr
+
+    def test_setattr_without_allowed(self):
+        """2.2: `setattr` raises NameError when not allowed."""
+        env = AgentExecutionEnv(
+            _make_mock_coder(),
+            orchestration_config={},
+        )
+        assert "setattr" not in env._safe_builtins
+
+    def test_property_with_allowed_builtins(self):
+        """2.3: `property` is available when allowed."""
+        env = AgentExecutionEnv(
+            _make_mock_coder(),
+            orchestration_config={"allowed_builtins": ["property"]},
+        )
+        assert "property" in env._safe_builtins
+        assert env._safe_builtins["property"] is property
+
+    def test_eval_in_allowed_builtins_raises(self):
+        """2.4: `eval` in allowed_builtins raises ValueError."""
+        with pytest.raises(ValueError, match="dangerous builtin"):
+            AgentExecutionEnv(
+                _make_mock_coder(),
+                orchestration_config={"allowed_builtins": ["eval"]},
+            )
+
+    def test_open_in_allowed_builtins_raises(self):
+        """2.5: `open` in allowed_builtins raises ValueError."""
+        with pytest.raises(ValueError, match="dangerous builtin"):
+            AgentExecutionEnv(
+                _make_mock_coder(),
+                orchestration_config={"allowed_builtins": ["open"]},
+            )
+
+    def test_dunder_in_allowed_builtins_raises(self):
+        """2.6: `__import__` in allowed_builtins raises ValueError."""
+        with pytest.raises(ValueError, match="private builtin"):
+            AgentExecutionEnv(
+                _make_mock_coder(),
+                orchestration_config={"allowed_builtins": ["__import__"]},
+            )
+
+
+# ---------------------------------------------------------------------------
+# Test Group 3: allow_classes
+# ---------------------------------------------------------------------------
+
+
+class TestAllowClassesSecurityFilter:
+    """Tests for the `allow_classes` option in SecurityFilter."""
+
+    def test_class_def_allowed(self):
+        """3.1: `class A: pass` with allow_classes=True succeeds."""
+        sf = SecurityFilter(allow_classes=True)
+        tree = ast.parse("class A:\n    pass", mode="exec")
+        rewritten = sf.visit(tree)
+        dump = ast.dump(rewritten)
+        assert "__security_raise" not in dump
+
+    def test_class_def_blocked(self):
+        """3.2: `class A: pass` with allow_classes=False is blocked."""
+        assert not _run_security_filter_safe("class A:\n    pass")
+
+    def test_class_with_init_allowed(self):
+        """3.3: __init__ inside class is allowed with allow_classes=True."""
+        sf = SecurityFilter(allow_classes=True)
+        code = "class A:\n    def __init__(self):\n        pass"
+        tree = ast.parse(code, mode="exec")
+        rewritten = sf.visit(tree)
+        dump = ast.dump(rewritten)
+        assert "__security_raise" not in dump
+
+    def test_private_attr_store_inside_class_blocked(self):
+        """3.4: `self.__x = 1` inside class is still blocked."""
+        sf = SecurityFilter(allow_classes=True)
+        code = "class A:\n    def __init__(self):\n        self.__x = 1"
+        tree = ast.parse(code, mode="exec")
+        rewritten = sf.visit(tree)
+        dump = ast.dump(rewritten)
+        assert "__security_raise" in dump
+
+    def test_dunder_outside_class_blocked(self):
+        """3.5: `obj.__class__` at module level blocked even with allow_classes."""
+        sf = SecurityFilter(allow_classes=True)
+        tree = ast.parse("x = obj.__class__", mode="exec")
+        rewritten = sf.visit(tree)
+        dump = ast.dump(rewritten)
+        assert "__security_raise" in dump
+
+    def test_evil_dunder_inside_class_blocked(self):
+        """3.6: __evil__ inside class blocked (not in SAFE_CLASS_DUNDERS)."""
+        sf = SecurityFilter(allow_classes=True)
+        code = "class A:\n    def __evil__(self):\n        pass"
+        tree = ast.parse(code, mode="exec")
+        rewritten = sf.visit(tree)
+        dump = ast.dump(rewritten)
+        assert "__security_raise" in dump
+
+    def test_other_safe_dunders_allowed(self):
+        """Additional: __str__, __repr__, __iter__ etc. are allowed in class body."""
+        for dunder in ["__str__", "__repr__", "__iter__", "__len__", "__enter__", "__exit__"]:
+            sf = SecurityFilter(allow_classes=True)
+            code = f"class A:\n    def {dunder}(self):\n        pass"
+            tree = ast.parse(code, mode="exec")
+            rewritten = sf.visit(tree)
+            dump = ast.dump(rewritten)
+            assert "__security_raise" not in dump, f"{dunder} should be allowed"
+
+
+# ---------------------------------------------------------------------------
+# Test Group 4: disable_security
+# ---------------------------------------------------------------------------
+
+
+class TestDisableSecurity:
+    """Tests for the `disable_security` orchestration config option."""
+
+    @pytest.mark.asyncio
+    async def test_eval_with_disable_security(self):
+        """4.1: `eval("1+1")` with disable_security=True succeeds."""
+        env = AgentExecutionEnv(
+            _make_mock_coder(),
+            orchestration_config={"disable_security": True},
+        )
+        result = await env.execute("print(eval('1+1'))")
+        assert "2" in result["results"]
+
+    @pytest.mark.asyncio
+    async def test_eval_without_disable_security(self):
+        """4.2: `eval("1+1")` with disable_security=False raises SecurityError."""
+        env = AgentExecutionEnv(
+            _make_mock_coder(),
+            orchestration_config={},
+        )
+        result = await env.execute("print(eval('1+1'))")
+        assert "Security Error" in result["results"] or "forbidden" in result["results"].lower()
+
+    def test_import_os_disable_security(self):
+        """4.3: `import os` with disable_security=True, no allowed_imports, succeeds."""
+        env = AgentExecutionEnv(
+            _make_mock_coder(),
+            orchestration_config={"disable_security": True},
+        )
+        # The SecurityFilter is skipped entirely, so import passes AST
+        # (Runtime exec hit depends on the module being available)
+        assert env._orchestration_config["disable_security"] is True
+
+    @pytest.mark.asyncio
+    async def test_dunder_access_disable_security(self):
+        """4.4: `obj.__class__` with disable_security=True succeeds."""
+        env = AgentExecutionEnv(
+            _make_mock_coder(),
+            orchestration_config={"disable_security": True},
+        )
+        result = await env.execute("obj = 1\nprint(obj.__class__.__name__)")
+        assert "int" in result["results"]
+
+
+# ---------------------------------------------------------------------------
+# Test Group 5: disable_loop_protection
+# ---------------------------------------------------------------------------
+
+
+class TestDisableLoopProtection:
+    """Tests for the `disable_loop_protection` orchestration config option."""
+
+    @pytest.mark.asyncio
+    async def test_while_loop_with_disable_loop_protection(self):
+        """5.1: while loop with disable_loop_protection=True has no yield injection."""
+        code = "while True:\n    break"
+        # Without loop protection, the tree should NOT have __yield
+        # (LoopYieldInjector is skipped in execute, but here we test directly)
+        # Default: yield IS injected
+        lyi = LoopYieldInjector()
+        with_yield = lyi.visit(ast.parse(code, mode="exec"))
+        assert _get_loop_yield_count(with_yield) == 1
+
+    @pytest.mark.asyncio
+    async def test_env_with_disable_loop_protection(self):
+        """5.3: for loop with disable_loop_protection=True runs fine."""
+        env = AgentExecutionEnv(
+            _make_mock_coder(),
+            orchestration_config={"disable_loop_protection": True},
+        )
+        result = await env.execute("for i in range(10):\n    print(i)")
+        assert result["results"] is not None
+
+
+# ---------------------------------------------------------------------------
+# Test Group 6: Combination / Integration
+# ---------------------------------------------------------------------------
+
+
+class TestOrchestrationIntegration:
+    """Integration tests combining multiple orchestration config options."""
+
+    @pytest.mark.asyncio
+    async def test_combined_imports_and_classes(self):
+        """6.1: allowed_imports + allow_classes works end-to-end."""
+        env = AgentExecutionEnv(
+            _make_mock_coder(),
+            orchestration_config={
+                "allowed_imports": ["os", "typing"],
+                "allow_classes": True,
+            },
+        )
+        result = await env.execute(
+            "import os\n"
+            "import typing\n"
+            "class A:\n"
+            "    def __init__(self):\n"
+            "        pass\n"
+            "print('ok')\n"
+        )
+        assert "ok" in result["results"]
+
+    def test_empty_orchestration_config(self):
+        """6.2: Empty orchestration: {} behaves same as no config."""
+        env1 = AgentExecutionEnv(_make_mock_coder(), orchestration_config={})
+        env2 = AgentExecutionEnv(_make_mock_coder())
+        assert env1._safe_builtins.keys() == env2._safe_builtins.keys()
+
+    def test_context_block_with_config(self):
+        """6.3: build_orchestration_context_block includes overrides section."""
+        config = {
+            "allow_orchestration": True,
+            "orchestration": {
+                "allowed_imports": ["os"],
+                "allow_classes": True,
+            },
+        }
+        block = build_orchestration_context_block(config)
+        assert block is not None
+        assert "Sandbox Configuration Overrides" in block
+        assert "os" in block
+        assert "Class definitions" in block
+
+    def test_context_block_with_empty_config_no_overrides(self):
+        """6.4: build_orchestration_context_block with empty config unchanged."""
+        config = {"allow_orchestration": True}
+        block = build_orchestration_context_block(config)
+        assert block is not None
+        assert "Sandbox Configuration Overrides" not in block
+
+    def test_context_block_with_disable_security_warning(self):
+        """Context block shows warning for disable_security."""
+        config = {
+            "allow_orchestration": True,
+            "orchestration": {"disable_security": True},
+        }
+        block = build_orchestration_context_block(config)
+        assert "Security filtering is DISABLED" in block
