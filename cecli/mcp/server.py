@@ -314,6 +314,8 @@ class HttpBasedMcpServer(McpServer):
                 server_info["client_info"]["token_endpoint"] = token_endpoint
 
                 save_mcp_oauth_token(self.name, server_info)
+
+            return session
         except Exception as e:
             logging.error(f"Error initializing {self.name}: {e}")
             await self.disconnect()
