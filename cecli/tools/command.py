@@ -403,7 +403,7 @@ class Tool(BaseTool):
                 # Format output
                 output_content = output or ""
                 # Tokens are roughly 3-4 characters
-                output_limit = coder.large_file_token_threshold * 3.5
+                output_limit = int(coder.large_file_token_threshold * 3.5)
 
                 if coder.context_management_enabled and len(output_content) > output_limit * 1.25:
                     # Save full output to paginated files instead of truncating
