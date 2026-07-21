@@ -60,7 +60,7 @@ class TestFinishedTool:
         mock_coder.files_edited_by_tools = set()
 
         result = await Tool.execute(mock_coder)
-        assert result.to_dict()["result"] == "Yielded."
+        assert result.to_dict()["result"][0]["content"] == "Yielded."
 
     @pytest.mark.asyncio
     async def test_non_sub_agent_skips_lookup(self):
@@ -73,7 +73,7 @@ class TestFinishedTool:
         mock_coder.files_edited_by_tools = set()
 
         result = await Tool.execute(mock_coder)
-        assert result.to_dict()["result"] == "Yielded."
+        assert result.to_dict()["result"][0]["content"] == "Yielded."
 
     @pytest.mark.asyncio
     async def test_unknown_parent_uuid_caught_gracefully(self):

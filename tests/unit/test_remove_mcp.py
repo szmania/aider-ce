@@ -203,7 +203,7 @@ async def test_remove_mcp_tool_no_servers_configured():
     coder.mcp_manager = MagicMock()
     coder.mcp_manager.servers = []
     result = await ResourceManagerTool.execute(coder, remove_mcp=["test"])
-    assert result.to_dict()["result"] == "No MCP servers are configured."
+    assert result.to_dict()["result"][0]["content"] == "No MCP servers are configured."
 
 
 @pytest.mark.asyncio

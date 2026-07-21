@@ -34,6 +34,7 @@ class DummyCoder:
         self.abs_fnames = set()
         self.abs_read_only_fnames = set()
         self.large_file_token_threshold = 25000
+        self.file_read_cache = set()
 
         from unittest.mock import MagicMock
 

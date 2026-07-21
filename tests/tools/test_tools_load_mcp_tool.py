@@ -55,7 +55,7 @@ class TestLoadMcpTool:
         """Test when no MCP servers are configured."""
         coder.mcp_manager.servers = []
         result = await ResourceManagerTool.execute(coder, load_mcp=["test"])
-        assert result.to_dict()["result"] == "No MCP servers found, nothing to load."
+        assert result.to_dict()["result"][0]["content"] == "No MCP servers found, nothing to load."
 
     @pytest.mark.asyncio
     async def test_server_not_found(self, coder, mock_server):

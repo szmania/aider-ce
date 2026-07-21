@@ -52,6 +52,7 @@ class DummyCoder:
         self.abs_read_only_fnames = set()
         self.abs_fnames = set()
         self.edit_allowed = True
+        self.file_read_cache = set()
 
     def abs_root_path(self, file_path):
         path = Path(file_path)

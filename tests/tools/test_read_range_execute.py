@@ -169,7 +169,7 @@ class TestReadFileExecute:
         content = "\n".join(f"line{i}" for i in range(1, 11))
         self._setup(mock_coder, mock_file_context, mock_chunks, mock_manager, content)
         try:
-            show = [{"file_path": self.test_file, "range_start": "5", "range_end": "10"}]
+            show = [{"file_path": self.test_file, "range_start": "@L5", "range_end": "@L10"}]
             result = self.Tool.execute(self.coder, show)
             assert "line5" in str(result)
             assert "line10" in str(result)
@@ -181,7 +181,7 @@ class TestReadFileExecute:
         content = "\n".join(f"line{i}" for i in range(1, 11))
         self._setup(mock_coder, mock_file_context, mock_chunks, mock_manager, content)
         try:
-            show = [{"file_path": self.test_file, "range_start": "1", "range_end": "1"}]
+            show = [{"file_path": self.test_file, "range_start": "@L1", "range_end": "@L1"}]
             result = self.Tool.execute(self.coder, show)
             assert "line1" in str(result)
         finally:
@@ -194,7 +194,7 @@ class TestReadFileExecute:
         content = "\n".join(f"line{i}" for i in range(1, 11))
         self._setup(mock_coder, mock_file_context, mock_chunks, mock_manager, content)
         try:
-            show = [{"file_path": self.test_file, "range_start": "1", "range_end": "100"}]
+            show = [{"file_path": self.test_file, "range_start": "@L1", "range_end": "@L100"}]
             result = self.Tool.execute(self.coder, show)
             assert "line1" in str(result)
             assert "line10" in str(result)
@@ -208,7 +208,7 @@ class TestReadFileExecute:
         content = "\n".join(f"line{i}" for i in range(1, 11))
         self._setup(mock_coder, mock_file_context, mock_chunks, mock_manager, content)
         try:
-            show = [{"file_path": self.test_file, "range_start": "10", "range_end": "5"}]
+            show = [{"file_path": self.test_file, "range_start": "@L10", "range_end": "@L5"}]
             result = self.Tool.execute(self.coder, show)
             # Inverted: start=[9], end=[4], only one each -> swap to (4, 9)
             assert result is not None
@@ -264,7 +264,7 @@ class TestReadFileExecute:
         content = "line1\nline2\nline3\nline4\nline5"
         self._setup(mock_coder, mock_file_context, mock_chunks, mock_manager, content)
         try:
-            show = [{"file_path": self.test_file, "range_start": "@000", "range_end": "3"}]
+            show = [{"file_path": self.test_file, "range_start": "@000", "range_end": "@L3"}]
             result = self.Tool.execute(self.coder, show)
             assert "line1" in str(result)
             assert "line3" in str(result)
@@ -278,7 +278,7 @@ class TestReadFileExecute:
         content = "line1\nline2\nline3\nline4\nline5"
         self._setup(mock_coder, mock_file_context, mock_chunks, mock_manager, content)
         try:
-            show = [{"file_path": self.test_file, "range_start": "2", "range_end": "000@"}]
+            show = [{"file_path": self.test_file, "range_start": "@L2", "range_end": "000@"}]
             result = self.Tool.execute(self.coder, show)
             assert "line2" in str(result)
             assert "line5" in str(result)
@@ -415,7 +415,7 @@ class TestReadFileExecute:
 
         from cecli.tools.read_file import Tool
 
-        show = [{"file_path": "nonexistent/path.py", "range_start": "1", "range_end": "10"}]
+        show = [{"file_path": "nonexistent/path.py", "range_start": "@L1", "range_end": "@L10"}]
         result = Tool.execute(mock_coder, show)
         assert "not found" in str(result) or "Errors" in str(result)
 

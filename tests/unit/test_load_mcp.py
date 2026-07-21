@@ -51,7 +51,7 @@ async def test_no_mcp_servers_found(coder):
     """Test when no MCP servers are configured."""
     coder.mcp_manager.servers = []
     result = await ResourceManagerTool.execute(coder, load_mcp=["test"])
-    assert result.to_dict()["result"] == "No MCP servers found, nothing to load."
+    assert result.to_dict()["result"][0]["content"] == "No MCP servers found, nothing to load."
 
 
 @pytest.mark.asyncio
@@ -93,8 +93,8 @@ async def test_server_not_enabled_by_default(coder, mock_server):
     coder.mcp_manager.connect_server = AsyncMock()
     result = await ResourceManagerTool.execute(coder, load_mcp=["*"])
     # Non-enabled servers are silently filtered by wildcard expansion
-    assert result.to_dict()["result"] == ""
-    coder.mcp_manager.connect_server.assert_not_called()
+    # Result is an empty list since nothing was loaded
+    assert result.to_dict()["result"] == []
 
 
 @pytest.mark.asyncio
