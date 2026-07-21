@@ -184,11 +184,11 @@ class Tool(BaseTool):
             for i, d in enumerate(delegations):
                 name = d.get("name", "")
                 prompt = d.get("prompt", "")
+                is_async = d.get("async", True)
                 coder.io.tool_output(f"{color_start}delegation_{i + 1}:{color_end}")
                 coder.io.tool_output(f"agent: {name}")
-                coder.io.tool_output(f"task: {prompt}")
-                is_async = d.get("async", True)
                 coder.io.tool_output(f"mode: {'async' if is_async else 'sync'}")
+                coder.io.tool_output(f"task: {prompt}")
                 if i < len(delegations) - 1:
                     coder.io.tool_output("")
 
