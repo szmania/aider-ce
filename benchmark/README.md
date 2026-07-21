@@ -26,6 +26,13 @@ without any human review or supervision! The LLM could generate dangerous python
 that harms your system, like this: `import os; os.system("sudo rm -rf /")`.
 Running inside a docker container helps limit the damage that could be done.
 
+The current harness (`benchmark.py`) organizes the exercises as "Cats": each
+exercise carries `cat.yaml` metadata, enabling per-test selection and
+deterministic subsets (e.g. `--hash-re '^0'`) for spot-checking models. The
+canonical exercises source is
+[ErichBSchulz/cecli-cats](https://github.com/ErichBSchulz/cecli-cats), a
+Cats-formatted conversion of the polyglot benchmark.
+
 ## Usage
 
 There are 3 main tasks involved in benchmarking:
@@ -41,8 +48,8 @@ There are 3 main tasks involved in benchmarking:
 These steps only need to be done once.
 
 ```
-ORG=Aider-AI
-REPO=aider
+ORG=cecli-dev
+REPO=cecli
 # Clone the main repo
 git clone https://github.com/$ORG/$REPO.git
 
@@ -50,8 +57,9 @@ git clone https://github.com/$ORG/$REPO.git
 cd $REPO
 mkdir tmp.benchmarks
 
-# Clone the repo with the exercises
-git clone https://github.com/$ORG/polyglot-benchmark tmp.benchmarks/polyglot-benchmark
+# Clone the canonical exercises source for the Cats harness
+git clone https://github.com/ErichBSchulz/cecli-cats tmp.benchmarks/cecli-cats
+
 
 # Build the docker container
 ./benchmark/docker_build.sh
@@ -69,10 +77,10 @@ Launch the docker container and run the benchmark inside it:
 ./benchmark/docker.sh
 
 # Run the benchmark:
-./benchmark/benchmark.py a-helpful-name-for-this-run --model gpt-3.5-turbo --edit-format whole --threads 10 --exercises-dir polyglot-benchmark
+./benchmark/benchmark.py a-helpful-name-for-this-run --model gpt-3.5-turbo --edit-format whole --threads 10 --exercises-dir cecli-cats
 
 # Or with OpenRouter models (requires OPENROUTER_API_KEY environment variable):
-./benchmark/benchmark.py openrouter-run --model openrouter/deepseek/deepseek-r1:free --edit-format whole --threads 10 --exercises-dir polyglot-benchmark
+./benchmark/benchmark.py openrouter-run --model openrouter/deepseek/deepseek-r1:free --edit-format whole --threads 10 --exercises-dir cecli-cats
 ```
 
 The above will create a folder
@@ -156,6 +164,7 @@ Note the roadmap priorities:
 
 ## Limitations
 
+- `benchmark_classic.py` is deprecated (it predates the async Coder API).
 - These scripts are not intended for use by typical `cecli` end users.
 - Some of the old (?deprecated) tools are written as `bash` scripts, so it will be hard to use
   them on Windows.

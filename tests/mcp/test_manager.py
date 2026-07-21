@@ -149,11 +149,15 @@ class TestMcpServerManager:
         manager = McpServerManager(servers=[mock_server], io=mock_io)
         mock_server.connect.side_effect = Exception("Connection failed")
 
-        result = await manager.connect_server("test-server")
+        with patch("asyncio.sleep"):
+            result = await manager.connect_server("test-server")
 
         assert result is False
-        mock_server.connect.assert_called_once()
+        assert mock_server.connect.call_count == 3  # 1 initial + 2 retries
+        assert mock_io.tool_warning.call_count == 2  # warnings for attempts 1 and 2
         mock_io.tool_error.assert_called_once()
+        error_msg = mock_io.tool_error.call_args[0][0]
+        assert "after 3 attempts" in error_msg
         assert mock_server not in manager._connected_servers
 
     @pytest.mark.asyncio
