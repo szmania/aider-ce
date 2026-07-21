@@ -17,6 +17,9 @@ except ImportError:
     git = None
     ANY_GIT_ERROR = []
 
+import concurrent.futures
+import threading
+
 import pathspec
 
 import cecli.prompts.utils.system as prompts
@@ -50,6 +53,25 @@ def set_git_env(var_name, value, original_value):
             os.environ[var_name] = original_value
         elif var_name in os.environ:
             del os.environ[var_name]
+
+
+class CommitInfo:
+    """
+    Data-only container for extracted commit information.
+
+    Wraps the raw git-python commit data into simple Python types
+    so that callers never receive a reference to the underlying
+    ``git.Commit`` object (which could otherwise be used outside
+    of the repository lock, leading to deadlocks).
+    """
+
+    def __init__(self, hexsha: str, message: str, parents: tuple[str, ...]):
+        self.hexsha = hexsha
+        self.message = message
+        self.parents = parents
+
+    def __bool__(self):
+        return True
 
 
 class GitRepo:
@@ -104,6 +126,7 @@ class GitRepo:
         self.workspace_layout = "clone"
         self.workspace_ignore_specs = {}
         self.workspace_ignore_ts = {}
+        self._git_lock = threading.RLock()
         # Workspace detection and config loading occurs later in __init__
 
         if git_dname:
@@ -171,20 +194,20 @@ class GitRepo:
             self.cecli_ignore_file = Path(cecli_ignore_file)
 
     def init_repo(self):
-        if not self.repo:
-            self.repo = git.Repo(self._init_repo_path, odbt=git.GitCmdObjectDB)
-            self.root = utils.safe_abs_path(self.repo.working_tree_dir)
-
-        if self.is_workspace:
-            self.root = self.workspace_path
-
-        try:
-            commit = self.repo.head.commit
-            return commit
-        except ANY_GIT_ERROR:
-            if not self.is_workspace:
+        with self._git_lock:
+            if not self.repo:
                 self.repo = git.Repo(self._init_repo_path, odbt=git.GitCmdObjectDB)
                 self.root = utils.safe_abs_path(self.repo.working_tree_dir)
+
+            if self.is_workspace:
+                self.root = self.workspace_path
+
+            try:
+                self.repo.head.commit  # just access to check for errors, discard
+            except ANY_GIT_ERROR:
+                if not self.is_workspace:
+                    self.repo = git.Repo(self._init_repo_path, odbt=git.GitCmdObjectDB)
+                    self.root = utils.safe_abs_path(self.repo.working_tree_dir)
 
     def _load_workspace_config(self) -> None:
         from cecli.helpers.monorepo.config import (
@@ -245,8 +268,9 @@ class GitRepo:
         return None
 
     def __del__(self):
-        if self.repo:
-            self.repo.close()
+        with self._git_lock:
+            if self.repo:
+                self.repo.close()
 
     async def commit(self, fnames=None, context=None, message=None, coder_edits=False, coder=None):
         """
@@ -321,12 +345,13 @@ class GitRepo:
         if self.is_workspace and getattr(self, "workspace_layout", "clone") == "local":
             return await self._commit_local_workspace(fnames, context, message, coder_edits, coder)
 
-        if not fnames and not self.repo.is_dirty():
-            return
+        with self._git_lock:
+            if not fnames and not self.repo.is_dirty():
+                return
 
-        diffs = self.get_diffs(fnames)
-        if not diffs:
-            return
+            diffs = self.get_diffs(fnames)
+            if not diffs:
+                return
 
         if message:
             commit_message = message
@@ -397,70 +422,72 @@ class GitRepo:
 
         full_commit_message = commit_message + commit_message_trailer
 
-        cmd = ["-m", full_commit_message]
-        if not self.git_commit_verify:
-            cmd.append("--no-verify")
-        if fnames:
-            fnames = [str(self.abs_root_path(fn)) for fn in fnames]
-            added_fnames = []
-            for fname in fnames:
-                try:
-                    # Check if file is git-ignored before trying to add
-                    if (
-                        coder
-                        and hasattr(coder, "add_gitignore_files")
-                        and coder.add_gitignore_files
-                    ):
-                        rel_fname = self.get_rel_fname(fname)
-                        if self.git_ignored_file(rel_fname):
-                            # Skip git-ignored files when add_gitignore_files is enabled
-                            continue
-                    self.repo.git.add(fname)
-                    added_fnames.append(fname)
-                except ANY_GIT_ERROR as err:
-                    self.io.tool_error(f"Unable to add {fname}: {err}")
-            if added_fnames:
-                cmd += ["--"] + added_fnames
+        with self._git_lock:
+            cmd = ["-m", full_commit_message]
+            if not self.git_commit_verify:
+                cmd.append("--no-verify")
+            if fnames:
+                fnames = [str(self.abs_root_path(fn)) for fn in fnames]
+                added_fnames = []
+                for fname in fnames:
+                    try:
+                        # Check if file is git-ignored before trying to add
+                        if (
+                            coder
+                            and hasattr(coder, "add_gitignore_files")
+                            and coder.add_gitignore_files
+                        ):
+                            rel_fname = self.get_rel_fname(fname)
+                            if self.git_ignored_file(rel_fname):
+                                # Skip git-ignored files when add_gitignore_files is enabled
+                                continue
+                        self.repo.git.add(fname)
+                        added_fnames.append(fname)
+                    except ANY_GIT_ERROR as err:
+                        self.io.tool_error(f"Unable to add {fname}: {err}")
+                if added_fnames:
+                    cmd += ["--"] + added_fnames
+                else:
+                    # No files to commit (all were git-ignored or failed to add)
+                    return
             else:
-                # No files to commit (all were git-ignored or failed to add)
-                return
-        else:
-            cmd += ["-a"]
+                cmd += ["-a"]
 
-        original_user_name = self.repo.git.config("--get", "user.name")
-        original_committer_name_env = os.environ.get("GIT_COMMITTER_NAME")
-        original_author_name_env = os.environ.get("GIT_AUTHOR_NAME")
-        committer_name = f"{original_user_name} (cecli)"
+            original_user_name = self.repo.git.config("--get", "user.name")
+            original_committer_name_env = os.environ.get("GIT_COMMITTER_NAME")
+            original_author_name_env = os.environ.get("GIT_AUTHOR_NAME")
+            committer_name = f"{original_user_name} (cecli)"
 
-        try:
-            # Use context managers to handle environment variables
-            with contextlib.ExitStack() as stack:
-                if use_attribute_committer:
-                    stack.enter_context(
-                        set_git_env(
-                            "GIT_COMMITTER_NAME", committer_name, original_committer_name_env
+            try:
+                # Use context managers to handle environment variables
+                with contextlib.ExitStack() as stack:
+                    if use_attribute_committer:
+                        stack.enter_context(
+                            set_git_env(
+                                "GIT_COMMITTER_NAME", committer_name, original_committer_name_env
+                            )
                         )
-                    )
-                if use_attribute_author:
-                    stack.enter_context(
-                        set_git_env("GIT_AUTHOR_NAME", committer_name, original_author_name_env)
-                    )
+                    if use_attribute_author:
+                        stack.enter_context(
+                            set_git_env("GIT_AUTHOR_NAME", committer_name, original_author_name_env)
+                        )
 
-                # Perform the commit
-                self.repo.git.commit(cmd)
-                commit_hash = self.get_head_commit_sha(short=True)
-                self.io.tool_success(f"Commit {commit_hash} {commit_message}")
-                return commit_hash, commit_message
+                    # Perform the commit
+                    self.repo.git.commit(cmd)
+                    commit_hash = self.get_head_commit_sha(short=True)
+                    self.io.tool_success(f"Commit {commit_hash} {commit_message}")
+                    return commit_hash, commit_message
 
-        except ANY_GIT_ERROR as err:
-            self.io.tool_error(f"Unable to commit: {err}")
-            # No return here, implicitly returns None
+            except ANY_GIT_ERROR as err:
+                self.io.tool_error(f"Unable to commit: {err}")
+                # No return here, implicitly returns None
 
     def get_rel_repo_dir(self):
-        try:
-            return os.path.relpath(self.repo.git_dir, os.getcwd())
-        except (ValueError, OSError):
-            return self.repo.git_dir
+        with self._git_lock:
+            try:
+                return os.path.relpath(self.repo.git_dir, os.getcwd())
+            except (ValueError, OSError):
+                return self.repo.git_dir
 
     def get_rel_fname(self, fname):
         try:
@@ -530,126 +557,129 @@ class GitRepo:
     def get_diffs(self, fnames=None):
         # We always want diffs of index and working dir
 
-        current_branch_has_commits = False
-        try:
-            active_branch = self.repo.active_branch
+        with self._git_lock:
+            current_branch_has_commits = False
             try:
-                commits = self.repo.iter_commits(active_branch)
-                current_branch_has_commits = any(commits)
-            except ANY_GIT_ERROR:
+                active_branch = self.repo.active_branch
+                try:
+                    commits = self.repo.iter_commits(active_branch)
+                    current_branch_has_commits = any(commits)
+                except ANY_GIT_ERROR:
+                    pass
+            except (TypeError,) + ANY_GIT_ERROR:
                 pass
-        except (TypeError,) + ANY_GIT_ERROR:
-            pass
 
-        if not fnames:
-            fnames = []
+            if not fnames:
+                fnames = []
 
-        diffs = ""
-        for fname in fnames:
-            if not self.path_in_repo(fname):
-                diffs += f"Added {fname}\n"
+            diffs = ""
+            for fname in fnames:
+                if not self.path_in_repo(fname):
+                    diffs += f"Added {fname}\n"
 
-        try:
-            if current_branch_has_commits:
-                args = ["HEAD", "--"] + list(fnames)
-                diffs += self.repo.git.diff(*args, stdout_as_string=False).decode(
+            try:
+                if current_branch_has_commits:
+                    args = ["HEAD", "--"] + list(fnames)
+                    diffs += self.repo.git.diff(*args, stdout_as_string=False).decode(
+                        self.io.encoding, "replace"
+                    )
+                    return diffs
+
+                wd_args = ["--"] + list(fnames)
+                index_args = ["--cached"] + wd_args
+
+                diffs += self.repo.git.diff(*index_args, stdout_as_string=False).decode(
                     self.io.encoding, "replace"
                 )
+                diffs += self.repo.git.diff(*wd_args, stdout_as_string=False).decode(
+                    self.io.encoding, "replace"
+                )
+
                 return diffs
+            except ANY_GIT_ERROR as err:
+                self.io.tool_error(f"Unable to diff: {err}")
 
-            wd_args = ["--"] + list(fnames)
-            index_args = ["--cached"] + wd_args
+    def diff_commits(self, pretty, from_commit, to_commit=None):
+        with self._git_lock:
+            args = []
+            if pretty:
+                args += ["--color"]
+            else:
+                args += ["--color=never"]
 
-            diffs += self.repo.git.diff(*index_args, stdout_as_string=False).decode(
-                self.io.encoding, "replace"
-            )
-            diffs += self.repo.git.diff(*wd_args, stdout_as_string=False).decode(
+            if to_commit is not None:
+                args += [from_commit, to_commit]
+            else:
+                args += [from_commit]
+            diffs = self.repo.git.diff(*args, stdout_as_string=False).decode(
                 self.io.encoding, "replace"
             )
 
             return diffs
-        except ANY_GIT_ERROR as err:
-            self.io.tool_error(f"Unable to diff: {err}")
-
-    def diff_commits(self, pretty, from_commit, to_commit=None):
-        args = []
-        if pretty:
-            args += ["--color"]
-        else:
-            args += ["--color=never"]
-
-        if to_commit is not None:
-            args += [from_commit, to_commit]
-        else:
-            args += [from_commit]
-        diffs = self.repo.git.diff(*args, stdout_as_string=False).decode(
-            self.io.encoding, "replace"
-        )
-
-        return diffs
 
     def get_tracked_files(self):
-        if not self.repo:
-            return []
+        with self._git_lock:
+            if not self.repo:
+                return []
 
-        self.init_repo()
+            self.init_repo()
 
-        try:
-            commit = self.repo.head.commit
-        except ValueError:
-            commit = None
-        except ANY_GIT_ERROR as err:
-            self.git_repo_error = err
-            self.io.tool_error(f"Unable to list files in git repo: {err}")
-            self.io.tool_output("Is your git repo corrupted?")
-            return []
+            try:
+                commit = self.repo.head.commit
+            except ValueError:
+                commit = None
+            except ANY_GIT_ERROR as err:
+                self.git_repo_error = err
+                self.io.tool_error(f"Unable to list files in git repo: {err}")
+                self.io.tool_output("Is your git repo corrupted?")
+                return []
 
-        files = set()
-        if commit:
-            if self._tree_cache is not None and self._tree_cache[0] == commit.hexsha:
-                files = self._tree_cache[1]
-            else:
-                try:
-                    iterator = commit.tree.traverse()
-                    blob = None  # Initialize blob
-                    while True:
-                        try:
-                            blob = next(iterator)
-                            if blob.type == "blob":  # blob is a file
-                                # Use sys.intern() to deduplicate path strings in memory
-                                files.add(sys.intern(blob.path))
-                        except IndexError:
-                            # Handle potential index error during tree traversal
-                            # without relying on potentially unassigned 'blob'
-                            self.io.tool_warning(
-                                "GitRepo: Index error encountered while reading git tree object."
-                                " Skipping."
-                            )
-                            continue
-                        except StopIteration:
-                            break
-                except ANY_GIT_ERROR as err:
-                    self.git_repo_error = err
-                    self.io.tool_error(f"Unable to list files in git repo: {err}")
-                    self.io.tool_output("Is your git repo corrupted?")
-                    return []
-                files = set(self.normalize_path(path) for path in files)
-                # Use single-entry cache (not per-commit dict) to limit memory growth
-                # Store only the SHA string (not the Commit object) to avoid retaining
-                # the entire git object graph (tree, blobs, parent commits, etc.)
-                self._tree_cache = (commit.hexsha, files)
+            files = set()
+            if commit:
+                if self._tree_cache is not None and self._tree_cache[0] == commit.hexsha:
+                    files = self._tree_cache[1]
+                else:
+                    try:
+                        iterator = commit.tree.traverse()
+                        blob = None  # Initialize blob
+                        while True:
+                            try:
+                                blob = next(iterator)
+                                if blob.type == "blob":  # blob is a file
+                                    # Use sys.intern() to deduplicate path strings in memory
+                                    files.add(sys.intern(blob.path))
+                            except IndexError:
+                                # Handle potential index error during tree traversal
+                                # without relying on potentially unassigned 'blob'
+                                self.io.tool_warning(
+                                    "GitRepo: Index error encountered while reading git tree object."
+                                    " Skipping."
+                                )
+                                continue
+                            except StopIteration:
+                                break
+                    except ANY_GIT_ERROR as err:
+                        self.git_repo_error = err
+                        self.io.tool_error(f"Unable to list files in git repo: {err}")
+                        self.io.tool_output("Is your git repo corrupted?")
+                        return []
+                    files = set(self.normalize_path(path) for path in files)
+                    # Use single-entry cache (not per-commit dict) to limit memory growth
+                    # Store only the SHA string (not the Commit object) to avoid retaining
+                    # the entire git object graph (tree, blobs, parent commits, etc.)
+                    self._tree_cache = (commit.hexsha, files)
 
-        # Add staged files
-        index = self.repo.index
-        try:
-            staged_files = [path for path, _ in index.entries.keys()]
-            files.update(self.normalize_path(path) for path in staged_files)
-        except ANY_GIT_ERROR as err:
-            self.io.tool_error(f"Unable to read staged files: {err}")
+            # Add staged files
+            index = self.repo.index
+            try:
+                staged_files = [path for path, _ in index.entries.keys()]
+                files.update(self.normalize_path(path) for path in staged_files)
+            except ANY_GIT_ERROR as err:
+                self.io.tool_error(f"Unable to read staged files: {err}")
 
-        res = [fname for fname in files if not self.ignored_file(fname)]
+            res = [fname for fname in files if not self.ignored_file(fname)]
 
-        return res
+            return res
 
     async def _commit_local_workspace(
         self, fnames=None, context=None, message=None, coder_edits=False, coder=None
@@ -1025,16 +1055,17 @@ class GitRepo:
         if not self.cecli_ignore_spec:
             return []
 
-        try:
-            all_files = self.repo.git.ls_files(
-                "--others", "--cached", f"--exclude-from={str(self.cecli_ignore_file)}"
-            ).splitlines()
+        with self._git_lock:
+            try:
+                all_files = self.repo.git.ls_files(
+                    "--others", "--cached", f"--exclude-from={str(self.cecli_ignore_file)}"
+                ).splitlines()
 
-            return [f for f in all_files if not self.ignored_file(f)]
-        except Exception as e:
-            # Fall back to empty set if there's an error
-            self.io.tool_warning(f"Error getting ignored files from root: {e}")
-            return []
+                return [f for f in all_files if not self.ignored_file(f)]
+            except Exception as e:
+                # Fall back to empty set if there's an error
+                self.io.tool_warning(f"Error getting ignored files from root: {e}")
+                return []
 
     def get_repo_files(self) -> list[str]:
         """
@@ -1070,19 +1101,20 @@ class GitRepo:
         Returns:
             SHA-256 hex digest, or empty string if repo is unavailable
         """
-        import hashlib
+        with self._git_lock:
+            import hashlib
 
-        if not self.repo:
-            return ""
+            if not self.repo:
+                return ""
 
-        sha = self.get_head_commit_sha() or ""
-        try:
-            staged = [item.a_path for item in self.repo.index.diff("HEAD")]
-        except ANY_GIT_ERROR:
-            staged = []
+            sha = self.get_head_commit_sha() or ""
+            try:
+                staged = [item.a_path for item in self.repo.index.diff("HEAD")]
+            except ANY_GIT_ERROR:
+                staged = []
 
-        combined = sha + "|" + "".join(sorted(staged))
-        return hashlib.sha256(combined.encode()).hexdigest()
+            combined = sha + "|" + "".join(sorted(staged))
+            return hashlib.sha256(combined.encode()).hexdigest()
 
     def path_in_repo(self, path):
         if not self.repo:
@@ -1115,40 +1147,240 @@ class GitRepo:
         Returns a list of all files which are dirty (not committed), either staged or in the working
         directory.
         """
-        dirty_files = set()
+        with self._git_lock:
+            dirty_files = set()
 
-        # Get staged files
-        staged_files = self.repo.git.diff("--name-only", "--cached").splitlines()
-        dirty_files.update(staged_files)
+            # Get staged files
+            staged_files = self.repo.git.diff("--name-only", "--cached").splitlines()
+            dirty_files.update(staged_files)
 
-        # Get unstaged files
-        unstaged_files = self.repo.git.diff("--name-only").splitlines()
-        dirty_files.update(unstaged_files)
+            # Get unstaged files
+            unstaged_files = self.repo.git.diff("--name-only").splitlines()
+            dirty_files.update(unstaged_files)
 
-        return list(dirty_files)
+            return list(dirty_files)
 
     def is_dirty(self, path=None):
-        if path and not self.path_in_repo(path):
-            return True
+        with self._git_lock:
+            if path and not self.path_in_repo(path):
+                return True
 
-        return self.repo.is_dirty(path=path)
+            return self.repo.is_dirty(path=path)
 
     def get_head_commit(self):
-        try:
-            return self.repo.head.commit
-        except (ValueError,) + ANY_GIT_ERROR:
-            return None
+        with self._git_lock:
+            try:
+                commit = self.repo.head.commit
+                return CommitInfo(
+                    hexsha=commit.hexsha,
+                    message=commit.message,
+                    parents=tuple(p.hexsha for p in commit.parents),
+                )
+            except (ValueError,) + ANY_GIT_ERROR:
+                return None
 
     def get_head_commit_sha(self, short=False):
-        commit = self.get_head_commit()
-        if not commit:
-            return
-        if short:
-            return commit.hexsha[:7]
-        return commit.hexsha
+        with self._git_lock:
+            try:
+                commit = self.repo.head.commit
+            except (ValueError,) + ANY_GIT_ERROR:
+                return
+            if not commit:
+                return
+            if short:
+                return commit.hexsha[:7]
+            return commit.hexsha
 
     def get_head_commit_message(self, default=None):
-        commit = self.get_head_commit()
-        if not commit:
-            return default
-        return commit.message
+        with self._git_lock:
+            try:
+                commit = self.repo.head.commit
+            except (ValueError,) + ANY_GIT_ERROR:
+                return default
+            if not commit:
+                return default
+            return commit.message
+
+
+class _GitObjectProxy:
+    """Routes all operations on a git sub-object through a shared single-thread executor.
+
+    Wraps objects like ``git.Repo.git``, ``git.Repo.head``, ``git.Repo.index``
+    so that every method call and attribute access is dispatched on the
+    executor thread, preventing deadlocks when the underlying ``git.Repo``
+    is accessed from multiple asyncio workers.
+
+    Iterators returned by git-python methods are eagerly materialised into
+    lists so that iteration happens on the executor thread, not the caller's.
+    """
+
+    def __init__(self, obj, executor):
+        object.__setattr__(self, "_obj", obj)
+        object.__setattr__(self, "_executor", executor)
+
+    def __getattr__(self, name):
+        attr = getattr(self._obj, name)
+
+        # Recursively wrap git-python objects (check FIRST since git.cmd.Git
+        # is callable via __call__, but we want chained access like
+        # ``repo.git.status(...)`` to stay on the executor thread).
+        cls = type(attr)
+        if cls.__module__ and cls.__module__.startswith("git"):
+            return _GitObjectProxy(attr, self._executor)
+
+        if callable(attr):
+
+            def proxy_fn(*args, **kwargs):
+                future = self._executor.submit(attr, *args, **kwargs)
+                result = future.result()
+                # Materialise iterators eagerly in the executor thread so
+                # iteration never touches git objects from the caller's thread.
+                if hasattr(result, "__iter__") and not isinstance(result, (str, bytes, dict)):
+                    try:
+                        return list(result)
+                    except TypeError:
+                        pass
+                return result
+
+            return proxy_fn
+
+        return attr
+
+
+class GitRepoProxy:
+    """Thread-safe proxy for ``GitRepo`` that serialises all git operations
+    through a single dedicated thread.
+
+    Prevents deadlocks by ensuring only one thread ever touches the
+    underlying ``git.Repo`` at any time.  Follows the same delegation
+    pattern as ``IOProxy``:
+
+    * Sync methods that access ``self.repo`` are explicitly dispatched
+      to the executor and block on the result.
+    * Non-git attributes and methods are forwarded transparently via
+      ``__getattr__`` / ``__setattr__``.
+    * Access to ``.repo`` (the raw ``git.Repo``) returns a
+      ``_GitObjectProxy`` that routes every attribute and call through
+      the same executor, so even callers that reach through to the
+      underlying git object stay thread-safe.
+
+    Usage::
+
+        repo = GitRepoProxy(GitRepo(io, fnames, git_dname))
+        files = repo.get_tracked_files()   # runs on executor thread
+        sha = repo.get_head_commit_sha()   # runs on executor thread
+    """
+
+    def __init__(self, target):
+        self._target = target
+        self._executor = concurrent.futures.ThreadPoolExecutor(
+            max_workers=1, thread_name_prefix="git-repo"
+        )
+
+    # ------------------------------------------------------------------
+    # Sync methods that access self.repo (the git.Repo object)
+    # ------------------------------------------------------------------
+
+    def init_repo(self):
+        return self._executor.submit(self._target.init_repo).result()
+
+    @classmethod
+    def unwrap(cls, repo):
+        """Unwrap a ``GitRepoProxy`` to get the underlying ``GitRepo``.
+
+        If *repo* is already a ``GitRepo`` (not a proxy) it is returned
+        unchanged.  This mirrors ``IOProxy.unwrap()`` and prevents nested
+        proxy chains during coder switching (``SwitchCoderSignal``).
+
+        Usage::
+
+            raw = GitRepoProxy.unwrap(maybe_proxied_repo)
+        """
+        return repo._target if isinstance(repo, cls) else repo
+
+    def __del__(self):
+        try:
+            if hasattr(self, "_target") and self._target is not None:
+                self._executor.submit(self._target.__del__).result(timeout=5)
+        except Exception:
+            pass
+
+    def get_rel_repo_dir(self):
+        return self._executor.submit(self._target.get_rel_repo_dir).result()
+
+    def get_diffs(self, fnames=None):
+        return self._executor.submit(self._target.get_diffs, fnames).result()
+
+    def diff_commits(self, pretty, from_commit, to_commit=None):
+        return self._executor.submit(
+            self._target.diff_commits, pretty, from_commit, to_commit
+        ).result()
+
+    def get_tracked_files(self):
+        return self._executor.submit(self._target.get_tracked_files).result()
+
+    def path_in_repo(self, path):
+        return self._executor.submit(self._target.path_in_repo, path).result()
+
+    def get_dirty_files(self):
+        return self._executor.submit(self._target.get_dirty_files).result()
+
+    def is_dirty(self, path=None):
+        return self._executor.submit(self._target.is_dirty, path).result()
+
+    def get_head_commit(self):
+        return self._executor.submit(self._target.get_head_commit).result()
+
+    def get_head_commit_sha(self, short=False):
+        return self._executor.submit(self._target.get_head_commit_sha, short).result()
+
+    def get_head_commit_message(self, default=None):
+        return self._executor.submit(self._target.get_head_commit_message, default).result()
+
+    def get_cache_key(self):
+        return self._executor.submit(self._target.get_cache_key).result()
+
+    def git_ignored_file(self, path):
+        return self._executor.submit(self._target.git_ignored_file, path).result()
+
+    def get_non_ignored_files_from_root(self):
+        return self._executor.submit(self._target.get_non_ignored_files_from_root).result()
+
+    def get_repo_files(self):
+        return self._executor.submit(self._target.get_repo_files).result()
+
+    def get_workspace_files(self):
+        return self._executor.submit(self._target.get_workspace_files).result()
+
+    # ------------------------------------------------------------------
+    # Async methods  –  called from the main asyncio task only, and
+    # already protected by ``_git_lock`` on the target; we do *not*
+    # proxy them through the executor because they mix git operations
+    # with LLM calls (``get_commit_message``) that must stay async.
+    # ------------------------------------------------------------------
+
+    # commit() and _commit_local_workspace() are forwarded via __getattr__
+
+    # ------------------------------------------------------------------
+    # Access to the raw ``git.Repo``  –  return a sub-proxy that routes
+    # every call through the same executor, so callers that reach
+    # through to the underlying git object stay thread-safe.
+    # ------------------------------------------------------------------
+
+    @property
+    def repo(self):
+        raw = self._target.repo
+        return _GitObjectProxy(raw, self._executor) if raw is not None else None
+
+    # ------------------------------------------------------------------
+    # Non-git attributes  –  transparent forwarding
+    # ------------------------------------------------------------------
+
+    def __getattr__(self, name):
+        return getattr(self._target, name)
+
+    def __setattr__(self, name, value):
+        if name.startswith("_") or name in ("_target", "_executor"):
+            super().__setattr__(name, value)
+        else:
+            setattr(self._target, name, value)

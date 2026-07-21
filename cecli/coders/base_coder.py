@@ -55,7 +55,7 @@ from cecli.reasoning_tags import (
     remove_reasoning_content,
     replace_reasoning_tags,
 )
-from cecli.repo import ANY_GIT_ERROR, GitRepo
+from cecli.repo import ANY_GIT_ERROR, GitRepo, GitRepoProxy
 from cecli.repomap import RepoMap
 from cecli.report import update_error_prefix
 from cecli.run_cmd import run_cmd_async
@@ -571,11 +571,13 @@ class Coder(metaclass=UsageMeta):
         self.repo = repo
         if use_git and self.repo is None:
             try:
-                self.repo = GitRepo(
-                    self.io,
-                    fnames,
-                    None,
-                    models=main_model.commit_message_models(),
+                self.repo = GitRepoProxy(
+                    GitRepo(
+                        self.io,
+                        fnames,
+                        None,
+                        models=main_model.commit_message_models(),
+                    )
                 )
             except FileNotFoundError:
                 pass

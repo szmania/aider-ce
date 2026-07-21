@@ -554,7 +554,7 @@ async def main_async(
     from cecli.mcp import McpServerManager, load_mcp_servers
     from cecli.models import ModelSettings
     from cecli.onboarding import offer_openrouter_oauth, select_default_model
-    from cecli.repo import GitRepo
+    from cecli.repo import GitRepo, GitRepoProxy
     from cecli.report import report_uncaught_exceptions, set_args_error_data
     from cecli.versioncheck import check_version
     from cecli.watch import FileWatcher
@@ -1041,20 +1041,22 @@ async def main_async(
     repo = None
     if args.git:
         try:
-            repo = GitRepo(
-                io,
-                fnames,
-                git_dname,
-                args.cecli_ignore,
-                models=main_model.commit_message_models(),
-                attribute_author=args.attribute_author,
-                attribute_committer=args.attribute_committer,
-                attribute_commit_message_author=args.attribute_commit_message_author,
-                attribute_commit_message_committer=args.attribute_commit_message_committer,
-                commit_prompt=args.commit_prompt,
-                subtree_only=args.subtree_only,
-                git_commit_verify=args.git_commit_verify,
-                attribute_co_authored_by=args.attribute_co_authored_by,
+            repo = GitRepoProxy(
+                GitRepo(
+                    io,
+                    fnames,
+                    git_dname,
+                    args.cecli_ignore,
+                    models=main_model.commit_message_models(),
+                    attribute_author=args.attribute_author,
+                    attribute_committer=args.attribute_committer,
+                    attribute_commit_message_author=args.attribute_commit_message_author,
+                    attribute_commit_message_committer=args.attribute_commit_message_committer,
+                    commit_prompt=args.commit_prompt,
+                    subtree_only=args.subtree_only,
+                    git_commit_verify=args.git_commit_verify,
+                    attribute_co_authored_by=args.attribute_co_authored_by,
+                )
             )
         except FileNotFoundError:
             pass
