@@ -2649,7 +2649,8 @@ class Coder(metaclass=UsageMeta):
             # Ensure any waiting spinner is stopped
             self.io.start_spinner("Processing Answer...", coder_uuid=getattr(self, "uuid", None))
 
-            self.partial_response_content = self.get_multi_response_content_in_progress(True)
+            if not self.io.spinner_active:
+                self.partial_response_content = self.get_multi_response_content_in_progress(True)
 
             self.remove_reasoning_content()
             self.multi_response_content = ""
