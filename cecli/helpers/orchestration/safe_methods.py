@@ -10,6 +10,8 @@ from __future__ import annotations
 import asyncio
 import json
 import pathlib
+import re as _re_mod
+import traceback as _tb_mod
 from typing import Any
 
 # ---------------------------------------------------------------------------
@@ -264,8 +266,21 @@ def _safe_typeof(obj: Any) -> type:
 
     Unlike ``type(name, bases, dict)`` which can create new classes at runtime,
     ``_safe_typeof(obj)`` only returns the type of an object for inspection.
+
+    Additionally, when *obj* is itself a type/class whose metaclass is ``type``,
+    the result would be ``<class 'type'>`` — the real ``type`` metaclass.
+    This is blocked because the metaclass can be used to dynamically create
+    arbitrary classes, bypassing the AST-level ``ClassDef`` filter.
     """
-    return type(obj)
+    result = type(obj)
+    if result is type:
+        from cecli.helpers.orchestration.security import SecurityError
+
+        raise SecurityError(
+            "Access to the 'type' metaclass is forbidden in the sandbox. "
+            "Use isinstance() for type checks instead of comparing type objects."
+        )
+    return result
 
 
 def _safe_vars(obj: Any) -> dict:
@@ -347,7 +362,9 @@ def _safe_getattr(obj: Any, name: str, *args: Any) -> Any:
     When ``disable_security`` is enabled in orchestration config, the real
     ``getattr`` is restored so this restriction doesn't apply.
     """
-    if isinstance(name, str) and name.startswith("_") and name != "_":
+    if type(name) is not str:
+        raise TypeError(f"getattr() attribute name must be str, not {type(name).__name__}")
+    if name.startswith("_") and name != "_":
         raise AttributeError(f"Cannot access private attribute {name!r} in sandbox")
     return getattr(obj, name, *args)
 
@@ -361,7 +378,9 @@ def _safe_hasattr(obj: Any, name: str) -> bool:
     When ``disable_security`` is enabled in orchestration config, the real
     ``hasattr`` is restored so this restriction doesn't apply.
     """
-    if isinstance(name, str) and name.startswith("_") and name != "_":
+    if type(name) is not str:
+        raise TypeError(f"hasattr() attribute name must be str, not {type(name).__name__}")
+    if name.startswith("_") and name != "_":
         return False
     return hasattr(obj, name)
 
@@ -743,6 +762,212 @@ class _SafeJson:
         return json.dumps(obj, **safe_kwargs)
 
 
+class _SafeTraceback:
+    """Drop-in ``traceback`` namespace exposing only safe print and format methods.
+
+    Unlike ``_SafeModuleProxy`` which forwards all non-blocked attributes to the
+    real module, this class only exposes an explicit allowlist of print/format
+    methods.  Module-level imports like ``traceback.sys`` and ``traceback.io``
+    are not accessible through this wrapper, closing the ``sys.modules``
+    sandbox-escape vector.
+
+    Exposed methods:
+
+    **Printing** (output to stderr or a given file):
+    - ``print_exc(limit=None, file=None)`` — print current exception
+    - ``print_exception(exc, limit=None, file=None)`` — print a given exception
+    - ``print_stack(f=None, limit=None, file=None)`` — print current call stack
+    - ``print_tb(tb, limit=None, file=None)`` — print a given traceback
+    - ``print_last(limit=None, file=None)`` — print the last exception
+
+    **Formatting** (return strings for logging):
+    - ``format_exc(limit=None)`` — format current exception as string
+    - ``format_exception(exc, limit=None)`` — format a given exception to list of strings
+    - ``format_stack(f=None, limit=None)`` — format current stack to list of strings
+    - ``format_tb(tb, limit=None)`` — format a given traceback to list of strings
+    - ``format_list(extracted)`` — format extracted stack entries
+    - ``format_exception_only(exc)`` — format exception type + value only
+
+    **Utility**:
+    - ``clear_frames(tb)`` — clear local variables from traceback frames
+
+    **Classes**:
+    - ``TracebackException`` — programmatic traceback representation
+    - ``FrameSummary`` — single frame summary
+    - ``StackSummary`` — list of frame summaries
+    """
+
+    @classmethod
+    def format_exc(cls, limit=None):
+        import traceback
+
+        return traceback.format_exc(limit=limit)
+
+    @classmethod
+    def format_exception(cls, exc, limit=None):
+        import traceback
+
+        return traceback.format_exception(exc, limit=limit)
+
+    @classmethod
+    def format_stack(cls, f=None, limit=None):
+        import traceback
+
+        return traceback.format_stack(f=f, limit=limit)
+
+    @classmethod
+    def format_tb(cls, tb, limit=None):
+        import traceback
+
+        return traceback.format_tb(tb, limit=limit)
+
+    @classmethod
+    def format_list(cls, extracted):
+        import traceback
+
+        return traceback.format_list(extracted)
+
+    @classmethod
+    def format_exception_only(cls, exc):
+        import traceback
+
+        return traceback.format_exception_only(exc)
+
+    @classmethod
+    def print_exc(cls, limit=None, file=None):
+        import traceback
+
+        traceback.print_exc(limit=limit, file=file)
+
+    @classmethod
+    def print_exception(cls, exc, limit=None, file=None):
+        import traceback
+
+        traceback.print_exception(exc, limit=limit, file=file)
+
+    @classmethod
+    def print_stack(cls, f=None, limit=None, file=None):
+        import traceback
+
+        traceback.print_stack(f=f, limit=limit, file=file)
+
+    @classmethod
+    def print_tb(cls, tb, limit=None, file=None):
+        import traceback
+
+        traceback.print_tb(tb, limit=limit, file=file)
+
+    @classmethod
+    def print_last(cls, limit=None, file=None):
+        import traceback
+
+        traceback.print_last(limit=limit, file=file)
+
+    @classmethod
+    def clear_frames(cls, tb):
+        import traceback
+
+        traceback.clear_frames(tb)
+
+    # Classes from traceback — accessed via class attribute, not instance
+    TracebackException = None
+    FrameSummary = None
+    StackSummary = None
+
+
+_SafeTraceback.TracebackException = _tb_mod.TracebackException
+_SafeTraceback.FrameSummary = _tb_mod.FrameSummary
+_SafeTraceback.StackSummary = _tb_mod.StackSummary
+
+
+class _SafeRe:
+    """Drop-in ``re`` namespace exposing only safe regex operations.
+
+    Unlike ``_SafeModuleProxy`` which forwards all non-blocked attributes to the
+    real module, this class only exposes an explicit allowlist of regex
+    functions, flags, and types.  Module-level imports like ``re.enum``,
+    ``re.copyreg``, and ``re.functools`` are not accessible through this
+    wrapper, closing the ``re.enum.sys`` sandbox-escape vector.
+
+    Exposed:
+
+    **Compilation**:
+    - ``compile(pattern, flags=0)`` — compile a regex pattern
+
+    **Searching / Matching**:
+    - ``search(pattern, string, flags=0)`` — scan through string
+    - ``match(pattern, string, flags=0)`` — match at start of string
+    - ``fullmatch(pattern, string, flags=0)`` — match whole string
+    - ``findall(pattern, string, flags=0)`` — all non-overlapping matches
+    - ``finditer(pattern, string, flags=0)`` — iterator over matches
+
+    **Substitution / Splitting**:
+    - ``sub(pattern, repl, string, ...)`` — substitute
+    - ``subn(pattern, repl, string, ...)`` — substitute with count
+    - ``split(pattern, string, ...)`` — split by pattern
+
+    **Utilities**:
+    - ``escape(string)`` — escape special characters
+    - ``purge()`` — clear the regex cache
+
+    **Flags**:
+    - ``NOFLAG``, ``IGNORECASE`` / ``I``, ``MULTILINE`` / ``M``,
+      ``DOTALL`` / ``S``, ``VERBOSE`` / ``X``, ``ASCII`` / ``A``
+    - ``RegexFlag`` — the flag enum type
+
+    **Types / Exceptions**:
+    - ``Pattern`` — compiled pattern type
+    - ``Match`` — match result type
+    - ``error`` — regex exception class
+    """
+
+    # Compilation
+    compile = None
+
+    # Searching / Matching
+    search = None
+    match = None
+    fullmatch = None
+    findall = None
+    finditer = None
+
+    # Substitution / Splitting
+    sub = None
+    subn = None
+    split = None
+
+    # Utilities
+    escape = None
+    purge = None
+
+    # Flags
+    NOFLAG = None
+    IGNORECASE = None
+    I = None  # noqa: E741
+    MULTILINE = None
+    M = None
+    DOTALL = None
+    S = None
+    VERBOSE = None
+    X = None
+    ASCII = None
+    A = None
+    RegexFlag = None
+
+    # Types / Exceptions
+    Pattern = None
+    Match = None
+    error = None
+
+
+for _name in dir(_SafeRe):
+    if not _name.startswith("_"):
+        try:
+            setattr(_SafeRe, _name, getattr(_re_mod, _name))
+        except AttributeError:
+            pass
+
+
 class _SafeModuleProxy:
     """Proxy that forwards attribute reads to a real module but prevents mutation.
 
@@ -773,8 +998,29 @@ class _SafeModuleProxy:
                 f"Cannot access '{name}' on module proxy. "
                 f"Frame introspection methods are blocked in the sandbox."
             )
+        if name == "modules" and not object.__getattribute__(self, "_disable_security"):
+            from cecli.helpers.orchestration.security import SecurityError
+
+            raise SecurityError(
+                f"Cannot access '{name}' on module proxy. "
+                f"Direct module registry access is blocked in the sandbox."
+            )
         module = object.__getattribute__(self, "_module")
-        return getattr(module, name)
+        attr = getattr(module, name)
+
+        # Re-wrap sub-modules to prevent transitive sandbox escape.
+        # Without this, `re.enum.sys` would return the real `sys` module
+        # (since `re` imports `enum` and `enum` imports `sys`), giving
+        # attackers access to `sys.modules["builtins"].getattr` and from
+        # there unrestricted private-attribute access.
+        from types import ModuleType
+
+        if isinstance(attr, ModuleType):
+            return _SafeModuleProxy(
+                attr, disable_security=object.__getattribute__(self, "_disable_security")
+            )
+
+        return attr
 
     def __setattr__(self, name: str, value: Any) -> None:
         if not name.startswith("_"):

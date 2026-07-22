@@ -217,6 +217,19 @@ class SecurityFilter(ast.NodeTransformer):
 
         return self.generic_visit(node)
 
+    def visit_Match(self, node: ast.Match) -> ast.Expr:
+        """Block all ``match``/``case`` statements.
+
+        Class patterns destructure objects via runtime ``getattr()``,
+        bypassing the AST-level ``visit_Attribute`` guard entirely.
+        Rather than trying to cover every pattern variant, we reject
+        the ``match`` statement wholesale.
+        """
+        return self._make_raise_stmt(
+            f"Security filter error at line {node.lineno}: "
+            "The 'match'/'case' statement is disabled in the orchestration environment."
+        )
+
 
 class LoopYieldInjector(ast.NodeTransformer):
     """

@@ -34,6 +34,8 @@ from cecli.helpers.orchestration.safe_methods import (
     _SafeJson,
     _SafeModuleProxy,
     _SafePathlib,
+    _SafeRe,
+    _SafeTraceback,
     _strip_allowed_imports,
 )
 from cecli.helpers.orchestration.security import (
@@ -276,12 +278,12 @@ class AgentExecutionEnv:
             "StopIteration": StopIteration,
             "ArithmeticError": ArithmeticError,
             "LookupError": LookupError,
-            "re": _SafeModuleProxy(re, disable_security=_disable_sec),
+            "re": _SafeRe,
             "math": _SafeModuleProxy(math, disable_security=_disable_sec),
             "itertools": _SafeModuleProxy(itertools, disable_security=_disable_sec),
             "collections": _SafeModuleProxy(collections, disable_security=_disable_sec),
             "datetime": _SafeModuleProxy(datetime, disable_security=_disable_sec),
-            "traceback": _SafeModuleProxy(traceback, disable_security=_disable_sec),
+            "traceback": _SafeTraceback,
             "pathlib": _SafePathlib,
         }
 
@@ -458,6 +460,16 @@ class AgentExecutionEnv:
             code = f"Syntax Error in orchestration code: {e}"
             return {"results": code, "state_variables": self._state_snapshot()}
 
+        def _build_result(msg: str = "") -> dict:
+            print_output = "".join(captured_output)
+            parts = []
+            if print_output:
+                parts.append(print_output.rstrip("\n"))
+            if msg:
+                parts.append(msg)
+            code = "\n".join(parts) if parts else ""
+            return {"results": code, "state_variables": self._state_snapshot()}
+
         try:
             if not self._orchestration_config.get("disable_security", False):
                 tree = SecurityFilter(
@@ -486,16 +498,6 @@ class AgentExecutionEnv:
             compiled_code = compile(mod, filename="<agent_env>", mode="exec")
         except Exception as e:
             code = f"Compilation Error: {e}"
-            return {"results": code, "state_variables": self._state_snapshot()}
-
-        def _build_result(msg: str = "") -> dict:
-            print_output = "".join(captured_output)
-            parts = []
-            if print_output:
-                parts.append(print_output.rstrip("\n"))
-            if msg:
-                parts.append(msg)
-            code = "\n".join(parts) if parts else ""
             return {"results": code, "state_variables": self._state_snapshot()}
 
         try:
