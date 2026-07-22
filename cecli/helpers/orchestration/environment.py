@@ -26,6 +26,8 @@ from cecli.helpers.orchestration.safe_methods import (
     _HelpfulBuiltins,
     _safe_dir,
     _safe_gather,
+    _safe_getattr,
+    _safe_hasattr,
     _safe_sleep,
     _safe_typeof,
     _safe_vars,
@@ -225,6 +227,8 @@ class AgentExecutionEnv:
         self.globals: dict[str, _Any] = {}
         self.locals: dict[str, _Any] = {}
 
+        _disable_sec = self._orchestration_config.get("disable_security", False)
+
         self._safe_builtins: dict[str, _Any] = {
             "print": print,
             "range": range,
@@ -242,8 +246,8 @@ class AgentExecutionEnv:
             "vars": _safe_vars,
             "dir": _make_sandbox_dir(self.globals, self.locals),
             "isinstance": isinstance,
-            "hasattr": hasattr,
-            "getattr": getattr,
+            "hasattr": _safe_hasattr,
+            "getattr": _safe_getattr,
             "repr": repr,
             "enumerate": enumerate,
             "zip": zip,
@@ -272,12 +276,12 @@ class AgentExecutionEnv:
             "StopIteration": StopIteration,
             "ArithmeticError": ArithmeticError,
             "LookupError": LookupError,
-            "re": _SafeModuleProxy(re),
-            "math": _SafeModuleProxy(math),
-            "itertools": _SafeModuleProxy(itertools),
-            "collections": _SafeModuleProxy(collections),
-            "datetime": _SafeModuleProxy(datetime),
-            "traceback": _SafeModuleProxy(traceback),
+            "re": _SafeModuleProxy(re, disable_security=_disable_sec),
+            "math": _SafeModuleProxy(math, disable_security=_disable_sec),
+            "itertools": _SafeModuleProxy(itertools, disable_security=_disable_sec),
+            "collections": _SafeModuleProxy(collections, disable_security=_disable_sec),
+            "datetime": _SafeModuleProxy(datetime, disable_security=_disable_sec),
+            "traceback": _SafeModuleProxy(traceback, disable_security=_disable_sec),
             "pathlib": _SafePathlib,
         }
 
@@ -296,6 +300,9 @@ class AgentExecutionEnv:
         if self._orchestration_config.get("disable_security", False):
             for name in self._DANGEROUS_BUILTINS:
                 self._safe_builtins[name] = __builtins__[name]
+            # Restore real getattr/hasattr when security is disabled
+            self._safe_builtins["getattr"] = getattr
+            self._safe_builtins["hasattr"] = hasattr
 
         # When allow_classes is enabled, expose __build_class__ needed by Python
         if self._orchestration_config.get("allow_classes", False):

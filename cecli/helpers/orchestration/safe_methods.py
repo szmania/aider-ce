@@ -337,6 +337,35 @@ def _safe_dir(obj: Any) -> list:
     ]
 
 
+def _safe_getattr(obj: Any, name: str, *args: Any) -> Any:
+    """Safe getattr() - blocks access to private/dunder attributes.
+
+    Raises ``AttributeError`` (matching ``getattr``'s default behavior) when
+    the attribute name starts with ``_``, preventing sandboxed code from
+    bypassing the AST-level private-attribute filter.
+
+    When ``disable_security`` is enabled in orchestration config, the real
+    ``getattr`` is restored so this restriction doesn't apply.
+    """
+    if isinstance(name, str) and name.startswith("_") and name != "_":
+        raise AttributeError(f"Cannot access private attribute {name!r} in sandbox")
+    return getattr(obj, name, *args)
+
+
+def _safe_hasattr(obj: Any, name: str) -> bool:
+    """Safe hasattr() - blocks probing of private/dunder attributes.
+
+    Returns ``False`` for any attribute name starting with ``_`` so that
+    sandboxed code cannot detect the presence of private attributes.
+
+    When ``disable_security`` is enabled in orchestration config, the real
+    ``hasattr`` is restored so this restriction doesn't apply.
+    """
+    if isinstance(name, str) and name.startswith("_") and name != "_":
+        return False
+    return hasattr(obj, name)
+
+
 def _find_closing_quote(code: str, quote: str, start: int) -> int:
     """Find the position of the closing *quote* in *code*, skipping
     backslash-escaped characters so that ``\"`` (escaped quote) is not
@@ -719,15 +748,30 @@ class _SafeModuleProxy:
 
     Setting an attribute on the proxy only affects the proxy, not the real module.
     This prevents sandbox code from monkey-patching standard library modules.
+
+    The following methods are blocked and raise SecurityError:
+    - ``walk_stack()``, ``walk_tb()``, ``extract_stack()`` — frame introspection
+      that exposes unwrapped frame objects with access to parent-frame
+      ``f_locals`` / ``f_globals``.
     """
 
-    def __init__(self, module: Any) -> None:
+    _BLOCKED_METHODS: frozenset[str] = frozenset({"walk_stack", "walk_tb", "extract_stack"})
+
+    def __init__(self, module: Any, *, disable_security: bool = False) -> None:
         object.__setattr__(self, "_module", module)
+        object.__setattr__(self, "_disable_security", disable_security)
 
     def __getattr__(self, name: str) -> Any:
         if name.startswith("_"):
             raise AttributeError(
                 "Cannot access private attribute " + repr(name) + " on module proxy"
+            )
+        if name in self._BLOCKED_METHODS and not object.__getattribute__(self, "_disable_security"):
+            from cecli.helpers.orchestration.security import SecurityError
+
+            raise SecurityError(
+                f"Cannot access '{name}' on module proxy. "
+                f"Frame introspection methods are blocked in the sandbox."
             )
         module = object.__getattribute__(self, "_module")
         return getattr(module, name)
@@ -739,7 +783,10 @@ class _SafeModuleProxy:
 
     def __dir__(self) -> list:
         module = object.__getattribute__(self, "_module")
-        return [x for x in dir(module) if not x.startswith("_")]
+        blocked = (
+            set() if object.__getattribute__(self, "_disable_security") else self._BLOCKED_METHODS
+        )
+        return [x for x in dir(module) if not x.startswith("_") and x not in blocked]
 
 
 # ---------------------------------------------------------------------------

@@ -151,6 +151,16 @@ class AgentProxy:
         """
         from cecli.helpers import nested
 
+        # SECURITY: Reject paths that access private/dunder attributes
+        # (unless disable_security is active)
+        if not (self._env and self._env._orchestration_config.get("disable_security", False)):
+            for segment in path.replace("[", ".").replace("]", "").split("."):
+                segment = segment.strip()
+                if segment.startswith("_") and segment != "_":
+                    from cecli.helpers.orchestration.security import SecurityError
+
+                    raise SecurityError(f"Access to private attribute '{segment}' is forbidden")
+
         return nested.getter(result, path, default)
 
     @staticmethod
