@@ -1,5 +1,11 @@
+import json
+import logging
 import os
 import sys
+
+import yaml
+
+from cecli.helpers import nested
 
 try:
     if sys.platform == "win32":
@@ -573,14 +579,25 @@ async def main_async(
     else:
         git_root = get_git_root()
     conf_fname = handle_core_files(Path(".cecli.conf.yml"))
-    default_config_files = [
+    # Split config files into two groups:
+    #   - conf_yml_files:  .cecli/conf.yml  (shallow merge via configargparse)
+    #   - cecli_conf_yml_files: .cecli.conf.yml (deep merge handled by us)
+    # configargparse must NOT see .cecli.conf.yml files because it would
+    # shallow-merge (overwrite) them, destroying values from earlier files
+    # before our deep-merge code can run.
+    all_config_paths = [
         str(Path.home() / ".cecli" / "conf.yml"),
         str(Path.home() / ".cecli.conf.yml"),
         str(Path(".cecli.conf.yml")),
     ]
     if git_root:
-        default_config_files.append(str(Path(git_root) / ".cecli.conf.yml"))
-    parser = get_parser(default_config_files, git_root)
+        all_config_paths.append(str(Path(git_root) / ".cecli.conf.yml"))
+
+    conf_yml_files = [p for p in all_config_paths if p.endswith("conf.yml") and not p.endswith(".cecli.conf.yml")]
+    cecli_conf_yml_files = [p for p in all_config_paths if p.endswith(".cecli.conf.yml")]
+
+    # Only pass .cecli/conf.yml files to configargparse for shallow merge
+    parser = get_parser(conf_yml_files, git_root)
     args, unknown = parser.parse_known_args(argv)
 
     # Load dotenv files and re-parse args before workspace logic
@@ -615,14 +632,114 @@ async def main_async(
 
     if git_root:
         git_conf = Path(git_root) / conf_fname
-        if git_conf not in default_config_files:
-            default_config_files.append(str(git_conf))
+        if git_conf not in all_config_paths:
+            all_config_paths.append(str(git_conf))
+            cecli_conf_yml_files.append(str(git_conf))
 
     if uses_workspace:
-        parser = get_parser(default_config_files, git_root)
+        parser = get_parser(conf_yml_files, git_root)
         args, unknown = parser.parse_known_args(argv)
 
     set_args_error_data(args)
+
+    # ── Deep merge .cecli.conf.yml files ──────────────────────────────────
+    # configargparse has already shallow-merged .cecli/conf.yml files onto
+    # args (correct behaviour for those files).  We now read every
+    # .cecli.conf.yml file directly from disk, deep-merge them together,
+    # and then merge the result ON TOP OF the existing args values (which
+    # came from .cecli/conf.yml).  This way .cecli/conf.yml values are
+    # preserved and .cecli.conf.yml values are concatenated/deduped on top.
+
+    existing_cecli_conf = [cf for cf in cecli_conf_yml_files if os.path.exists(cf)]
+
+    if existing_cecli_conf:
+        cecli_conf_dicts: list[dict[str, Any]] = []
+        for config_file in existing_cecli_conf:
+            try:
+                with open(config_file, "r") as f:
+                    config_data = yaml.safe_load(f)
+                    if isinstance(config_data, dict):
+                        cecli_conf_dicts.append(config_data)
+            except yaml.YAMLError as e:
+                logging.warning(
+                    "Could not parse YAML file %s: %s", config_file, e
+                )
+
+        if cecli_conf_dicts:
+            # Deep-merge .cecli.conf.yml files together
+            merged_cecli_conf = nested.deep_merge_config_dicts(cecli_conf_dicts)
+
+            # ── List fields: concatenate with existing args values ──────
+            for key in nested.DEEP_MERGE_LIST_FIELDS:
+                if key in merged_cecli_conf and hasattr(args, key):
+                    cecli_val = merged_cecli_conf[key]
+                    if not isinstance(cecli_val, list):
+                        logging.warning(
+                            "Merged .cecli.conf.yml value for %s is not a list (type: %s), "
+                            "expected list",
+                            key,
+                            type(cecli_val).__name__,
+                        )
+                        continue
+                    existing_val = getattr(args, key)
+                    if isinstance(existing_val, list):
+                        # Concatenate: .cecli/conf.yml values first, then
+                        # .cecli.conf.yml values (deduplicated)
+                        setattr(args, key, nested._deduplicate_list(
+                            list(existing_val), cecli_val
+                        ))
+                    else:
+                        setattr(args, key, cecli_val)
+
+            # ── JSON fields: deep-merge into existing args values ───────
+            for key in nested.DEEP_MERGE_JSON_FIELDS:
+                if key in merged_cecli_conf and hasattr(args, key):
+                    cecli_val = merged_cecli_conf[key]
+                    if not isinstance(cecli_val, dict):
+                        logging.warning(
+                            "Merged .cecli.conf.yml value for %s is not a dict (type: %s), "
+                            "expected dict",
+                            key,
+                            type(cecli_val).__name__,
+                        )
+                        continue
+                    existing_val = getattr(args, key)
+                    if existing_val is not None:
+                        # Parse existing value (may be JSON string from
+                        # configargparse) and deep-merge .cecli.conf.yml
+                        # values into it
+                        if isinstance(existing_val, str):
+                            try:
+                                existing_val = json.loads(existing_val)
+                            except json.JSONDecodeError:
+                                try:
+                                    existing_val = yaml.safe_load(existing_val)
+                                except yaml.YAMLError:
+                                    logging.warning(
+                                        "Could not parse existing %s value as JSON/YAML, "
+                                        "overwriting with .cecli.conf.yml value",
+                                        key,
+                                    )
+                                    existing_val = {}
+                        if isinstance(existing_val, dict):
+                            merged_val = nested.deep_merge(
+                                existing_val, cecli_val, deep_merge_arrays=True
+                            )
+                        else:
+                            merged_val = cecli_val
+                    else:
+                        merged_val = cecli_val
+                    try:
+                        setattr(args, key, json.dumps(merged_val))
+                    except (TypeError, ValueError) as e:
+                        logging.warning(
+                            "Could not serialize merged config for %s: %s", key, e
+                        )
+    else:
+        logging.debug(
+            "No .cecli.conf.yml files found — shallow-merge-only mode active "
+            "(configargparse handles .cecli/conf.yml)"
+        )
 
     if len(unknown):
         print("Unknown Args: ", unknown)
