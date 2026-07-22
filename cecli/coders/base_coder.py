@@ -221,6 +221,7 @@ class Coder(metaclass=UsageMeta):
     message_tokens_sent = 0
     message_tokens_received = 0
     message_cached_tokens = 0
+    message_cost_deferred = None
     add_cache_headers = False
     cache_warming_thread = None
     num_cache_warming_pings = 0
@@ -1497,6 +1498,10 @@ class Coder(metaclass=UsageMeta):
                         self.show_announcements()
                     self.suppress_announcements_for_next_prompt = True
 
+                    if self.message_cost_deferred and not self.io.spinner_active:
+                        self.io.tool_output(self.message_cost_deferred)
+                        self.message_cost_deferred = None
+
                     await self.io.recreate_input()
                     await self.io.input_task
                     user_message = self.io.input_task.result()
@@ -1644,6 +1649,10 @@ class Coder(metaclass=UsageMeta):
                     if not self.suppress_announcements_for_next_prompt:
                         self.show_announcements()
                     self.suppress_announcements_for_next_prompt = True
+
+                    if self.message_cost_deferred and not self.io.spinner_active:
+                        self.io.tool_output(self.message_cost_deferred)
+                        self.message_cost_deferred = None
 
                     # Stop spinner before showing announcements or getting input
                     self.io.stop_spinner()
@@ -2512,7 +2521,11 @@ class Coder(metaclass=UsageMeta):
             if not self.tui:
                 spinner_text += f" • ${self.format_cost(self.total_cost)} session"
 
-            self.io.start_spinner(spinner_text, coder_uuid=getattr(self, "uuid", None))
+            if self.io.spinner_active:
+                self.io.start_spinner(spinner_text, coder_uuid=getattr(self, "uuid", None))
+            else:
+                self.message_cost_deferred = spinner_text
+
             if self.stream:
                 self.mdstream = True
             else:
@@ -2635,6 +2648,10 @@ class Coder(metaclass=UsageMeta):
 
             # Ensure any waiting spinner is stopped
             self.io.start_spinner("Processing Answer...", coder_uuid=getattr(self, "uuid", None))
+
+            if not self.io.spinner_active:
+                self.partial_response_content = self.get_multi_response_content_in_progress(True)
+
             self.remove_reasoning_content()
             self.multi_response_content = ""
 
@@ -2980,12 +2997,22 @@ class Coder(metaclass=UsageMeta):
                             continue
 
                         async def do_tool_call():
+                            nonlocal session
                             from litellm import experimental_mcp_client
 
-                            return await experimental_mcp_client.call_openai_tool(
-                                session=session,
-                                openai_tool=new_tool_call,
-                            )
+                            try:
+                                return await experimental_mcp_client.call_openai_tool(
+                                    session=session,
+                                    openai_tool=new_tool_call,
+                                )
+                            except Exception as e:
+                                if server.is_session_expired_error(e):
+                                    session = await server.reconnect()
+                                    return await experimental_mcp_client.call_openai_tool(
+                                        session=session,
+                                        openai_tool=new_tool_call,
+                                    )
+                                raise
 
                         call_result, interrupted = await coroutines.interruptible(
                             do_tool_call(), self.interrupt_event
