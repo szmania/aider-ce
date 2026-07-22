@@ -1,12 +1,12 @@
 import json
 import os
+import sys
 import unittest
+
+import yaml
 
 # Mock the configargparse before it's imported by other modules
 # This is a bit of a hack, but necessary for this kind of integration test
-from unittest.mock import MagicMock, mock_open, patch
-
-import yaml
 
 
 class MockArgumentParser:
@@ -31,7 +31,7 @@ class MockArgumentParser:
         # A very simplified parser that just recognizes file paths
         # In a real scenario, this would be much more complex
         # For this test, we assume the args are pre-populated by mock config files
-        
+
         # Simulate configargparse loading files and setting args
         all_configs = {}
         for f in self.default_config_files:
@@ -40,9 +40,9 @@ class MockArgumentParser:
                     config = yaml.safe_load(stream)
                     # Shallow merge for simulation
                     all_configs.update(config)
-        
+
         for key, value in all_configs.items():
-             if key in self.args:
+            if key in self.args:
                 if isinstance(self.args[key], list):
                     self.args[key].extend(value)
                 else:
@@ -52,23 +52,15 @@ class MockArgumentParser:
         class ArgsNamespace:
             def __init__(self, d):
                 self.__dict__.update(d)
-        
+
         return ArgsNamespace(self.args), []
 
-# Now, apply the patch
-import sys
 
-sys.modules['configargparse'] = MagicMock()
 sys.modules['configargparse'].ArgumentParser = MockArgumentParser
 
 
-# Import the module that uses configargparse AFTER the mock is in place
-# We can't directly test main.py, so we'll test the helpers it would use
-from cecli.helpers.nested import (
-    DEEP_MERGE_JSON_FIELDS,
-    DEEP_MERGE_LIST_FIELDS,
+from cecli.helpers.nested import (  # noqa: E402
     deep_merge_config_dicts,
-    is_cecli_conf_file,
 )
 
 
@@ -107,13 +99,12 @@ class TestConfigLoading(unittest.TestCase):
         # The fix reads ALL config files (both .cecli/conf.yml and
         # .cecli.conf.yml) from disk and deep-merges them together,
         # replacing configargparse's shallow-merged result for array fields.
-        config_files = [self.legacy_conf_path, self.user_conf_path, self.git_root_conf_path]
 
-        all_config_dicts = []
-        for f_path in config_files:
-            with open(f_path, 'r') as stream:
-                all_config_dicts.append(yaml.safe_load(stream))
-
+        all_config_dicts = [
+            legacy_content,
+            user_content,
+            git_root_content,
+        ]
         merged_config = deep_merge_config_dicts(all_config_dicts)
 
         # Non-array fields: last file wins (deep_merge overwrites scalars)
@@ -136,7 +127,7 @@ class TestConfigLoading(unittest.TestCase):
     def test_config_precedence_order(self):
         # Files are loaded in order, later files override earlier ones
         # .cecli/conf.yml (shallow) < .cecli.conf.yml (deep) < git_root/.cecli.conf.yml (deep)
-        
+
         # Create files
         with open(self.legacy_conf_path, "w") as f:
             yaml.dump({"a": 1, "b": [10]}, f)
@@ -145,25 +136,23 @@ class TestConfigLoading(unittest.TestCase):
         with open(self.git_root_conf_path, "w") as f:
             yaml.dump({"a": 3, "b": [30]}, f)
 
-        config_files = [self.legacy_conf_path, self.user_conf_path, self.git_root_conf_path]
-        
         # Simulate loading
         # Configargparse shallow merges all first. The last value for 'a' and 'b' wins.
         # Our manual deep merge will then be applied.
-        
+
+
         # 1. Base from shallow file
         base_config = yaml.safe_load(open(self.legacy_conf_path))
 
         # 2. Deep merge the others
-        deep_dicts = [yaml.safe_load(open(self.user_conf_path)), yaml.safe_load(open(self.git_root_conf_path))]
-        
+
         # Manually simulate the process
         # Start with shallow merge result
         temp_merged = {}
         temp_merged.update(base_config)
         temp_merged.update(yaml.safe_load(open(self.user_conf_path)))
         temp_merged.update(yaml.safe_load(open(self.git_root_conf_path)))
-        
+
         # Now, apply our deep merge logic for array fields
         final_config = deep_merge_config_dicts([
             base_config,
@@ -199,13 +188,13 @@ class TestConfigLoading(unittest.TestCase):
             "skills_paths": ["/path1", "/path2"],
             "tools_includelist": ["tool-a", "tool-b"]
         }
-        
+
         self.assertEqual(merged['agent_config'], expected_agent_config)
 
         # Test the re-serialization step
         final_json_string = json.dumps(merged['agent_config'])
         parsed_final = json.loads(final_json_string)
-        
+
         # Sort lists for comparison since order inside JSON can be tricky
         self.assertEqual(sorted(parsed_final['skills_paths']), sorted(expected_agent_config['skills_paths']))
         self.assertEqual(sorted(parsed_final['tools_includelist']), sorted(expected_agent_config['tools_includelist']))
