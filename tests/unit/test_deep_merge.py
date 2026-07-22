@@ -2,7 +2,6 @@ import json
 import unittest
 
 from cecli.helpers.nested import (
-    _canonical_repr,
     _deduplicate_list,
     deep_merge,
     deep_merge_config_dicts,
