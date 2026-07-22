@@ -659,7 +659,7 @@ async def main_async(
                 with open(config_file, "r") as f:
                     config_data = yaml.safe_load(f)
                     if isinstance(config_data, dict):
-                        cecli_conf_dicts.append(config_data)
+                        cecli_conf_dicts.append(nested._normalize_keys(config_data))
             except yaml.YAMLError as e:
                 logging.warning(
                     "Could not parse YAML file %s: %s", config_file, e
