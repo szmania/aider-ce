@@ -1,6 +1,7 @@
 import json
 import os
 import unittest
+
 # Mock the configargparse before it's imported by other modules
 # This is a bit of a hack, but necessary for this kind of integration test
 from unittest.mock import MagicMock, mock_open, patch
@@ -63,9 +64,12 @@ sys.modules['configargparse'].ArgumentParser = MockArgumentParser
 
 # Import the module that uses configargparse AFTER the mock is in place
 # We can't directly test main.py, so we'll test the helpers it would use
-from cecli.helpers.nested import (DEEP_MERGE_JSON_FIELDS,
-                                  DEEP_MERGE_LIST_FIELDS,
-                                  deep_merge_config_dicts, is_cecli_conf_file)
+from cecli.helpers.nested import (
+    DEEP_MERGE_JSON_FIELDS,
+    DEEP_MERGE_LIST_FIELDS,
+    deep_merge_config_dicts,
+    is_cecli_conf_file,
+)
 
 
 class TestConfigLoading(unittest.TestCase):

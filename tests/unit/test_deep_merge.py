@@ -1,12 +1,14 @@
-import unittest
 import json
+import unittest
+
 from cecli.helpers.nested import (
-    deep_merge,
-    _deduplicate_list,
     _canonical_repr,
-    is_cecli_conf_file,
+    _deduplicate_list,
+    deep_merge,
     deep_merge_config_dicts,
+    is_cecli_conf_file,
 )
+
 
 class TestDeepMergeArrays(unittest.TestCase):
     def test_deep_merge_simple_arrays(self):
