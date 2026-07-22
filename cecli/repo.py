@@ -486,6 +486,7 @@ class GitRepo:
         commit_message = None
         for model in self.models:
             spinner_text = f"Generating commit message with {model.name}\n"
+
             self.io.start_spinner(spinner_text, update_last_text=False)
 
             if model.system_prompt_prefix:
