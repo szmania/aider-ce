@@ -129,6 +129,28 @@ DEEP_MERGE_JSON_FIELDS: frozenset[str] = frozenset(
 )
 
 
+def _normalize_keys(obj: Any) -> Any:
+    """
+    Recursively convert hyphenated dict keys to underscore-separated keys.
+
+    YAML config files may use hyphenated keys (e.g. ``agent-config``,
+    ``mcp-servers-files``), but argparse attributes and the
+    ``DEEP_MERGE_*_FIELDS`` frozensets use underscores (``agent_config``,
+    ``mcp_servers_files``).  This helper normalizes loaded YAML dicts so
+    that key lookups against the frozensets succeed.
+
+    Lists, scalars, and non-dict values are returned unchanged.
+    """
+    if isinstance(obj, dict):
+        return {
+            key.replace("-", "_"): _normalize_keys(value)
+            for key, value in obj.items()
+        }
+    if isinstance(obj, list):
+        return [_normalize_keys(item) for item in obj]
+    return obj
+
+
 def _deduplicate_list(merged_list: list, new_list: list) -> list:
     """
     Append elements from new_list to merged_list, skipping duplicates.
