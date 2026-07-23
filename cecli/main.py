@@ -674,13 +674,20 @@ async def main_async(
                 if key in merged_cecli_conf and hasattr(args, key):
                     cecli_val = merged_cecli_conf[key]
                     if not isinstance(cecli_val, list):
-                        logging.warning(
-                            "Merged .cecli.conf.yml value for %s is not a list (type: %s), "
-                            "expected list",
-                            key,
-                            type(cecli_val).__name__,
-                        )
-                        continue
+                        if cecli_val is None:
+                            # YAML null / empty key → treat as empty list
+                            cecli_val = []
+                        elif isinstance(cecli_val, str):
+                            # Scalar string → wrap in single-element list
+                            cecli_val = [cecli_val]
+                        else:
+                            logging.warning(
+                                "Merged .cecli.conf.yml value for %s is not a list (type: %s), "
+                                "expected list — skipping",
+                                key,
+                                type(cecli_val).__name__,
+                            )
+                            continue
                     existing_val = getattr(args, key)
                     if isinstance(existing_val, list):
                         # Concatenate: .cecli/conf.yml values first, then
@@ -694,13 +701,17 @@ async def main_async(
                 if key in merged_cecli_conf and hasattr(args, key):
                     cecli_val = merged_cecli_conf[key]
                     if not isinstance(cecli_val, dict):
-                        logging.warning(
-                            "Merged .cecli.conf.yml value for %s is not a dict (type: %s), "
-                            "expected dict",
-                            key,
-                            type(cecli_val).__name__,
-                        )
-                        continue
+                        if cecli_val is None:
+                            # YAML null / empty key → treat as empty dict
+                            cecli_val = {}
+                        else:
+                            logging.warning(
+                                "Merged .cecli.conf.yml value for %s is not a dict (type: %s), "
+                                "expected dict — skipping",
+                                key,
+                                type(cecli_val).__name__,
+                            )
+                            continue
                     existing_val = getattr(args, key)
                     if existing_val is not None:
                         # Parse existing value (may be JSON string from
