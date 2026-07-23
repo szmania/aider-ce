@@ -37,6 +37,7 @@ json-repair>=0.60.1
 
 #server utilities
 websockets>=16.1.1
+blinker>=1.9.0
 
 # File system lookup aids
 marisa-trie>=1.0
