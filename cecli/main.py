@@ -741,6 +741,30 @@ async def main_async(
             "(configargparse handles .cecli/conf.yml)"
         )
 
+    # ── Normalize array fields to never be None ───────────────────────────
+    # After merging, ensure every DEEP_MERGE_LIST_FIELDS attribute is at
+    # minimum an empty list [] and every DEEP_MERGE_JSON_FIELDS attribute
+    # is at minimum an empty JSON object "{}".  Downstream code should never
+    # have to deal with None for these fields.
+    for key in nested.DEEP_MERGE_LIST_FIELDS:
+        if hasattr(args, key):
+            val = getattr(args, key)
+            if val is None or (isinstance(val, str) and val.strip() == ""):
+                setattr(args, key, [])
+            elif not isinstance(val, list):
+                logging.warning(
+                    "args.%s is not a list (type: %s), coercing to empty list",
+                    key,
+                    type(val).__name__,
+                )
+                setattr(args, key, [])
+
+    for key in nested.DEEP_MERGE_JSON_FIELDS:
+        if hasattr(args, key):
+            val = getattr(args, key)
+            if val is None or (isinstance(val, str) and val.strip() == ""):
+                setattr(args, key, "{}")
+
     if len(unknown):
         print("Unknown Args: ", unknown)
 
