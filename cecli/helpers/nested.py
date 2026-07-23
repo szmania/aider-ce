@@ -142,10 +142,7 @@ def _normalize_keys(obj: Any) -> Any:
     Lists, scalars, and non-dict values are returned unchanged.
     """
     if isinstance(obj, dict):
-        return {
-            key.replace("-", "_"): _normalize_keys(value)
-            for key, value in obj.items()
-        }
+        return {key.replace("-", "_"): _normalize_keys(value) for key, value in obj.items()}
     if isinstance(obj, list):
         return [_normalize_keys(item) for item in obj]
     return obj

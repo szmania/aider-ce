@@ -15,19 +15,19 @@ class TestDeepMergeArrays(unittest.TestCase):
             "skills_paths": [".cecli/skills"],
             "subagent_paths": [".cecli/subagents"],
             "tools_paths": [".cecli/tools"],
-            "allowed_commands": ["git", "npm"]
+            "allowed_commands": ["git", "npm"],
         }
         dict2 = {
             "skills_paths": ["./project-skills"],
             "subagent_paths": ["./custom-subagents"],
             "tools_paths": ["./project-tools"],
-            "allowed_commands": ["docker", "git"]
+            "allowed_commands": ["docker", "git"],
         }
         expected = {
             "skills_paths": [".cecli/skills", "./project-skills"],
             "subagent_paths": [".cecli/subagents", "./custom-subagents"],
             "tools_paths": [".cecli/tools", "./project-tools"],
-            "allowed_commands": ["git", "npm", "docker"]
+            "allowed_commands": ["git", "npm", "docker"],
         }
         merged = deep_merge(dict1, dict2, deep_merge_arrays=True)
         self.assertEqual(merged, expected)
@@ -49,10 +49,14 @@ class TestDeepMergeArrays(unittest.TestCase):
     def test_deep_merge_nested_arrays(self):
         dict1 = {"mcp_servers": [{"server-a": {"command": ["cmd1"]}}]}
         dict2 = {"mcp_servers": [{"server-b": {"command": ["cmd2"]}}]}
-        expected = {"mcp_servers": [{"server-a": {"command": ["cmd1"]}}, {"server-b": {"command": ["cmd2"]}}]}
+        expected = {
+            "mcp_servers": [
+                {"server-a": {"command": ["cmd1"]}},
+                {"server-b": {"command": ["cmd2"]}},
+            ]
+        }
         merged = deep_merge(dict1, dict2, deep_merge_arrays=True)
         self.assertEqual(merged, expected)
-
 
     def test_json_field_serialization(self):
         dict1 = {"mcp_servers": {"server-a": {"command": ["cmd1"]}}}
@@ -66,13 +70,11 @@ class TestDeepMergeArrays(unittest.TestCase):
     def test_json_field_deep_merge(self):
         dict1 = {"mcp_servers": {"server-a": {"command": ["cmd1"]}}}
         dict2 = {"mcp_servers": {"server-b": {"command": ["cmd2"]}}}
-        expected = {"mcp_servers": {"server-a": {"command": ["cmd1"]}, "server-b": {"command": ["cmd2"]}}}
+        expected = {
+            "mcp_servers": {"server-a": {"command": ["cmd1"]}, "server-b": {"command": ["cmd2"]}}
+        }
         merged = deep_merge(dict1, dict2, deep_merge_arrays=True)
         self.assertEqual(merged, expected)
-
-
-
-
 
 
 class TestConfigHelpers(unittest.TestCase):

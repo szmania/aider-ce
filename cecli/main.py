@@ -593,7 +593,9 @@ async def main_async(
     if git_root:
         all_config_paths.append(str(Path(git_root) / ".cecli.conf.yml"))
 
-    conf_yml_files = [p for p in all_config_paths if p.endswith("conf.yml") and not p.endswith(".cecli.conf.yml")]
+    conf_yml_files = [
+        p for p in all_config_paths if p.endswith("conf.yml") and not p.endswith(".cecli.conf.yml")
+    ]
     cecli_conf_yml_files = [p for p in all_config_paths if p.endswith(".cecli.conf.yml")]
 
     # Only pass .cecli/conf.yml files to configargparse for shallow merge
@@ -661,9 +663,7 @@ async def main_async(
                     if isinstance(config_data, dict):
                         cecli_conf_dicts.append(nested._normalize_keys(config_data))
             except yaml.YAMLError as e:
-                logging.warning(
-                    "Could not parse YAML file %s: %s", config_file, e
-                )
+                logging.warning("Could not parse YAML file %s: %s", config_file, e)
 
         if cecli_conf_dicts:
             # Deep-merge .cecli.conf.yml files together
@@ -685,9 +685,7 @@ async def main_async(
                     if isinstance(existing_val, list):
                         # Concatenate: .cecli/conf.yml values first, then
                         # .cecli.conf.yml values (deduplicated)
-                        setattr(args, key, nested._deduplicate_list(
-                            list(existing_val), cecli_val
-                        ))
+                        setattr(args, key, nested._deduplicate_list(list(existing_val), cecli_val))
                     else:
                         setattr(args, key, cecli_val)
 
@@ -732,9 +730,7 @@ async def main_async(
                     try:
                         setattr(args, key, json.dumps(merged_val))
                     except (TypeError, ValueError) as e:
-                        logging.warning(
-                            "Could not serialize merged config for %s: %s", key, e
-                        )
+                        logging.warning("Could not serialize merged config for %s: %s", key, e)
     else:
         logging.debug(
             "No .cecli.conf.yml files found — shallow-merge-only mode active "
