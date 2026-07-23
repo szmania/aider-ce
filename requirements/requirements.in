@@ -35,6 +35,9 @@ py-cymbal>=0.2.1
 cryptography>=42.0.0
 json-repair>=0.60.1
 
+#server utilities
+websockets>=16.1.1
+
 # File system lookup aids
 marisa-trie>=1.0
 rapidfuzz>=3.0

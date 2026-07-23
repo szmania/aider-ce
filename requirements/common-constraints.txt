@@ -606,6 +606,8 @@ watchfiles==1.1.1
     # via -r requirements/requirements.in
 wcwidth==0.2.14
     # via prompt-toolkit
+websockets==16.1.1
+    # via -r requirements/requirements.in
 wheel==0.45.1
     # via pip-tools
 wrapt==2.0.1

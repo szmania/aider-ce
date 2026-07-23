@@ -516,6 +516,10 @@ wcwidth==0.2.14
     # via
     #   -c requirements/common-constraints.txt
     #   prompt-toolkit
+websockets==16.1.1
+    # via
+    #   -c requirements/common-constraints.txt
+    #   -r requirements/requirements.in
 xxhash==3.6.0
     # via
     #   -c requirements/common-constraints.txt
