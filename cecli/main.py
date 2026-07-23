@@ -748,6 +748,26 @@ async def main_async(
             "(configargparse handles .cecli/conf.yml)"
         )
 
+    # ── Apply remaining scalar fields from .cecli.conf.yml ────────────────
+    # After processing DEEP_MERGE_LIST_FIELDS and DEEP_MERGE_JSON_FIELDS,
+    # apply any remaining keys from merged_cecli_conf that are NOT in either
+    # field set.  These are scalar fields (e.g., auto-commits, model, dark_mode)
+    # that configargparse never saw because .cecli.conf.yml files were excluded
+    # from its default_config_files.  Without this step, scalar fields in
+    # .cecli.conf.yml would be silently dropped.
+    if existing_cecli_conf and cecli_conf_dicts:
+        merged_cecli_conf = nested.deep_merge_config_dicts(cecli_conf_dicts)
+        all_deep_fields = nested.DEEP_MERGE_LIST_FIELDS | nested.DEEP_MERGE_JSON_FIELDS
+        for key, value in merged_cecli_conf.items():
+            if key not in all_deep_fields and hasattr(args, key):
+                # Only apply if the existing args value is still the default
+                # (i.e., not already set by .cecli/conf.yml or CLI args).
+                # We check by comparing against the parser's default.
+                existing_val = getattr(args, key)
+                default_val = parser.get_default(key)
+                if existing_val == default_val:
+                    setattr(args, key, value)
+
     # ── Normalize array fields to never be None ───────────────────────────
     # After merging, ensure every DEEP_MERGE_LIST_FIELDS attribute is at
     # minimum an empty list [] and every DEEP_MERGE_JSON_FIELDS attribute
