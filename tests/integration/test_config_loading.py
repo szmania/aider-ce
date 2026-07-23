@@ -5,58 +5,8 @@ import unittest
 
 import yaml
 
-# Mock the configargparse before it's imported by other modules
-# This is a bit of a hack, but necessary for this kind of integration test
+import configargparse
 
-
-class MockArgumentParser:
-    def __init__(self, *args, **kwargs):
-        self.args = {}
-        self.default_config_files = []
-
-    def add_argument(self, *args, **kwargs):
-        action = kwargs.get("action")
-        dest = kwargs.get("dest")
-        if not dest:
-            for arg in args:
-                if arg.startswith("--"):
-                    dest = arg.lstrip("-").replace("-", "_")
-                    break
-        if action == "append":
-            self.args[dest] = []
-        else:
-            self.args[dest] = None
-
-    def parse_known_args(self, argv=None):
-        # A very simplified parser that just recognizes file paths
-        # In a real scenario, this would be much more complex
-        # For this test, we assume the args are pre-populated by mock config files
-
-        # Simulate configargparse loading files and setting args
-        all_configs = {}
-        for f in self.default_config_files:
-            if os.path.exists(f):
-                with open(f, "r") as stream:
-                    config = yaml.safe_load(stream)
-                    # Shallow merge for simulation
-                    all_configs.update(config)
-
-        for key, value in all_configs.items():
-            if key in self.args:
-                if isinstance(self.args[key], list):
-                    self.args[key].extend(value)
-                else:
-                    self.args[key] = value
-
-        # Convert to a namespace-like object
-        class ArgsNamespace:
-            def __init__(self, d):
-                self.__dict__.update(d)
-
-        return ArgsNamespace(self.args), []
-
-
-sys.modules["configargparse"].ArgumentParser = MockArgumentParser
 
 
 from cecli.helpers.nested import (  # noqa: E402
