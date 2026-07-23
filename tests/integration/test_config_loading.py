@@ -1,13 +1,8 @@
 import json
 import os
-import sys
 import unittest
 
 import yaml
-
-import configargparse
-
-
 
 from cecli.helpers.nested import (  # noqa: E402
     deep_merge_config_dicts,
