@@ -2452,22 +2452,34 @@ class Coder(metaclass=UsageMeta):
         max_input_tokens = self.get_active_model().info.get("max_input_tokens") or 0
 
         if max_input_tokens and input_tokens >= max_input_tokens:
-            self.io.tool_error(
-                f"Your estimated chat context of {input_tokens:,} tokens exceeds the"
-                f" {max_input_tokens:,} token limit for {self.get_active_model().name}!"
-            )
-            self.io.tool_output("To reduce the chat context:")
-            self.io.tool_output("- Use /drop to remove unneeded files from the chat")
-            self.io.tool_output("- Use /clear to clear the chat history")
-            self.io.tool_output("- Break your code into smaller files")
-            self.io.tool_output(
-                "It's probably safe to try and send the request, most providers won't charge if"
-                " the context limit is exceeded."
-            )
+            if self.enable_context_compaction:
+                self.io.tool_output(
+                    f"Estimated chat context of {input_tokens:,} tokens exceeds the"
+                    f" {max_input_tokens:,} token limit. Attempting to compact..."
+                )
+                await self.compact_context_if_needed(force=True)
 
-            if not await self.io.confirm_ask("Try to proceed anyway?"):
-                return False
-        return True
+                # After compaction, re-format messages and re-check tokens
+                messages = self.format_messages()
+                input_tokens = self.get_active_model().token_count(messages)
+
+            if max_input_tokens and input_tokens >= max_input_tokens:
+                self.io.tool_error(
+                    f"Your estimated chat context of {input_tokens:,} tokens still exceeds the"
+                    f" {max_input_tokens:,} token limit for {self.get_active_model().name}!"
+                )
+                self.io.tool_output("To reduce the chat context:")
+                self.io.tool_output("- Use /drop to remove unneeded files from the chat")
+                self.io.tool_output("- Use /clear to clear the chat history")
+                self.io.tool_output("- Break your code into smaller files")
+                self.io.tool_output(
+                    "It's probably safe to try and send the request, most providers won't charge if"
+                    " the context limit is exceeded."
+                )
+
+                if not await self.io.confirm_ask("Try to proceed anyway?"):
+                    return None
+        return messages
 
     def get_active_model(self):
         return self.main_model
@@ -2528,7 +2540,8 @@ class Coder(metaclass=UsageMeta):
 
         messages = result
 
-        if not await self.check_tokens(messages):
+        messages = await self.check_tokens(messages)
+        if not messages:
             return
 
         if self.verbose:
