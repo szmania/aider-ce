@@ -285,13 +285,13 @@ def resolve_content_to_hashline_ids(
     Resolve potential line content values to proper hashline content IDs.
 
     If start_value or end_value does not look like a content ID (hash),
-    search for the content in the original file using substring matching.
+    search for the content in the original file using exact line matching.
 
-    For start_value: Only resolves if exactly one line contains it as a
+    For start_value: Only resolves if exactly one line exactly matches it as a
     substring (unique match).
 
     For end_value: Resolves by finding the closest line (by position) to
-    the resolved start line that contains it as a substring.
+    the resolved start line that exactly matches it.
 
     This handles the case where LLMs return entire line content or fragments
     instead of content IDs in edit parameters.
@@ -321,18 +321,18 @@ def resolve_content_to_hashline_ids(
         except (ContentHashError, ValueError):
             return False
 
-    def _find_substring_matches(lines, value):
-        """Find all line indices where the value appears as a substring."""
+    def _find_exact_line_matches(lines, value):
+        """Find all line indices where the value exactly matches the line content."""
         value_stripped = value.strip()
-        return [i for i, line in enumerate(lines) if value_stripped in line]
+        return [i for i, line in enumerate(lines) if line.strip() == value_stripped]
 
     def _find_multiline_match(lines, value):
-        """Find the start index where the full multiline value matches consecutive lines."""
+        """Find the start index where the full multiline value exactly matches consecutive lines."""
         value_lines = value.strip().splitlines()
         if len(value_lines) <= 1:
             return None
         for i in range(len(lines) - len(value_lines) + 1):
-            if all(value_lines[j].strip() in lines[i + j] for j in range(len(value_lines))):
+            if all(lines[i + j].strip() == value_lines[j].strip() for j in range(len(value_lines))):
                 return i
         return None
 
@@ -360,7 +360,7 @@ def resolve_content_to_hashline_ids(
             resolved_start = _resolve_to_hash_id(lines, resolved_start_idx, hp)
         else:
             # Fall back to first line substring matching
-            containing_indices = _find_substring_matches(lines, first_line)
+            containing_indices = _find_exact_line_matches(lines, first_line)
             if len(containing_indices) == 1:
                 resolved_start_idx = containing_indices[0]
                 resolved_start = _resolve_to_hash_id(lines, resolved_start_idx, hp)
@@ -385,7 +385,7 @@ def resolve_content_to_hashline_ids(
             # remaining content as line content to match.
             content = HashPos.strip_prefix(start_value)
             if content != start_value and content.strip():
-                containing_indices = _find_substring_matches(lines, content)
+                containing_indices = _find_exact_line_matches(lines, content)
                 if len(containing_indices) == 1:
                     resolved_start_idx = containing_indices[0]
                     resolved_start = _resolve_to_hash_id(lines, resolved_start_idx, hp)
@@ -409,7 +409,7 @@ def resolve_content_to_hashline_ids(
             resolved_end = _resolve_to_hash_id(lines, idx, hp)
         else:
             # Fall back to first line substring matching
-            containing_indices = _find_substring_matches(lines, first_line)
+            containing_indices = _find_exact_line_matches(lines, first_line)
             if len(containing_indices) == 1:
                 # Unique match - resolve directly
                 idx = containing_indices[0]
@@ -435,7 +435,7 @@ def resolve_content_to_hashline_ids(
             # remaining content as line content to match.
             content = HashPos.strip_prefix(end_value)
             if content != end_value and content.strip():
-                containing_indices = _find_substring_matches(lines, content)
+                containing_indices = _find_exact_line_matches(lines, content)
                 if len(containing_indices) == 1:
                     idx = containing_indices[0]
                     resolved_end = _resolve_to_hash_id(lines, idx, hp)
