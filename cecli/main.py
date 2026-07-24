@@ -778,6 +778,10 @@ async def main_async(
             val = getattr(args, key)
             if val is None or (isinstance(val, str) and val.strip() == ""):
                 setattr(args, key, [])
+            elif isinstance(val, str):
+                # Non-empty string → wrap in single-element list
+                # (e.g., lint-cmd: "some command" in YAML)
+                setattr(args, key, [val])
             elif not isinstance(val, list):
                 logging.warning(
                     "args.%s is not a list (type: %s), coercing to empty list",
