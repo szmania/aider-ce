@@ -641,6 +641,8 @@ async def main_async(
         args.workspaces = convert_yaml_to_json_string(args.workspaces)
     if hasattr(args, "model_providers") and args.model_providers is not None:
         args.model_providers = convert_yaml_to_json_string(args.model_providers)
+    if hasattr(args, "server_config") and args.server_config is not None:
+        args.server_config = convert_yaml_to_json_string(args.server_config)
 
     # Interpolate environment variables in all string arguments
     for key, value in vars(args).items():
@@ -1341,16 +1343,35 @@ async def main_async(
         await graceful_exit(coder)
 
     # ── WebSocket server ────────────────────────────────────────────
+    # The WebSocket server only starts if --server-config is explicitly provided.
     ws_bridge = None
-    if args.ws_port and args.ws_port > 0:
+    if hasattr(args, "server_config") and args.server_config:
+        _server_cfg = {}
         try:
-            from cecli.helpers.server.ws_server import run_ws_server
+            parsed = json.loads(args.server_config)
+            if isinstance(parsed, dict):
+                _server_cfg = parsed
+        except (json.JSONDecodeError, TypeError):
+            pass
 
-            ws_bridge = await run_ws_server(port=args.ws_port, host=args.ws_host)
-            if args.verbose:
-                io.tool_output(f"WebSocket server started on ws://{args.ws_host}:{ws_bridge.port}")
-        except Exception as e:
-            io.tool_warning(f"Failed to start WebSocket server: {e}")
+        ws_port = _server_cfg.get("port", 23254)
+        ws_host = _server_cfg.get("host", "127.0.0.1")
+        headless = _server_cfg.get("headless", False)
+
+        # Set args.headless for TUI / other consumers
+        args.headless = headless
+
+        if ws_port and ws_port > 0:
+            try:
+                from cecli.helpers.server.ws_server import run_ws_server
+
+                ws_bridge = await run_ws_server(port=ws_port, host=ws_host)
+                if args.verbose:
+                    io.tool_output(f"WebSocket server started on ws://{ws_host}:{ws_bridge.port}")
+            except Exception as e:
+                io.tool_warning(f"Failed to start WebSocket server: {e}")
+    else:
+        args.headless = False
 
     if args.tui:
         from cecli.tui import launch_tui
