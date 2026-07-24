@@ -701,10 +701,6 @@ async def main_async(
                 if key in merged_cecli_conf and hasattr(args, key):
                     cecli_val = merged_cecli_conf[key]
                     if not isinstance(cecli_val, dict):
-                        if cecli_val is None:
-                            # YAML null / empty key → treat as empty dict
-                            cecli_val = {}
-                        else:
                             logging.warning(
                                 "Merged .cecli.conf.yml value for %s is not a dict (type: %s), "
                                 "expected dict — skipping",
