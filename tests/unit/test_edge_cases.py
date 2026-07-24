@@ -14,12 +14,22 @@ class TestEdgeCases(unittest.TestCase):
         self.assertEqual(merged, expected)
 
     def test_null_and_missing_values(self):
+        # When deep_merge_arrays=True, a None value in dict2 means "not set"
+        # and should preserve dict1's value rather than overwriting with None.
         dict1 = {"skills_paths": ["./project-skills"]}
         dict2 = {"skills_paths": None}
-        expected = {"skills_paths": None}
+        expected = {"skills_paths": ["./project-skills"]}
         merged = deep_merge(dict1, dict2, deep_merge_arrays=True)
         self.assertEqual(merged, expected)
 
+        # When deep_merge_arrays=False, None should still overwrite (shallow behavior).
+        dict1 = {"skills_paths": ["./project-skills"]}
+        dict2 = {"skills_paths": None}
+        expected_shallow = {"skills_paths": None}
+        merged_shallow = deep_merge(dict1, dict2, deep_merge_arrays=False)
+        self.assertEqual(merged_shallow, expected_shallow)
+
+        # Missing key in dict2 should preserve dict1's value.
         dict1 = {"skills_paths": ["./project-skills"]}
         dict2 = {}
         expected = {"skills_paths": ["./project-skills"]}
