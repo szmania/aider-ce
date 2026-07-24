@@ -2018,6 +2018,23 @@ class Coder(metaclass=UsageMeta):
         file_context_tokens = self.summarizer.count_tokens(file_context_messages)
         all_tokens = self.summarizer.count_tokens(all_messages)
 
+        # Determine if compaction is worthwhile
+        compactable_tokens = done_tokens + cur_tokens + diff_tokens
+
+        # Condition 1: Percentage check (is chat history a significant part of the context?)
+        is_worth_by_percentage = all_tokens > 0 and (compactable_tokens / all_tokens) >= 0.20
+
+        # Condition 2: Absolute savings check (would compacting save enough tokens to fit?)
+        tokens_over_limit = all_tokens - (self.context_compaction_max_tokens or all_tokens)
+        potential_savings = compactable_tokens * 0.90
+        is_worth_by_absolute_savings = tokens_over_limit > 0 and potential_savings >= tokens_over_limit
+
+        if not (is_worth_by_percentage or is_worth_by_absolute_savings):
+            self.io.tool_output(
+                "Skipping compaction: Not enough chat history to make a difference. Use /drop to remove files."
+            )
+            return
+
         message_tokens = done_tokens + cur_tokens
         file_tokens = diff_tokens + file_context_tokens
         combined_tokens = done_tokens + cur_tokens + diff_tokens + file_context_tokens
