@@ -1,63 +1,8 @@
 import json
 import os
-import sys
 import unittest
 
 import yaml
-
-# Mock the configargparse before it's imported by other modules
-# This is a bit of a hack, but necessary for this kind of integration test
-
-
-class MockArgumentParser:
-    def __init__(self, *args, **kwargs):
-        self.args = {}
-        self.default_config_files = []
-
-    def add_argument(self, *args, **kwargs):
-        action = kwargs.get("action")
-        dest = kwargs.get("dest")
-        if not dest:
-            for arg in args:
-                if arg.startswith("--"):
-                    dest = arg.lstrip("-").replace("-", "_")
-                    break
-        if action == "append":
-            self.args[dest] = []
-        else:
-            self.args[dest] = None
-
-    def parse_known_args(self, argv=None):
-        # A very simplified parser that just recognizes file paths
-        # In a real scenario, this would be much more complex
-        # For this test, we assume the args are pre-populated by mock config files
-
-        # Simulate configargparse loading files and setting args
-        all_configs = {}
-        for f in self.default_config_files:
-            if os.path.exists(f):
-                with open(f, 'r') as stream:
-                    config = yaml.safe_load(stream)
-                    # Shallow merge for simulation
-                    all_configs.update(config)
-
-        for key, value in all_configs.items():
-            if key in self.args:
-                if isinstance(self.args[key], list):
-                    self.args[key].extend(value)
-                else:
-                    self.args[key] = value
-
-        # Convert to a namespace-like object
-        class ArgsNamespace:
-            def __init__(self, d):
-                self.__dict__.update(d)
-
-        return ArgsNamespace(self.args), []
-
-
-sys.modules['configargparse'].ArgumentParser = MockArgumentParser
-
 
 from cecli.helpers.nested import (  # noqa: E402
     deep_merge_config_dicts,
@@ -80,6 +25,7 @@ class TestConfigLoading(unittest.TestCase):
 
     def tearDown(self):
         import shutil
+
         shutil.rmtree(self.conf_dir)
 
     def test_multiple_config_files_deep_merge(self):
@@ -118,7 +64,7 @@ class TestConfigLoading(unittest.TestCase):
         expected = {
             "skills_paths": ["/legacy/skills", "/user/skills", "./project/skills"],
             "model": "gpt-4",
-            "temperature": 0.7
+            "temperature": 0.7,
         }
         self.assertEqual(final_config["skills_paths"], expected["skills_paths"])
         self.assertEqual(final_config["model"], expected["model"])
@@ -140,7 +86,6 @@ class TestConfigLoading(unittest.TestCase):
         # Configargparse shallow merges all first. The last value for 'a' and 'b' wins.
         # Our manual deep merge will then be applied.
 
-
         # 1. Base from shallow file
         base_config = yaml.safe_load(open(self.legacy_conf_path))
 
@@ -154,30 +99,24 @@ class TestConfigLoading(unittest.TestCase):
         temp_merged.update(yaml.safe_load(open(self.git_root_conf_path)))
 
         # Now, apply our deep merge logic for array fields
-        final_config = deep_merge_config_dicts([
-            base_config,
-            yaml.safe_load(open(self.user_conf_path)),
-            yaml.safe_load(open(self.git_root_conf_path))
-        ])
+        final_config = deep_merge_config_dicts(
+            [
+                base_config,
+                yaml.safe_load(open(self.user_conf_path)),
+                yaml.safe_load(open(self.git_root_conf_path)),
+            ]
+        )
 
         # 'a' is a scalar, so last one wins
-        self.assertEqual(final_config['a'], 3)
+        self.assertEqual(final_config["a"], 3)
         # 'b' is an array, should be deep merged
-        self.assertEqual(final_config['b'], [10, 20, 30])
+        self.assertEqual(final_config["b"], [10, 20, 30])
 
     def test_agent_config_json_parsing(self):
         # This tests that a JSON string field like 'agent_config' is correctly merged
-        conf1 = {
-            "agent_config": {
-                "skills_paths": ["/path1"],
-                "tools_includelist": ["tool-a"]
-            }
-        }
+        conf1 = {"agent_config": {"skills_paths": ["/path1"], "tools_includelist": ["tool-a"]}}
         conf2 = {
-            "agent_config": {
-                "skills_paths": ["/path2"],
-                "tools_includelist": ["tool-b", "tool-a"]
-            }
+            "agent_config": {"skills_paths": ["/path2"], "tools_includelist": ["tool-b", "tool-a"]}
         }
 
         # Simulate loading from two .cecli.conf.yml files
@@ -186,18 +125,23 @@ class TestConfigLoading(unittest.TestCase):
         # The result is a Python dict. In main.py, this would be re-serialized to JSON.
         expected_agent_config = {
             "skills_paths": ["/path1", "/path2"],
-            "tools_includelist": ["tool-a", "tool-b"]
+            "tools_includelist": ["tool-a", "tool-b"],
         }
 
-        self.assertEqual(merged['agent_config'], expected_agent_config)
+        self.assertEqual(merged["agent_config"], expected_agent_config)
 
         # Test the re-serialization step
-        final_json_string = json.dumps(merged['agent_config'])
+        final_json_string = json.dumps(merged["agent_config"])
         parsed_final = json.loads(final_json_string)
 
         # Sort lists for comparison since order inside JSON can be tricky
-        self.assertEqual(sorted(parsed_final['skills_paths']), sorted(expected_agent_config['skills_paths']))
-        self.assertEqual(sorted(parsed_final['tools_includelist']), sorted(expected_agent_config['tools_includelist']))
+        self.assertEqual(
+            sorted(parsed_final["skills_paths"]), sorted(expected_agent_config["skills_paths"])
+        )
+        self.assertEqual(
+            sorted(parsed_final["tools_includelist"]),
+            sorted(expected_agent_config["tools_includelist"]),
+        )
 
 
 if __name__ == "__main__":

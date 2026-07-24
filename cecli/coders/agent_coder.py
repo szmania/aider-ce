@@ -153,9 +153,17 @@ class AgentCoder(Coder):
 
                 # Validate that array fields are lists, wrap scalars in lists
                 array_fields = [
-                    "skills_paths", "skills_includelist", "skills_excludelist", "skills_init",
-                    "subagent_paths", "tools_paths", "tools_includelist", "tools_excludelist",
-                    "servers_includelist", "servers_excludelist", "allowed_commands"
+                    "skills_paths",
+                    "skills_includelist",
+                    "skills_excludelist",
+                    "skills_init",
+                    "subagent_paths",
+                    "tools_paths",
+                    "tools_includelist",
+                    "tools_excludelist",
+                    "servers_includelist",
+                    "servers_excludelist",
+                    "allowed_commands",
                 ]
                 for field in array_fields:
                     if field in config and not isinstance(config[field], list):

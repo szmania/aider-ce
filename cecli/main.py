@@ -593,7 +593,9 @@ async def main_async(
     if git_root:
         all_config_paths.append(str(Path(git_root) / ".cecli.conf.yml"))
 
-    conf_yml_files = [p for p in all_config_paths if p.endswith("conf.yml") and not p.endswith(".cecli.conf.yml")]
+    conf_yml_files = [
+        p for p in all_config_paths if p.endswith("conf.yml") and not p.endswith(".cecli.conf.yml")
+    ]
     cecli_conf_yml_files = [p for p in all_config_paths if p.endswith(".cecli.conf.yml")]
 
     # Only pass .cecli/conf.yml files to configargparse for shallow merge
@@ -661,9 +663,7 @@ async def main_async(
                     if isinstance(config_data, dict):
                         cecli_conf_dicts.append(nested._normalize_keys(config_data))
             except yaml.YAMLError as e:
-                logging.warning(
-                    "Could not parse YAML file %s: %s", config_file, e
-                )
+                logging.warning("Could not parse YAML file %s: %s", config_file, e)
 
         if cecli_conf_dicts:
             # Deep-merge .cecli.conf.yml files together
@@ -674,20 +674,25 @@ async def main_async(
                 if key in merged_cecli_conf and hasattr(args, key):
                     cecli_val = merged_cecli_conf[key]
                     if not isinstance(cecli_val, list):
-                        logging.warning(
-                            "Merged .cecli.conf.yml value for %s is not a list (type: %s), "
-                            "expected list",
-                            key,
-                            type(cecli_val).__name__,
-                        )
-                        continue
+                        if cecli_val is None:
+                            # YAML null / empty key → treat as empty list
+                            cecli_val = []
+                        elif isinstance(cecli_val, str):
+                            # Scalar string → wrap in single-element list
+                            cecli_val = [cecli_val]
+                        else:
+                            logging.warning(
+                                "Merged .cecli.conf.yml value for %s is not a list (type: %s), "
+                                "expected list — skipping",
+                                key,
+                                type(cecli_val).__name__,
+                            )
+                            continue
                     existing_val = getattr(args, key)
                     if isinstance(existing_val, list):
                         # Concatenate: .cecli/conf.yml values first, then
                         # .cecli.conf.yml values (deduplicated)
-                        setattr(args, key, nested._deduplicate_list(
-                            list(existing_val), cecli_val
-                        ))
+                        setattr(args, key, nested._deduplicate_list(list(existing_val), cecli_val))
                     else:
                         setattr(args, key, cecli_val)
 
@@ -696,13 +701,17 @@ async def main_async(
                 if key in merged_cecli_conf and hasattr(args, key):
                     cecli_val = merged_cecli_conf[key]
                     if not isinstance(cecli_val, dict):
-                        logging.warning(
-                            "Merged .cecli.conf.yml value for %s is not a dict (type: %s), "
-                            "expected dict",
-                            key,
-                            type(cecli_val).__name__,
-                        )
-                        continue
+                        if cecli_val is None:
+                            # YAML null / empty key → treat as empty dict
+                            cecli_val = {}
+                        else:
+                            logging.warning(
+                                "Merged .cecli.conf.yml value for %s is not a dict (type: %s), "
+                                "expected dict — skipping",
+                                key,
+                                type(cecli_val).__name__,
+                            )
+                            continue
                     existing_val = getattr(args, key)
                     if existing_val is not None:
                         # Parse existing value (may be JSON string from
@@ -732,14 +741,56 @@ async def main_async(
                     try:
                         setattr(args, key, json.dumps(merged_val))
                     except (TypeError, ValueError) as e:
-                        logging.warning(
-                            "Could not serialize merged config for %s: %s", key, e
-                        )
+                        logging.warning("Could not serialize merged config for %s: %s", key, e)
     else:
         logging.debug(
             "No .cecli.conf.yml files found — shallow-merge-only mode active "
             "(configargparse handles .cecli/conf.yml)"
         )
+
+    # ── Apply remaining scalar fields from .cecli.conf.yml ────────────────
+    # After processing DEEP_MERGE_LIST_FIELDS and DEEP_MERGE_JSON_FIELDS,
+    # apply any remaining keys from merged_cecli_conf that are NOT in either
+    # field set.  These are scalar fields (e.g., auto-commits, model, dark_mode)
+    # that configargparse never saw because .cecli.conf.yml files were excluded
+    # from its default_config_files.  Without this step, scalar fields in
+    # .cecli.conf.yml would be silently dropped.
+    if existing_cecli_conf and cecli_conf_dicts:
+        merged_cecli_conf = nested.deep_merge_config_dicts(cecli_conf_dicts)
+        all_deep_fields = nested.DEEP_MERGE_LIST_FIELDS | nested.DEEP_MERGE_JSON_FIELDS
+        for key, value in merged_cecli_conf.items():
+            if key not in all_deep_fields and hasattr(args, key):
+                # Only apply if the existing args value is still the default
+                # (i.e., not already set by .cecli/conf.yml or CLI args).
+                # We check by comparing against the parser's default.
+                existing_val = getattr(args, key)
+                default_val = parser.get_default(key)
+                if existing_val == default_val:
+                    setattr(args, key, value)
+
+    # ── Normalize array fields to never be None ───────────────────────────
+    # After merging, ensure every DEEP_MERGE_LIST_FIELDS attribute is at
+    # minimum an empty list [] and every DEEP_MERGE_JSON_FIELDS attribute
+    # is at minimum an empty JSON object "{}".  Downstream code should never
+    # have to deal with None for these fields.
+    for key in nested.DEEP_MERGE_LIST_FIELDS:
+        if hasattr(args, key):
+            val = getattr(args, key)
+            if val is None or (isinstance(val, str) and val.strip() == ""):
+                setattr(args, key, [])
+            elif not isinstance(val, list):
+                logging.warning(
+                    "args.%s is not a list (type: %s), coercing to empty list",
+                    key,
+                    type(val).__name__,
+                )
+                setattr(args, key, [])
+
+    for key in nested.DEEP_MERGE_JSON_FIELDS:
+        if hasattr(args, key):
+            val = getattr(args, key)
+            if val is None or (isinstance(val, str) and val.strip() == ""):
+                setattr(args, key, "{}")
 
     if len(unknown):
         print("Unknown Args: ", unknown)
