@@ -166,12 +166,16 @@ class AgentCoder(Coder):
                     "allowed_commands",
                 ]
                 for field in array_fields:
-                    if field in config and not isinstance(config[field], list):
-                        self.start_up_errors.append(
-                            f"agent-config field '{field}' should be a list but got "
-                            f"{type(config[field]).__name__}, wrapping in list"
-                        )
-                        config[field] = [config[field]]
+                    if field in config:
+                        if config[field] is None:
+                            # YAML null / JSON null → treat as empty list
+                            config[field] = []
+                        elif not isinstance(config[field], list):
+                            self.start_up_errors.append(
+                                f"agent-config field '{field}' should be a list but got "
+                                f"{type(config[field]).__name__}, wrapping in list"
+                            )
+                            config[field] = [config[field]]
             except (json.JSONDecodeError, TypeError) as e:
                 self.start_up_errors.append(f"Failed to parse agent-config JSON: {e}")
                 return {}
