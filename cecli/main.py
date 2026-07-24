@@ -1340,6 +1340,18 @@ async def main_async(
     if suppress_pre_init:
         await graceful_exit(coder)
 
+    # ── WebSocket server ────────────────────────────────────────────
+    ws_bridge = None
+    if args.ws_port and args.ws_port > 0:
+        try:
+            from cecli.helpers.server.ws_server import run_ws_server
+
+            ws_bridge = await run_ws_server(port=args.ws_port, host=args.ws_host)
+            if args.verbose:
+                io.tool_output(f"WebSocket server started on ws://{args.ws_host}:{ws_bridge.port}")
+        except Exception as e:
+            io.tool_warning(f"Failed to start WebSocket server: {e}")
+
     if args.tui:
         from cecli.tui import launch_tui
 
@@ -1356,11 +1368,17 @@ async def main_async(
             # Clean up stale TUI per-coder queues from previous sessions
             # to prevent stale queue entries from accumulating across
             # reload cycles.
-            from cecli.tui.io import TextualInputOutput as _TuiIO
+            from cecli.helpers import queues
 
-            _TuiIO._per_coder_queues.clear()
+            queues._per_coder_queues.clear()
 
             raise
+        # Stop WebSocket server
+        if ws_bridge is not None:
+            try:
+                await ws_bridge.stop()
+            except Exception:
+                pass
         return await graceful_exit(coder, return_code)
     while True:
         try:

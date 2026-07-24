@@ -17,11 +17,11 @@ from textual.theme import Theme
 
 from cecli import __version__
 from cecli.editor import pipe_editor
+from cecli.helpers import queues
 from cecli.helpers.agents.service import AgentService
 from cecli.helpers.coroutines import is_active
 from cecli.helpers.file_system import FileSystemService
 from cecli.io import CommandCompletionException
-from cecli.tui.io import TextualInputOutput
 
 from .widgets import (
     CompletionBar,
@@ -916,8 +916,8 @@ class TUI(App):
                 else None
             )
             # Route to per-coder queue when available
-            if coder_uuid and coder_uuid in TextualInputOutput._per_coder_queues:
-                TextualInputOutput._per_coder_queues[coder_uuid].put(
+            if coder_uuid and coder_uuid in queues._per_coder_queues:
+                queues._per_coder_queues[coder_uuid].put(
                     {"text": user_input, "coder_uuid": coder_uuid}
                 )
             else:
@@ -1327,8 +1327,8 @@ class TUI(App):
 
         coder_uuid = self._confirmation_coder_uuid
         # Route to per-coder queue when available
-        if coder_uuid and coder_uuid in TextualInputOutput._per_coder_queues:
-            TextualInputOutput._per_coder_queues[coder_uuid].put(
+        if coder_uuid and coder_uuid in queues._per_coder_queues:
+            queues._per_coder_queues[coder_uuid].put(
                 {"confirmed": message.result, "coder_uuid": coder_uuid}
             )
         else:

@@ -1163,6 +1163,28 @@ def get_parser(default_config_files, git_root):
     )
 
     ##########
+    group = parser.add_argument_group("WebSocket server")
+    group.add_argument(
+        "--ws-port",
+        type=int,
+        default=23254,
+        help="Port for the WebSocket signal server (0 = disabled, default: 23254)",
+    )
+    group.add_argument(
+        "--ws-host",
+        type=str,
+        default="127.0.0.1",
+        help="Host for the WebSocket signal server (default: 127.0.0.1)",
+    )
+
+    group.add_argument(
+        "--headless",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Run TUI in headless mode (no terminal UI, server mode)",
+    )
+
+    ##########
     group = parser.add_argument_group("Deprecated model settings")
     # Add deprecated model shortcut arguments
     add_deprecated_model_args(parser, group)
