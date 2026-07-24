@@ -18,6 +18,7 @@ from cecli.helpers.server.ws_server import WebSocketSignalBridge, run_ws_server
 def clear_queues():
     """Clear the global queue registry before each test."""
     queues._per_coder_queues.clear()
+    queues._primary_coder_id = None
     yield
     queues._per_coder_queues.clear()
 
