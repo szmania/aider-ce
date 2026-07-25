@@ -1,4 +1,3 @@
-import copy
 import json
 import time
 import weakref
@@ -839,4 +838,3 @@ class ConversationManager:
         if not isinstance(msg, dict):
             return messages_dict
 
-        content = msg.get("content")
