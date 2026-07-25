@@ -5,8 +5,7 @@ Tests UT-CTX-001 through UT-CTX-018 as defined in .cecli.plans.md Section 10.
 """
 
 import asyncio
-import os
-from unittest.mock import AsyncMock, MagicMock, patch, call
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from litellm import ContextWindowExceededError

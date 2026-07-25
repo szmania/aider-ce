@@ -14,7 +14,6 @@ import re
 import sys
 import threading
 import time
-import logging
 import traceback
 import weakref
 from collections import defaultdict
@@ -2031,7 +2030,6 @@ class Coder(metaclass=UsageMeta):
 
         self.io.update_spinner("Compacting...")
 
-        start_time = time.time()
         try:
             compaction_prompt = self.gpt_prompts.compaction_prompt
             if message:

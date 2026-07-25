@@ -4,7 +4,6 @@
 Tests IT-CTX-001 through IT-CTX-007 as defined in .cecli.plans.md Section 10.
 """
 
-import asyncio
 import os
 from unittest.mock import AsyncMock, MagicMock, patch
 
