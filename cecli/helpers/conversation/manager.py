@@ -837,4 +837,3 @@ class ConversationManager:
         # Safety check: skip if msg is not a dict (e.g., a string)
         if not isinstance(msg, dict):
             return messages_dict
-
