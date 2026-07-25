@@ -250,7 +250,11 @@ class InputArea(TextArea):
             self.completion_active = False
             self.post_message(self.CompletionDismiss())
 
-        if self.app.is_key_for("cancel", event.key) and not self.selected_text:
+        if (
+            self.app.is_key_for("cancel", event.key)
+            and not self.selected_text
+            and not self.app.screen.get_selected_text()
+        ):
             event.stop()
             event.prevent_default()
             if self.text.strip():

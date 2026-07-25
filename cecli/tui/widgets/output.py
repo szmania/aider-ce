@@ -5,7 +5,6 @@ import textwrap
 
 from rich.markdown import Markdown
 from rich.markup import escape
-from rich.padding import Padding
 from rich.style import Style as RichStyle
 from rich.text import Text
 from textual import events, on
@@ -41,6 +40,21 @@ class OutputContainer(VerticalScroll):
         width: 100%;
         margin: 0;
         padding: 0;
+    }
+    OutputContainer > Static.tool-call {
+        padding: 0 0 0 2;
+    }
+    OutputContainer > Static.tool-call-info {
+        padding: 0 0 0 3;
+    }
+    OutputContainer > Static.tool-result {
+        padding: 0 0 0 1;
+    }
+    OutputContainer > Static.system-msg {
+        padding: 0 0 0 2;
+    }
+    OutputContainer > Static.styled-output {
+        padding: 0 0 0 2;
     }
     """
 
@@ -181,14 +195,17 @@ class OutputContainer(VerticalScroll):
         text = text.removesuffix("\n")
         start = ""
         end = ""
+        classes = None
+
         # Write system message in secondary color
         if dim:
             start = "[dim]"
             end = "[/dim]"
-            text = Padding(f"{start}{escape(text)}{end}", (0, 0, 0, 2))
+            text = Text.from_markup(f"{start}{escape(text)}{end}")
+            classes = "system-msg"
 
         self.set_last_write_type("system")
-        self.output(text)
+        self.output(text, add_classes=classes)
 
     def add_output(self, text: str, task_id: str = None, dim=True):
         """Add output text as a system message.
@@ -212,7 +229,7 @@ class OutputContainer(VerticalScroll):
 
         # Create styled Text object directly
         styled_text = Text(text, style=RichStyle(**styles))
-        self.output(Padding(styled_text, (0, 0, 0, 2)))
+        self.output(styled_text, add_classes="styled-output")
 
     def add_tool_call(self, lines: list):
         """Add a tool call with themed styling.
@@ -231,7 +248,9 @@ class OutputContainer(VerticalScroll):
             if i == 0:
                 # First line: reformat "Tool Call: server • function" to "Tool Call · server · function"
                 clean_line = clean_line.replace("Tool Call:", "Tool Call •")
-                self.output(Padding(Text(clean_line, style="dim bright_cyan"), (0, 0, 0, 2)))
+                content = Text()
+                content.append(clean_line, style="dim bright_cyan")
+                self.output(content, add_classes="tool-call")
             else:
                 # Subsequent lines (arguments) - prefix with corner to show they belong to the call
                 arg_string_list = re.split(r"(^\S+:)", clean_line, maxsplit=1)[1:]
@@ -241,12 +260,9 @@ class OutputContainer(VerticalScroll):
                     content = Text()
                     content.append(f"ᴸ{tool_property}", style="dim bright_cyan")
                     content.append(arg_string_list[1], style="dim")
-                    self.output(Padding(content, (0, 0, 0, 2)))
+                    self.output(content, add_classes="tool-call")
                 else:
-                    self.output(Padding(Text(clean_line, style="dim"), (0, 0, 0, 3)))
-
-            # self.set_last_write_type("tool_call")
-            # self.output(Padding(content, (0, 0, 0, 2)))
+                    self.output(Text(clean_line, style="dim"), add_classes="tool-call-info")
 
     def add_tool_result(self, text: str):
         """Add a tool result.
@@ -263,7 +279,7 @@ class OutputContainer(VerticalScroll):
         result.append(clean_text, style="dim")
 
         self.set_last_write_type("tool_result")
-        self.output(Padding(result, (0, 0, 0, 1)))
+        self.output(result, add_classes="tool-result")
 
     def _check_cost(self, text: str):
         """Extract and emit cost updates."""
@@ -289,13 +305,14 @@ class OutputContainer(VerticalScroll):
 
         self._last_write_type = type
 
-    def output(self, text, check_duplicates=True, render_markdown=False):
+    def output(self, text, check_duplicates=True, render_markdown=False, add_classes=None):
         """Write output with duplicate newline checking.
 
         Args:
             text: The text to write
             check_duplicates: If True, check for duplicate newlines before writing
             render_markdown: If True and app config allows, render as markdown
+            add_classes: Optional CSS class to apply to the Static widget
         """
         # Get plain text for duplicate checking BEFORE any markdown conversion
         plain_text = ""
@@ -329,7 +346,7 @@ class OutputContainer(VerticalScroll):
                 return
 
         # Mount the content as a Static widget for text selection
-        self._mount_output(text)
+        self._mount_output(text, add_classes=add_classes)
 
         # Log the write using the plain text
         self._write_history.append(plain_text)
@@ -338,7 +355,7 @@ class OutputContainer(VerticalScroll):
         if len(self._write_history) > 5:
             self._write_history.pop(0)
 
-    def _mount_output(self, content) -> None:
+    def _mount_output(self, content, add_classes=None) -> None:
         """Mount a Static widget with the given content and auto-scroll.
 
         Converts ANSI escape codes to Rich Text objects via Text.from_ansi()
@@ -348,8 +365,14 @@ class OutputContainer(VerticalScroll):
         if isinstance(content, str) and "\x1b" in content:
             content = Text.from_ansi(content)
 
-        widget = Static(content)
+        kwargs = {}
+
+        if add_classes:
+            kwargs["classes"] = add_classes
+
+        widget = Static(content, **kwargs)
         self.mount(widget)
+
         if self._auto_scroll:
             self.call_after_refresh(self._scroll_to_bottom)
 

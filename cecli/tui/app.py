@@ -968,11 +968,23 @@ class TUI(App):
         output_container.action_page_down()
 
     def action_interrupt(self):
-        """Interrupt the current task.
+        """Interrupt the current task, or copy selected text to clipboard.
 
-        Resolves the foreground coder (primary or sub-agent) so the interrupt
-        targets whichever agent is currently active in the TUI.
+        If text is currently selected (e.g. from click-and-drag in the output
+        area), Ctrl+C copies to clipboard.  Otherwise it interrupts the
+        foreground coder (primary or sub-agent).
         """
+        # If text is selected, copy to clipboard instead of interrupting
+        selected = self.screen.get_selected_text()
+        if selected:
+            self.copy_to_clipboard(selected)
+            try:
+                status_bar = self.query_one("#status-bar", StatusBar)
+                status_bar.show_notification("Copied!", severity="information", timeout=2)
+            except Exception:
+                pass
+            return
+
         # Determine which coder is in the foreground
         coder = self.worker.coder if self.worker else None
         if coder:
