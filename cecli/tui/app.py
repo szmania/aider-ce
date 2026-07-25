@@ -49,7 +49,8 @@ class TUI(App):
     # This allows users to click-and-drag to select text across mounted widget
     # boundaries, which is essential since we use individual widget blocks
     # instead of a monolithic RichLog.
-    ENABLE_SELECT_AUTO_SCROLL = True
+    ENABLE_SELECT_AUTO_SCROLL = False
+    SELECT_AUTO_SCROLL_SPEED = 5
 
     BINDINGS = [
         # Binding("ctrl+c", "quit", "Quit", show=True),
