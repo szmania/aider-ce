@@ -1,4 +1,4 @@
-"""Output widget for cecli TUI using Textual's RichLog widget."""
+"""Output widget for cecli TUI using VerticalScroll + Static for text selection."""
 
 import re
 import textwrap
@@ -9,8 +9,9 @@ from rich.padding import Padding
 from rich.style import Style as RichStyle
 from rich.text import Text
 from textual import events, on
+from textual.containers import VerticalScroll
 from textual.message import Message
-from textual.widgets import RichLog
+from textual.widgets import Static
 
 
 class CostUpdate(Message):
@@ -21,11 +22,12 @@ class CostUpdate(Message):
         super().__init__()
 
 
-class OutputContainer(RichLog):
-    """Scrollable output area using RichLog widget for rich rendering.
+class OutputContainer(VerticalScroll):
+    """Scrollable output area using VerticalScroll + Static for text selection.
 
-    Uses Textual's RichLog widget for efficient streaming and display
-    of LLM responses and system messages.
+    Uses Textual's VerticalScroll container with Static child widgets
+    for efficient streaming and display of LLM responses and system messages.
+    Static widgets enable native text selection across the output.
     """
 
     DEFAULT_CSS = """
@@ -33,6 +35,12 @@ class OutputContainer(RichLog):
         scrollbar-gutter: stable;
         background: $surface;
         padding: 0 0;
+    }
+    OutputContainer > Static {
+        height: auto;
+        width: 100%;
+        margin: 0;
+        padding: 0;
     }
     """
 
@@ -45,15 +53,16 @@ class OutputContainer(RichLog):
         self._line_buffer = ""
         # Track if we're on the first line of the current response
         self._first_line_of_response = True
-
-        # Enable markup for rich formatting
-        self.highlight = True
-        self.markup = True
-        self.wrap = True
+        # Auto-scroll to bottom when new content is mounted
+        self._auto_scroll = True
         self.can_focus = False
 
     async def start_response(self):
         """Start a new LLM response section with streaming support."""
+        # Insert blank line between consecutive assistant responses
+        if self._last_write_type == "assistant":
+            self.output("", check_duplicates=False)
+
         # Clear the line buffer for new response
         self._line_buffer = ""
         # Reset first line flag
@@ -136,7 +145,7 @@ class OutputContainer(RichLog):
     def add_user_message(self, text: str):
         """Add a user message (displayed differently from LLM output)."""
         # User messages shown with > prefix in green color
-        self.auto_scroll = True
+        self._auto_scroll = True
         self.set_last_write_type("user")
 
         # Split text by newlines and process each line individually
@@ -161,7 +170,7 @@ class OutputContainer(RichLog):
                             "[/bold medium_spring_green]"
                         )
 
-        self.scroll_end(animate=False)
+        self._scroll_to_bottom()
 
     def add_system_message(self, text: str, dim=True):
         """Add a system/tool message."""
@@ -272,7 +281,7 @@ class OutputContainer(RichLog):
     def clear_output(self):
         """Clear all output."""
         self._line_buffer = ""
-        self.clear()
+        self._clear_children()
 
     def set_last_write_type(self, type):
         if type and self._last_write_type and self._last_write_type != type:
@@ -319,8 +328,8 @@ class OutputContainer(RichLog):
             if nl_check and nl_last and nl_penultimate:
                 return
 
-        # Call the actual write method
-        self.write(text)
+        # Mount the content as a Static widget for text selection
+        self._mount_output(text)
 
         # Log the write using the plain text
         self._write_history.append(plain_text)
@@ -329,9 +338,42 @@ class OutputContainer(RichLog):
         if len(self._write_history) > 5:
             self._write_history.pop(0)
 
+    def _mount_output(self, content) -> None:
+        """Mount a Static widget with the given content and auto-scroll.
+
+        Converts ANSI escape codes to Rich Text objects via Text.from_ansi()
+        so that Static can render them directly (avoids the color(N) markup
+        that Textual's Content.from_markup() cannot parse).
+        """
+        if isinstance(content, str) and "\x1b" in content:
+            content = Text.from_ansi(content)
+
+        widget = Static(content)
+        self.mount(widget)
+        if self._auto_scroll:
+            self.call_after_refresh(self._scroll_to_bottom)
+
+    def _scroll_to_bottom(self) -> None:
+        """Scroll to the bottom of the output."""
+        self.scroll_end(animate=False)
+
+    def _clear_children(self) -> None:
+        """Remove all Static child widgets."""
+        for child in list(self.children):
+            if isinstance(child, Static):
+                child.remove()
+
+    def action_page_up(self) -> None:
+        """Scroll the output area up one page."""
+        self.scroll_page_up(animate=False)
+
+    def action_page_down(self) -> None:
+        """Scroll the output area down one page."""
+        self.scroll_page_down(animate=False)
+
     @on(events.Print)
     def log_print(self, event: events.Print) -> None:
-        """Writes the captured print output to the RichLog widget."""
+        """Writes the captured print output to the output container."""
         if event.text.strip():
             theme_vars = self.app.get_css_variables()
             color = theme_vars.get("warning")
@@ -353,7 +395,7 @@ class OutputContainer(RichLog):
         Event handler called when the screen is scrolled up.
         Disables automatic scrolling
         """
-        self.auto_scroll = False
+        self._auto_scroll = False
 
     @on(events.MouseScrollDown)
     def enable_auto_scroll(self, event: events.MouseScrollDown) -> None:
@@ -363,10 +405,10 @@ class OutputContainer(RichLog):
         """
 
         # Calculate the relevant dimensions
-        scroll_top = self.scroll_y
+        scroll_top = self.scroll_offset.y
         view_height = self.size.height
         content_height = self.content_size.height
 
         # Check if scrolled to the bottom (allowing for minor floating point inaccuracies)
         if scroll_top + view_height >= content_height - 32:
-            self.auto_scroll = True
+            self._auto_scroll = True

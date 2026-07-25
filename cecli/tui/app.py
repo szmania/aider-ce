@@ -45,6 +45,12 @@ class TUI(App):
 
     CSS_PATH = "styles.tcss"
 
+    # Enable Textual's global container text selection (Textual 8.2.0+)
+    # This allows users to click-and-drag to select text across mounted widget
+    # boundaries, which is essential since we use individual widget blocks
+    # instead of a monolithic RichLog.
+    ENABLE_SELECT_AUTO_SCROLL = True
+
     BINDINGS = [
         # Binding("ctrl+c", "quit", "Quit", show=True),
         # Binding("ctrl+l", "clear_output", "Clear", show=True),
@@ -95,6 +101,8 @@ class TUI(App):
             variables={
                 "input-cursor-foreground": colors.get("input-cursor-foreground", "#00ff87"),
                 "input-cursor-text-style": other.get("input-cursor-text-style", "underline"),
+                "screen-selection-background": colors.get("background", "#1e1e1e"),
+                "screen-selection-foreground": colors.get("success", "#00aa00"),
             },
         )
 
@@ -241,6 +249,8 @@ class TUI(App):
             "variables": {
                 "input-cursor-foreground": "#00ff87",
                 "input-cursor-text-style": "underline",
+                "screen-selection-background": "#1e1e1e",
+                "screen-selection-foreground": "#00ff87",
             },
         }
 
@@ -1742,6 +1752,40 @@ class TUI(App):
         input_area.focus()
 
 
+def patch_color_name_to_rgb():
+    """Inject Rich 256-color names into Textual's COLOR_NAME_TO_RGB dict.
+
+    Textual's COLOR_NAME_TO_RGB only knows ANSI-16 + CSS named colors.
+    Rich's 256-color names (spring_green2, bright_cyan, etc.) are parsed
+    correctly by Content.from_markup() but silently dropped at render time
+    because Color.parse() doesn't recognize them.
+
+    This patch resolves every Rich color name to its truecolor RGB via
+    RichStyle.parse() and adds it to the dict, making all Rich color names
+    work natively in Textual's Static widgets.
+    """
+    from rich.color import ANSI_COLOR_NAMES
+    from rich.style import Style as RichStyle
+    from textual._color_constants import COLOR_NAME_TO_RGB
+
+    added = 0
+    for name in ANSI_COLOR_NAMES:
+        if name in COLOR_NAME_TO_RGB:
+            continue
+        try:
+            style = RichStyle.parse(name)
+        except Exception:
+            continue
+        if style.color is None or style.color.type is None:
+            continue
+        triplet = style.color.get_truecolor()
+        if triplet is not None:
+            COLOR_NAME_TO_RGB[name] = (triplet.red, triplet.green, triplet.blue)
+            added += 1
+
+    return added
+
+
 def patch_textual_strip_render_with_cache():
     # 1. Define the logic
     def modified_render_ansi(cls, style: Style, color_system: ColorSystem) -> str:
@@ -1774,5 +1818,6 @@ def patch_textual_strip_render_with_cache():
     textual.strip.Strip.render_ansi = classmethod(cached_version)
 
 
-# Execute the patch
+# Execute the patches
+patch_color_name_to_rgb()
 # patch_textual_strip_render_with_cache()
