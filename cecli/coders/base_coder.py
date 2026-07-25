@@ -1735,36 +1735,6 @@ class Coder(metaclass=UsageMeta):
         self.interrupt_event.clear()
 
         try:
-            if self.enable_context_compaction:
-                # Skip compaction if the user wants to clear or exit
-                # Compacting is wasteful since /clear will clear everything
-                # and /exit will exit the application
-                stripped = user_message.strip()
-                is_command = self.commands.is_command(stripped)
-                is_allowed_command = False
-
-                if is_command:
-                    res = self.commands.matching_commands(user_message)
-                    if res is not None:
-                        matching_commands, first_word, rest_inp = res
-                        if len(matching_commands) == 1:
-                            command = matching_commands[0]
-                            splits = (rest_inp or "").split()
-                            split_map = {
-                                "/agent": 1,
-                                "/architect": 1,
-                                "/ask": 1,
-                                "/code": 1,
-                                "/model": 2,
-                            }
-                            if command in split_map and len(splits) >= split_map.get(command, 0):
-                                is_allowed_command = True
-
-                if not is_command or is_allowed_command:
-                    self.compact_context_completed = False
-                    await self.compact_context_if_needed()
-                    self.compact_context_completed = True
-
             self.run_one_completed = False
             await self.run_one(user_message, preproc)
             self.show_undo_hint()
@@ -1903,9 +1873,6 @@ class Coder(metaclass=UsageMeta):
             elif self.stop_on_empty:
                 await self.auto_save_session(force=True)
                 break
-
-            if self.enable_context_compaction:
-                await self.compact_context_if_needed()
 
             if nested.getter(self, "agent_finished", False):
                 await self.auto_save_session(force=True)
