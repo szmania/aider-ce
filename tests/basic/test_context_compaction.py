@@ -1,4 +1,3 @@
-
 """Unit tests for context compaction and retry logic (CLI-56).
 
 Tests UT-CTX-001 through UT-CTX-018 as defined in .cecli.plans.md Section 10.
@@ -10,12 +9,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from litellm import ContextWindowExceededError
 
-from cecli.models import Model, FrozenCompactionSettings
-
+from cecli.models import FrozenCompactionSettings, Model
 
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture
 def mock_coder():
@@ -48,6 +47,7 @@ def mock_model(mock_coder):
 # UT-CTX-001: Compaction disabled — error propagates immediately
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 @patch("cecli.models.litellm.acompletion")
 async def test_ut_ctx_001_compaction_disabled_no_retry(mock_acompletion, mock_model, mock_coder):
@@ -77,9 +77,12 @@ async def test_ut_ctx_001_compaction_disabled_no_retry(mock_acompletion, mock_mo
 # UT-CTX-002: Compaction fires on error and retries successfully
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 @patch("cecli.models.litellm.acompletion")
-async def test_ut_ctx_002_compaction_fires_on_error_and_retries(mock_acompletion, mock_model, mock_coder):
+async def test_ut_ctx_002_compaction_fires_on_error_and_retries(
+    mock_acompletion, mock_model, mock_coder
+):
     """
     UT-CTX-002: Verify that when compaction is enabled, a ContextWindowExceededError
     triggers compaction and a successful retry.
@@ -112,6 +115,7 @@ async def test_ut_ctx_002_compaction_fires_on_error_and_retries(mock_acompletion
 # ---------------------------------------------------------------------------
 # UT-CTX-003: Retry exhaustion after max_compaction_retries
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 @patch("cecli.models.litellm.acompletion")
@@ -151,6 +155,7 @@ async def test_ut_ctx_003_retry_exhaustion(mock_acompletion, mock_model, mock_co
 # UT-CTX-004: Token floor guard — compaction returns False
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 @patch("asyncio.sleep", new_callable=AsyncMock)
 @patch("cecli.models.litellm.acompletion")
@@ -184,9 +189,9 @@ async def test_ut_ctx_004_token_floor_guard(mock_acompletion, mock_sleep, mock_m
         )
 
     # Verify that asyncio.sleep was called (backoff delays)
-    assert mock_sleep.call_count >= 2, (
-        f"Expected at least 2 sleep calls for backoff, got {mock_sleep.call_count}"
-    )
+    assert (
+        mock_sleep.call_count >= 2
+    ), f"Expected at least 2 sleep calls for backoff, got {mock_sleep.call_count}"
 
     # Verify delays follow exponential pattern: 0.125, 0.25, 0.5
     sleep_delays = [call_args[0][0] for call_args in mock_sleep.call_args_list]
@@ -200,6 +205,7 @@ async def test_ut_ctx_004_token_floor_guard(mock_acompletion, mock_sleep, mock_m
 # ---------------------------------------------------------------------------
 # UT-CTX-011: Partial tool output from failed call is discarded
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 @patch("cecli.models.litellm.acompletion")
@@ -241,6 +247,7 @@ async def test_ut_ctx_011_partial_tool_output_discard(mock_acompletion, mock_mod
 # UT-CTX-012: Non-idempotent tool safety semantic respected
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 @patch("cecli.models.litellm.acompletion")
 async def test_ut_ctx_012_non_idempotent_tool_safety(mock_acompletion, mock_model, mock_coder):
@@ -281,6 +288,7 @@ async def test_ut_ctx_012_non_idempotent_tool_safety(mock_acompletion, mock_mode
 # UT-CTX-013: Agent mode retry cap (2) vs interactive mode (3)
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 @patch("cecli.models.litellm.acompletion")
 async def test_ut_ctx_013_agent_mode_retry_cap(mock_acompletion, mock_model, mock_coder):
@@ -318,10 +326,13 @@ async def test_ut_ctx_013_agent_mode_retry_cap(mock_acompletion, mock_model, moc
 # UT-CTX-014: Status message format verification
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 @patch("builtins.print")
 @patch("cecli.models.litellm.acompletion")
-async def test_ut_ctx_014_status_message_format(mock_acompletion, mock_print, mock_model, mock_coder):
+async def test_ut_ctx_014_status_message_format(
+    mock_acompletion, mock_print, mock_model, mock_coder
+):
     """
     UT-CTX-014: Verify the format of the user-facing status message during compaction.
     """
@@ -347,22 +358,25 @@ async def test_ut_ctx_014_status_message_format(mock_acompletion, mock_print, mo
     )
 
     # Verify that status messages contain "Compacting context" and retry counts
-    printed_messages = [str(call_args[0][0]) for call_args in mock_print.call_args_list if call_args[0]]
+    printed_messages = [
+        str(call_args[0][0]) for call_args in mock_print.call_args_list if call_args[0]
+    ]
     compacting_messages = [m for m in printed_messages if "compacting" in m.lower()]
-    assert len(compacting_messages) >= 2, (
-        f"Expected at least 2 'Compacting context' messages, got: {compacting_messages}"
-    )
-    assert any("retry 1/3" in m.lower() or "retry 1 / 3" in m.lower() for m in compacting_messages), (
-        f"Expected 'retry 1/3' in messages: {compacting_messages}"
-    )
-    assert any("retry 2/3" in m.lower() or "retry 2 / 3" in m.lower() for m in compacting_messages), (
-        f"Expected 'retry 2/3' in messages: {compacting_messages}"
-    )
+    assert (
+        len(compacting_messages) >= 2
+    ), f"Expected at least 2 'Compacting context' messages, got: {compacting_messages}"
+    assert any(
+        "retry 1/3" in m.lower() or "retry 1 / 3" in m.lower() for m in compacting_messages
+    ), f"Expected 'retry 1/3' in messages: {compacting_messages}"
+    assert any(
+        "retry 2/3" in m.lower() or "retry 2 / 3" in m.lower() for m in compacting_messages
+    ), f"Expected 'retry 2/3' in messages: {compacting_messages}"
 
 
 # ---------------------------------------------------------------------------
 # UT-CTX-015: Regression — non-context retry behavior preserved
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 @patch("cecli.models.litellm.acompletion")
@@ -388,7 +402,7 @@ async def test_ut_ctx_015_non_context_retry_preserved(mock_acompletion, mock_mod
             model="gpt-4",
             status_code=500,
         ),
-        MagicMock(), # Succeed on second attempt
+        MagicMock(),  # Succeed on second attempt
     ]
 
     mock_acompletion.side_effect = [
@@ -398,7 +412,7 @@ async def test_ut_ctx_015_non_context_retry_preserved(mock_acompletion, mock_mod
             model="gpt-4",
             status_code=500,
         ),
-        MagicMock(), # Succeed on second attempt
+        MagicMock(),  # Succeed on second attempt
     ]
 
     await mock_model.send_completion(
@@ -413,6 +427,7 @@ async def test_ut_ctx_015_non_context_retry_preserved(mock_acompletion, mock_mod
 # ---------------------------------------------------------------------------
 # UT-CTX-016: Regression — ContextWindowExceededError with compaction disabled
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 @patch("cecli.models.litellm.acompletion")
@@ -438,6 +453,7 @@ async def test_ut_ctx_016_compaction_disabled_re_raises(mock_acompletion, mock_m
 # ---------------------------------------------------------------------------
 # UT-CTX-017: Concurrent compaction safety
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 @patch("cecli.models.litellm.acompletion")
@@ -491,6 +507,7 @@ async def test_ut_ctx_017_concurrent_compaction_safety(mock_acompletion, mock_mo
 # ---------------------------------------------------------------------------
 # UT-CTX-018: Compaction with empty/near-empty context
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 @patch("cecli.models.litellm.acompletion")

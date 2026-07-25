@@ -1993,7 +1993,9 @@ class Coder(metaclass=UsageMeta):
         # Condition 2: Absolute savings check (would compacting save enough tokens to fit?)
         tokens_over_limit = all_tokens - (self.context_compaction_max_tokens or all_tokens)
         potential_savings = compactable_tokens * 0.90
-        is_worth_by_absolute_savings = tokens_over_limit > 0 and potential_savings >= tokens_over_limit
+        is_worth_by_absolute_savings = (
+            tokens_over_limit > 0 and potential_savings >= tokens_over_limit
+        )
 
         if not (is_worth_by_percentage or is_worth_by_absolute_savings):
             self.io.tool_output(
@@ -2124,7 +2126,11 @@ class Coder(metaclass=UsageMeta):
             # on already-minimal context
             all_messages = manager.get_messages_dict()
             post_compaction_tokens = self.summarizer.count_tokens(all_messages)
-            token_floor = self.context_compaction_max_tokens * 0.25 if self.context_compaction_max_tokens else 0
+            token_floor = (
+                self.context_compaction_max_tokens * 0.25
+                if self.context_compaction_max_tokens
+                else 0
+            )
 
             if post_compaction_tokens < token_floor:
                 self._compaction_floor_reached = True
@@ -2143,7 +2149,6 @@ class Coder(metaclass=UsageMeta):
             ConversationService.get_chunks(self).reset_clear_count()
             ObservationService.get_instance(self).reset_index()
             self.format_chat_chunks()
-
 
         except Exception as e:
             self.io.tool_warning(f"Context compaction failed: {e}")

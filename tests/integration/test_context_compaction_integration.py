@@ -1,4 +1,3 @@
-
 """Integration tests for context compaction and retry logic (CLI-56).
 
 Tests IT-CTX-001 through IT-CTX-007 as defined in .cecli.plans.md Section 10.
@@ -10,12 +9,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from litellm import ContextWindowExceededError
 
-from cecli.models import Model, FrozenCompactionSettings
-
+from cecli.models import FrozenCompactionSettings, Model
 
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture
 def mock_coder():
@@ -48,6 +47,7 @@ def mock_model(mock_coder):
 # IT-CTX-001: Full flow — context overflow triggers compaction and recovery
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 @patch("cecli.models.litellm.acompletion")
 async def test_it_ctx_001_full_flow_compaction_recovery(mock_acompletion, mock_model, mock_coder):
@@ -67,7 +67,9 @@ async def test_it_ctx_001_full_flow_compaction_recovery(mock_acompletion, mock_m
 
     # First call fails with context error, second succeeds after compaction
     mock_acompletion.side_effect = [
-        ContextWindowExceededError(message="Context window exceeded", model="gpt-4", llm_provider="openai"),
+        ContextWindowExceededError(
+            message="Context window exceeded", model="gpt-4", llm_provider="openai"
+        ),
         MagicMock(),  # Successful response after compaction
     ]
 
@@ -88,10 +90,13 @@ async def test_it_ctx_001_full_flow_compaction_recovery(mock_acompletion, mock_m
 # IT-CTX-002: Retry exhaustion — user receives clear failure message
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 @patch("builtins.print")
 @patch("cecli.models.litellm.acompletion")
-async def test_it_ctx_002_retry_exhaustion_user_message(mock_acompletion, mock_print, mock_model, mock_coder):
+async def test_it_ctx_002_retry_exhaustion_user_message(
+    mock_acompletion, mock_print, mock_model, mock_coder
+):
     """
     IT-CTX-002: Verify that after 3 consecutive context window errors in a
     single tool call, user receives a clear failure message with guidance.
@@ -124,7 +129,9 @@ async def test_it_ctx_002_retry_exhaustion_user_message(mock_acompletion, mock_p
     assert mock_acompletion.call_count == 4
 
     # Verify user-facing guidance message was printed
-    printed_messages = [str(call_args[0][0]) for call_args in mock_print.call_args_list if call_args[0]]
+    printed_messages = [
+        str(call_args[0][0]) for call_args in mock_print.call_args_list if call_args[0]
+    ]
     assert any(
         "compaction failed" in msg.lower() or "clear" in msg.lower() or "compact" in msg.lower()
         for msg in printed_messages
@@ -135,10 +142,13 @@ async def test_it_ctx_002_retry_exhaustion_user_message(mock_acompletion, mock_p
 # IT-CTX-003: Agent-mode scenario — compaction events surfaced at session end
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 @patch("builtins.print")
 @patch("cecli.models.litellm.acompletion")
-async def test_it_ctx_003_agent_mode_compaction_summary(mock_acompletion, mock_print, mock_model, mock_coder):
+async def test_it_ctx_003_agent_mode_compaction_summary(
+    mock_acompletion, mock_print, mock_model, mock_coder
+):
     """
     IT-CTX-003: Agent-mode scenario with multi-turn context — confirm
     compaction events are tracked and surfaced.
@@ -154,7 +164,9 @@ async def test_it_ctx_003_agent_mode_compaction_summary(mock_acompletion, mock_p
 
     # First call fails, second succeeds (one compaction event)
     mock_acompletion.side_effect = [
-        ContextWindowExceededError(message="Context window exceeded", model="gpt-4", llm_provider="openai"),
+        ContextWindowExceededError(
+            message="Context window exceeded", model="gpt-4", llm_provider="openai"
+        ),
         MagicMock(),
     ]
 
@@ -170,16 +182,19 @@ async def test_it_ctx_003_agent_mode_compaction_summary(mock_acompletion, mock_p
     assert mock_acompletion.call_count == 2
 
     # Verify status messages were printed during compaction
-    printed_messages = [str(call_args[0][0]) for call_args in mock_print.call_args_list if call_args[0]]
+    printed_messages = [
+        str(call_args[0][0]) for call_args in mock_print.call_args_list if call_args[0]
+    ]
     compacting_messages = [m for m in printed_messages if "compacting" in m.lower()]
-    assert len(compacting_messages) >= 1, (
-        f"Expected at least 1 'Compacting context' message, got: {compacting_messages}"
-    )
+    assert (
+        len(compacting_messages) >= 1
+    ), f"Expected at least 1 'Compacting context' message, got: {compacting_messages}"
 
 
 # ---------------------------------------------------------------------------
 # IT-CTX-004: Cross-component config flow — CLI args → args.py → coder → model
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 @patch("cecli.models.litellm.acompletion")
@@ -209,6 +224,7 @@ async def test_it_ctx_004_config_flow(mock_acompletion):
 # IT-CTX-005: YAML config file integration
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 @patch("cecli.models.litellm.acompletion")
 async def test_it_ctx_005_yaml_config_integration(mock_acompletion):
@@ -218,10 +234,13 @@ async def test_it_ctx_005_yaml_config_integration(mock_acompletion):
     """
     # Simulate YAML config via environment variable (configargparse reads YAML)
     # The CECLI_ prefix maps to enable-context-compaction
-    with patch.dict(os.environ, {
-        "CECLI_ENABLE_CONTEXT_COMPACTION": "true",
-        "CECLI_MAX_COMPACTION_RETRIES": "2",
-    }):
+    with patch.dict(
+        os.environ,
+        {
+            "CECLI_ENABLE_CONTEXT_COMPACTION": "true",
+            "CECLI_MAX_COMPACTION_RETRIES": "2",
+        },
+    ):
         from cecli.args import get_parser
 
         parser = get_parser([], None)
@@ -236,8 +255,11 @@ async def test_it_ctx_005_yaml_config_integration(mock_acompletion):
 # IT-CTX-006: Env var + CLI flag precedence — CLI flag overrides env var
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
-@patch.dict(os.environ, {"CECLI_ENABLE_CONTEXT_COMPACTION": "true", "CECLI_MAX_COMPACTION_RETRIES": "2"})
+@patch.dict(
+    os.environ, {"CECLI_ENABLE_CONTEXT_COMPACTION": "true", "CECLI_MAX_COMPACTION_RETRIES": "2"}
+)
 @patch("cecli.models.litellm.acompletion")
 async def test_it_ctx_006_env_var_precedence(mock_acompletion):
     """
@@ -265,6 +287,7 @@ async def test_it_ctx_006_env_var_precedence(mock_acompletion):
 # ---------------------------------------------------------------------------
 # IT-CTX-007: Real model integration smoke test — no unnecessary compaction
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 @patch("cecli.models.litellm.acompletion")

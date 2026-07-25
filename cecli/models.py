@@ -1412,12 +1412,16 @@ class Model(ModelSettings):
 
                 if self._compaction_retry_count >= effective_max:
                     # Exhausted compaction retries — propagate with user guidance
-                    compaction_logger.info(json.dumps({
-                        "event": "context_compaction_exhausted",
-                        "retry_count": self._compaction_retry_count,
-                        "effective_max": effective_max,
-                        "trigger": "context_window_exceeded",
-                    }))
+                    compaction_logger.info(
+                        json.dumps(
+                            {
+                                "event": "context_compaction_exhausted",
+                                "retry_count": self._compaction_retry_count,
+                                "effective_max": effective_max,
+                                "trigger": "context_window_exceeded",
+                            }
+                        )
+                    )
                     print(
                         f"Context compaction failed after {effective_max} attempt(s)."
                         " Please use /clear or /compact manually."
@@ -1427,16 +1431,17 @@ class Model(ModelSettings):
 
                 # Attempt compaction before retrying
                 retry_index = self._compaction_retry_count + 1
-                compaction_logger.info(json.dumps({
-                    "event": "context_compaction_attempt",
-                    "retry_index": retry_index,
-                    "effective_max": effective_max,
-                    "trigger": "context_window_exceeded",
-                }))
-                print(
-                    f"Compacting context… retry"
-                    f" {retry_index}/{effective_max}"
+                compaction_logger.info(
+                    json.dumps(
+                        {
+                            "event": "context_compaction_attempt",
+                            "retry_index": retry_index,
+                            "effective_max": effective_max,
+                            "trigger": "context_window_exceeded",
+                        }
+                    )
                 )
+                print(f"Compacting context… retry" f" {retry_index}/{effective_max}")
 
                 try:
                     await coder.compact_context_if_needed(
@@ -1446,19 +1451,19 @@ class Model(ModelSettings):
                 except Exception as compaction_err:
                     # Compaction itself failed — do NOT count as retry attempt
                     # (no context reduction occurred, retrying would be futile)
-                    error_type, _ = FrozenCompactionSettings._scrub_compaction_error(
-                        compaction_err
-                    )
-                    compaction_logger.warning(json.dumps({
-                        "event": "context_compaction_failed",
-                        "error_type": error_type,
-                        "retry_index": retry_index,
-                        "trigger": "context_window_exceeded",
-                    }))
-                    if self.verbose:
-                        compaction_logger.debug(
-                            f"Compaction exception details: {compaction_err!r}"
+                    error_type, _ = FrozenCompactionSettings._scrub_compaction_error(compaction_err)
+                    compaction_logger.warning(
+                        json.dumps(
+                            {
+                                "event": "context_compaction_failed",
+                                "error_type": error_type,
+                                "retry_index": retry_index,
+                                "trigger": "context_window_exceeded",
+                            }
                         )
+                    )
+                    if self.verbose:
+                        compaction_logger.debug(f"Compaction exception details: {compaction_err!r}")
                     print(
                         f"Context compaction failed: {error_type}."
                         " Please use /clear or /compact manually."
@@ -1468,11 +1473,15 @@ class Model(ModelSettings):
 
                 # Check if compaction actually reduced context (floor guard)
                 if getattr(coder, "_compaction_floor_reached", False):
-                    compaction_logger.info(json.dumps({
-                        "event": "context_compaction_floor_reached",
-                        "retry_index": retry_index,
-                        "trigger": "context_window_exceeded",
-                    }))
+                    compaction_logger.info(
+                        json.dumps(
+                            {
+                                "event": "context_compaction_floor_reached",
+                                "retry_index": retry_index,
+                                "trigger": "context_window_exceeded",
+                            }
+                        )
+                    )
                     print(
                         "Context is already at minimum size, cannot compact further."
                         " Please use /clear manually."
@@ -1656,6 +1665,8 @@ class Model(ModelSettings):
                 default=lambda o: "<not serializable>",
             )
             f.write(",\n")
+
+
 @dataclass(frozen=True)
 class FrozenCompactionSettings:
     enable_context_compaction: bool
@@ -1663,7 +1674,6 @@ class FrozenCompactionSettings:
     context_compaction_max_tokens: int
     context_compaction_summary_tokens: int
     is_agent_mode: bool
-
 
     @staticmethod
     def _scrub_compaction_error(ex):
@@ -1676,8 +1686,6 @@ class FrozenCompactionSettings:
         # Only surface the error type, never raw exception messages
         # which may contain conversation content or file paths
         return error_type, None
-
-
 
 
 def register_models(model_settings_fnames):
