@@ -597,6 +597,10 @@ class ConversationManager:
             messages_before: List of messages before adding new ones
             messages_after: List of messages after adding new ones
         """
+        # Safety: filter out non-dict messages
+        messages_before = [m for m in messages_before if isinstance(m, dict)]
+        messages_after = [m for m in messages_after if isinstance(m, dict)]
+
         # Log total counts
         print(f"[DEBUG] Messages before: {len(messages_before)} entries")
         print(f"[DEBUG] Messages after: {len(messages_after)} entries")
@@ -691,6 +695,11 @@ class ConversationManager:
         # Find the last non-"<context" message with valid role
         for i in range(len(messages_dict) - 1, -1, -1):
             msg = messages_dict[i]
+
+            # Safety check: skip if msg is not a dict (e.g., a string)
+            if not isinstance(msg, dict):
+                continue
+
             content = msg.get("content", "")
             role = msg.get("role", "")
             tool_calls = msg.get("tool_calls", [])
@@ -719,6 +728,11 @@ class ConversationManager:
         if last_message_idx >= 0:
             for i in range(last_message_idx - 1, -1, -1):
                 msg = messages_dict[i]
+
+                # Safety check: skip if msg is not a dict (e.g., a string)
+                if not isinstance(msg, dict):
+                    continue
+
                 content = msg.get("content", "")
                 role = msg.get("role", "")
                 tool_calls = msg.get("tool_calls", [])
@@ -733,6 +747,11 @@ class ConversationManager:
         # Look for consecutive system messages starting from index 0
         for i in range(len(messages_dict)):
             msg = messages_dict[i]
+
+            # Safety check: skip if msg is not a dict (e.g., a string)
+            if not isinstance(msg, dict):
+                continue
+
             role = msg.get("role", "")
             if role == "system":
                 # Keep track of the last system message in this contiguous block
@@ -769,6 +788,10 @@ class ConversationManager:
         """
         result = []
         for msg in messages_dict:
+            # Safety check: skip if msg is not a dict (e.g., a string)
+            if not isinstance(msg, dict):
+                continue
+
             msg_copy = dict(msg)
             content = msg_copy.get("content")
 
@@ -811,41 +834,9 @@ class ConversationManager:
             return messages_dict
 
         msg = messages_dict[idx]
+
+        # Safety check: skip if msg is not a dict (e.g., a string)
+        if not isinstance(msg, dict):
+            return messages_dict
+
         content = msg.get("content")
-
-        # Convert string content to dict format if needed
-        if isinstance(content, str):
-            content = {
-                "type": "text",
-                "text": content,
-            }
-        elif isinstance(content, list) and len(content) > 0:
-            # If already a list, get the first element
-            first_element = content[0]
-            if isinstance(first_element, dict):
-                content = first_element
-            else:
-                # If first element is not a dict, wrap it
-                content = {
-                    "type": "text",
-                    "text": str(first_element),
-                }
-        elif content is None:
-            # Handle None content (e.g., tool calls)
-            content = {
-                "type": "text",
-                "text": "",
-            }
-
-        # Add cache control
-        content["cache_control"] = {"type": "ephemeral"}
-
-        # Wrap in list
-        msg_copy = copy.deepcopy(msg)
-        msg_copy["content"] = [content]
-
-        # Create new list with updated message
-        result = list(messages_dict)
-        result[idx] = msg_copy
-
-        return result
