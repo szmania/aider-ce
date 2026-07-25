@@ -778,6 +778,10 @@ async def main_async(
             val = getattr(args, key)
             if val is None or (isinstance(val, str) and val.strip() == ""):
                 setattr(args, key, [])
+            elif isinstance(val, str):
+                # Non-empty string → wrap in single-element list
+                # (e.g., lint-cmd: "some command" in YAML)
+                setattr(args, key, [val])
             elif not isinstance(val, list):
                 logging.warning(
                     "args.%s is not a list (type: %s), coercing to empty list",
@@ -1283,9 +1287,14 @@ async def main_async(
                 args.mcp_servers_files = []
             args.mcp_servers_files.extend(args.mcp_servers_file_deprecated)
 
+        if args.debug:
+            print(f"DEBUG main: mcp_servers arg = {repr(args.mcp_servers)[:200]}")
+            print(f"DEBUG main: mcp_servers_files arg = {args.mcp_servers_files}")
         mcp_servers = load_mcp_servers(
             args.mcp_servers, args.mcp_servers_files, io, args.verbose, args.mcp_transport
         )
+        if args.debug:
+            print(f"DEBUG main: loaded {len(mcp_servers)} servers: {[s.name for s in mcp_servers]}")
         mcp_manager = await McpServerManager.from_servers(mcp_servers, io, args.verbose)
 
         if from_coder:

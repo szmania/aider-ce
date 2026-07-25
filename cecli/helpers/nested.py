@@ -226,6 +226,12 @@ def deep_merge(dict1, dict2, deep_merge_arrays=True):
     """
     merged = copy.deepcopy(dict1)
     for key, value in dict2.items():
+        # When deep_merge_arrays is enabled, a None value in dict2 means
+        # "not set" — skip it to preserve dict1's value.  This prevents
+        # empty/null YAML keys (e.g. ``subagent_paths:`` with no value)
+        # from overwriting populated arrays from lower-precedence configs.
+        if deep_merge_arrays and value is None:
+            continue
         if key in merged and isinstance(merged[key], dict) and isinstance(value, dict):
             merged[key] = deep_merge(merged[key], value, deep_merge_arrays=deep_merge_arrays)
         elif (

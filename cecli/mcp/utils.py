@@ -59,7 +59,7 @@ def _parse_mcp_servers_from_json_string(json_string, io, verbose=False, mcp_tran
             if verbose:
                 io.tool_output(f"Loaded {len(servers)} MCP servers")
             return servers
-        else:
+        elif config:
             io.tool_warning("No 'mcpServers' key found in MCP config")
     except json.JSONDecodeError:
         io.tool_error("Invalid JSON in MCP config")
