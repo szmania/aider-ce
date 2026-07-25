@@ -55,6 +55,46 @@ class TestWebSocketSignalBridgeStartStop:
         await bridge.stop()
 
 
+class TestWebSocketSignalBridgeSubprotocolNegotiation:
+    """Tests for WebSocket subprotocol negotiation."""
+
+    @pytest.mark.asyncio
+    async def test_connect_without_subprotocol(self):
+        """Client connecting without a subprotocol is accepted."""
+        bridge = WebSocketSignalBridge(port=0)
+        await bridge.start()
+
+        uri = f"ws://{bridge.host}:{bridge.port}"
+        async with websockets.connect(uri) as ws:
+            assert ws.subprotocol is None
+
+        await bridge.stop()
+
+    @pytest.mark.asyncio
+    async def test_connect_with_acp_v1_subprotocol(self):
+        """Client connecting with 'acp.v1' subprotocol is accepted."""
+        bridge = WebSocketSignalBridge(port=0)
+        await bridge.start()
+
+        uri = f"ws://{bridge.host}:{bridge.port}"
+        async with websockets.connect(uri, subprotocols=["acp.v1"]) as ws:
+            assert ws.subprotocol == "acp.v1"
+
+        await bridge.stop()
+
+    @pytest.mark.asyncio
+    async def test_connect_with_acp_v2_subprotocol(self):
+        """Client connecting with 'acp.v2' subprotocol is accepted."""
+        bridge = WebSocketSignalBridge(port=0)
+        await bridge.start()
+
+        uri = f"ws://{bridge.host}:{bridge.port}"
+        async with websockets.connect(uri, subprotocols=["acp.v2"]) as ws:
+            assert ws.subprotocol == "acp.v2"
+
+        await bridge.stop()
+
+
 class TestWebSocketSignalBridgeBroadcasting:
     """Tests for broadcasting signals via WebSocket."""
 

@@ -51,6 +51,8 @@ class WebSocketSignalBridge:
             self.host,
             self.port,
             subprotocols=["acp.v1", "acp.v2"],
+            # Don't reject clients that don't specify a subprotocol
+            select_subprotocol=lambda _protocol, offered: offered[0] if offered else None,
         )
         # Re-read the actual port if 0 was passed (OS-assigned)
         self.port = self._server.sockets[0].getsockname()[1] if self._server.sockets else self.port
