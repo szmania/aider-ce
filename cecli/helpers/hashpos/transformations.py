@@ -202,7 +202,7 @@ def extract_hint(
 
     if m:
         stripped = pattern[: m.start()]
-        return stripped, int(m.group(1)) - 1, "L"
+        return (stripped if stripped else pattern), int(m.group(1)) - 1, "L"
 
     # @A{{regex}} hint — first regex match, filter to lines AFTER
     m = re.search(r"(?:^|[ \t]+)@A\{\{(.+?)\}\}[ \t]*$", pattern)
