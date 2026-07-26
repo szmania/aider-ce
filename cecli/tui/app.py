@@ -49,8 +49,8 @@ class TUI(App):
     # This allows users to click-and-drag to select text across mounted widget
     # boundaries, which is essential since we use individual widget blocks
     # instead of a monolithic RichLog.
-    ENABLE_SELECT_AUTO_SCROLL = False
-    SELECT_AUTO_SCROLL_SPEED = 5
+    ENABLE_SELECT_AUTO_SCROLL = True
+    SELECT_AUTO_SCROLL_SPEED = 20
 
     BINDINGS = [
         # Binding("ctrl+c", "quit", "Quit", show=True),
@@ -969,22 +969,9 @@ class TUI(App):
         output_container.action_page_down()
 
     def action_interrupt(self):
-        """Interrupt the current task, or copy selected text to clipboard.
-
-        If text is currently selected (e.g. from click-and-drag in the output
-        area), Ctrl+C copies to clipboard.  Otherwise it interrupts the
-        foreground coder (primary or sub-agent).
         """
-        # If text is selected, copy to clipboard instead of interrupting
-        selected = self.screen.get_selected_text()
-        if selected:
-            self.copy_to_clipboard(selected)
-            try:
-                status_bar = self.query_one("#status-bar", StatusBar)
-                status_bar.show_notification("Copied!", severity="information", timeout=2)
-            except Exception:
-                pass
-            return
+        Interrupt the current task, or copy selected text to clipboard.
+        """
 
         # Determine which coder is in the foreground
         coder = self.worker.coder if self.worker else None
@@ -1272,6 +1259,19 @@ class TUI(App):
             return self._sub_agent_containers[coder_uuid]
 
         return self.query_one("#output", OutputContainer)
+
+    def get_selected_log_text(self) -> str | None:
+        """Get selected text from the visible output container or screen."""
+        output_container = self._get_visible_container()
+        return output_container.get_selected_text()
+
+    def copy_selected_log_text(self):
+        output_container = self._get_visible_container()
+        output_container.get_selected_text(copy=True)
+
+    def clear_selected_log_text(self):
+        output_container = self._get_visible_container()
+        output_container.clear_selection()
 
     def _get_visible_coder(self):
         """Return the currently visible coder (foreground or primary)."""

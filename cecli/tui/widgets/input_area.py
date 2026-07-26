@@ -250,17 +250,24 @@ class InputArea(TextArea):
             self.completion_active = False
             self.post_message(self.CompletionDismiss())
 
-        if (
-            self.app.is_key_for("cancel", event.key)
-            and not self.selected_text
-            and not self.app.screen.get_selected_text()
-        ):
-            event.stop()
-            event.prevent_default()
-            if self.text.strip():
-                self.save_to_history(self.text)
-            self.text = ""
+        if self.app.is_key_for("cancel", event.key) and not self.selected_text:
+            # Check for selected text in the output first (SelectableRichLog)
+            selected = self.app.get_selected_log_text()
+            if selected:
+                self.app.copy_to_clipboard(selected)
+                event.stop()
+                event.prevent_default()
+            else:
+                event.stop()
+                event.prevent_default()
+                if self.text.strip():
+                    self.save_to_history(self.text)
+                self.text = ""
+
+            self.app.clear_selected_log_text()
             return
+        else:
+            self.app.clear_selected_log_text()
 
         if self.app.is_key_for("submit", event.key):
             # Submit message

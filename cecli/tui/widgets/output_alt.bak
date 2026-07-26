@@ -1,17 +1,17 @@
-"""Output widget for cecli TUI using Textual's RichLog widget."""
-
+"""Output widget for cecli TUI using VerticalScroll + Static for text selection."""
+# keeping this because a different kind of rendering might be necessary
+# if selectable rich log turns out to be unstable
 import re
 import textwrap
 
 from rich.markdown import Markdown
 from rich.markup import escape
-from rich.padding import Padding
 from rich.style import Style as RichStyle
 from rich.text import Text
 from textual import events, on
+from textual.containers import VerticalScroll
 from textual.message import Message
-
-from .selectable_log import SelectableRichLog
+from textual.widgets import Static
 
 
 class CostUpdate(Message):
@@ -22,11 +22,12 @@ class CostUpdate(Message):
         super().__init__()
 
 
-class OutputContainer(SelectableRichLog):
-    """Scrollable output area using RichLog widget for rich rendering.
+class OutputContainer(VerticalScroll):
+    """Scrollable output area using VerticalScroll + Static for text selection.
 
-    Uses Textual's RichLog widget for efficient streaming and display
-    of LLM responses and system messages.
+    Uses Textual's VerticalScroll container with Static child widgets
+    for efficient streaming and display of LLM responses and system messages.
+    Static widgets enable native text selection across the output.
     """
 
     DEFAULT_CSS = """
@@ -34,6 +35,27 @@ class OutputContainer(SelectableRichLog):
         scrollbar-gutter: stable;
         background: $surface;
         padding: 0 0;
+    }
+    OutputContainer > Static {
+        height: auto;
+        width: 100%;
+        margin: 0;
+        padding: 0;
+    }
+    OutputContainer > Static.tool-call {
+        padding: 0 0 0 2;
+    }
+    OutputContainer > Static.tool-call-info {
+        padding: 0 0 0 3;
+    }
+    OutputContainer > Static.tool-result {
+        padding: 0 0 0 1;
+    }
+    OutputContainer > Static.system-msg {
+        padding: 0 0 0 2;
+    }
+    OutputContainer > Static.styled-output {
+        padding: 0 0 0 2;
     }
     """
 
@@ -46,16 +68,19 @@ class OutputContainer(SelectableRichLog):
         self._line_buffer = ""
         # Track if we're on the first line of the current response
         self._first_line_of_response = True
+        # Auto-scroll to bottom when new content is mounted
+        self._auto_scroll = True
 
-        # Enable markup for rich formatting
-        self.highlight = True
-        self.markup = True
-        self.wrap = True
+        # Widget consolidation: track the current accumulating Static widget
+        # and its write type so we can append instead of creating new nodes.
+        self._current_widget: Static | None = None
+        self._current_renderable = None
+        self._current_write_type: str | None = None
+
         self.can_focus = False
 
     async def start_response(self):
         """Start a new LLM response section with streaming support."""
-
         # Insert blank line between consecutive assistant responses
         if self._last_write_type == "assistant":
             self.output("", check_duplicates=False)
@@ -142,7 +167,7 @@ class OutputContainer(SelectableRichLog):
     def add_user_message(self, text: str):
         """Add a user message (displayed differently from LLM output)."""
         # User messages shown with > prefix in green color
-        self.auto_scroll = True
+        self._auto_scroll = True
         self.set_last_write_type("user")
 
         # Split text by newlines and process each line individually
@@ -167,7 +192,7 @@ class OutputContainer(SelectableRichLog):
                             "[/bold medium_spring_green]"
                         )
 
-        self.scroll_end(animate=False)
+        self._scroll_to_bottom()
 
     def add_system_message(self, text: str, dim=True):
         """Add a system/tool message."""
@@ -178,14 +203,17 @@ class OutputContainer(SelectableRichLog):
         text = text.removesuffix("\n")
         start = ""
         end = ""
+        classes = None
+
         # Write system message in secondary color
         if dim:
             start = "[dim]"
             end = "[/dim]"
-            text = Padding(f"{start}{escape(text)}{end}", (0, 0, 0, 2))
+            text = Text.from_markup(f"{start}{escape(text)}{end}")
+            classes = "system-msg"
 
         self.set_last_write_type("system")
-        self.output(text)
+        self.output(text, add_classes=classes)
 
     def add_output(self, text: str, task_id: str = None, dim=True):
         """Add output text as a system message.
@@ -209,7 +237,7 @@ class OutputContainer(SelectableRichLog):
 
         # Create styled Text object directly
         styled_text = Text(text, style=RichStyle(**styles))
-        self.output(Padding(styled_text, (0, 0, 0, 2)))
+        self.output(styled_text, add_classes="styled-output")
 
     def add_tool_call(self, lines: list):
         """Add a tool call with themed styling.
@@ -228,7 +256,9 @@ class OutputContainer(SelectableRichLog):
             if i == 0:
                 # First line: reformat "Tool Call: server • function" to "Tool Call · server · function"
                 clean_line = clean_line.replace("Tool Call:", "Tool Call •")
-                self.output(Padding(Text(clean_line, style="dim bright_cyan"), (0, 0, 0, 2)))
+                content = Text()
+                content.append(clean_line, style="dim bright_cyan")
+                self.output(content, add_classes="tool-call")
             else:
                 # Subsequent lines (arguments) - prefix with corner to show they belong to the call
                 arg_string_list = re.split(r"(^\S+:)", clean_line, maxsplit=1)[1:]
@@ -238,12 +268,9 @@ class OutputContainer(SelectableRichLog):
                     content = Text()
                     content.append(f"ᴸ{tool_property}", style="dim bright_cyan")
                     content.append(arg_string_list[1], style="dim")
-                    self.output(Padding(content, (0, 0, 0, 2)))
+                    self.output(content, add_classes="tool-call")
                 else:
-                    self.output(Padding(Text(clean_line, style="dim"), (0, 0, 0, 3)))
-
-            # self.set_last_write_type("tool_call")
-            # self.output(Padding(content, (0, 0, 0, 2)))
+                    self.output(Text(clean_line, style="dim"), add_classes="tool-call-info")
 
     def add_tool_result(self, text: str):
         """Add a tool result.
@@ -260,7 +287,7 @@ class OutputContainer(SelectableRichLog):
         result.append(clean_text, style="dim")
 
         self.set_last_write_type("tool_result")
-        self.output(Padding(result, (0, 0, 0, 1)))
+        self.output(result, add_classes="tool-result")
 
     def _check_cost(self, text: str):
         """Extract and emit cost updates."""
@@ -278,7 +305,10 @@ class OutputContainer(SelectableRichLog):
     def clear_output(self):
         """Clear all output."""
         self._line_buffer = ""
-        self.clear()
+        self._current_widget = None
+        self._current_renderable = None
+        self._current_write_type = None
+        self._clear_children()
 
     def set_last_write_type(self, type):
         if type and self._last_write_type and self._last_write_type != type:
@@ -286,13 +316,14 @@ class OutputContainer(SelectableRichLog):
 
         self._last_write_type = type
 
-    def output(self, text, check_duplicates=True, render_markdown=False):
+    def output(self, text, check_duplicates=True, render_markdown=False, add_classes=None):
         """Write output with duplicate newline checking.
 
         Args:
             text: The text to write
             check_duplicates: If True, check for duplicate newlines before writing
             render_markdown: If True and app config allows, render as markdown
+            add_classes: Optional CSS class to apply to the Static widget
         """
         # Get plain text for duplicate checking BEFORE any markdown conversion
         plain_text = ""
@@ -325,8 +356,8 @@ class OutputContainer(SelectableRichLog):
             if nl_check and nl_last and nl_penultimate:
                 return
 
-        # Call the actual write method
-        self.write(text)
+        # Mount the content as a Static widget for text selection
+        self._mount_output(text, add_classes=add_classes)
 
         # Log the write using the plain text
         self._write_history.append(plain_text)
@@ -335,9 +366,82 @@ class OutputContainer(SelectableRichLog):
         if len(self._write_history) > 5:
             self._write_history.pop(0)
 
+    def _mount_output(self, content, add_classes=None) -> None:
+        """Mount or update a Static widget, consolidating by write type.
+
+        When the write type matches the current accumulating widget, appends
+        content to it via ``update()`` instead of creating a new Static node.
+        This dramatically reduces DOM fragmentation and stabilizes text
+        selection boundaries during auto-scroll.
+
+        Converts ANSI escape codes to Rich Text objects via Text.from_ansi()
+        so that Static can render them directly (avoids the color(N) markup
+        that Textual's Content.from_markup() cannot parse).
+        """
+        if isinstance(content, str) and "\x1b" in content:
+            content = Text.from_ansi(content)
+
+        write_type = self._last_write_type
+
+        if self._current_widget is not None and self._current_write_type == write_type:
+            # Append to the existing widget to keep node count low
+            self._current_renderable = self._merge_content(
+                self._current_renderable, content
+            )
+            self._current_widget.update(self._current_renderable)
+        else:
+            # Create a new widget at the write-type boundary
+            kwargs = {}
+            if add_classes:
+                kwargs["classes"] = add_classes
+            self._current_renderable = content
+            self._current_widget = Static(content, **kwargs)
+            self._current_write_type = write_type
+            self.mount(self._current_widget)
+
+        if self._auto_scroll:
+            self.call_after_refresh(self._scroll_to_bottom)
+
+    @staticmethod
+    def _merge_content(existing, new):
+        """Merge an existing renderable with new content safely."""
+        # Safe extraction of text from Markdown objects before merging
+        if isinstance(existing, Markdown):
+            existing = existing.markup if hasattr(existing, "markup") else str(existing)
+        if isinstance(new, Markdown):
+            new = new.markup if hasattr(new, "markup") else str(new)
+
+        if isinstance(existing, str):
+            existing = Text.from_markup(existing)
+        if isinstance(new, str):
+            new = Text.from_markup(new)
+
+        if isinstance(existing, Text) and isinstance(new, Text):
+            return Text.assemble(existing, "\n", new)
+
+        return Text(str(existing) + "\n" + str(new))
+
+    def _scroll_to_bottom(self) -> None:
+        """Scroll to the bottom of the output."""
+        self.scroll_end(animate=False)
+
+    def _clear_children(self) -> None:
+        """Remove all Static child widgets."""
+        for child in list(self.children):
+            if isinstance(child, Static):
+                child.remove()
+
+    def action_page_up(self) -> None:
+        """Scroll the output area up one page."""
+        self.scroll_page_up(animate=False)
+
+    def action_page_down(self) -> None:
+        """Scroll the output area down one page."""
+        self.scroll_page_down(animate=False)
+
     @on(events.Print)
     def log_print(self, event: events.Print) -> None:
-        """Writes the captured print output to the RichLog widget."""
+        """Writes the captured print output to the output container."""
         if event.text.strip():
             theme_vars = self.app.get_css_variables()
             color = theme_vars.get("warning")
@@ -359,7 +463,7 @@ class OutputContainer(SelectableRichLog):
         Event handler called when the screen is scrolled up.
         Disables automatic scrolling
         """
-        self.auto_scroll = False
+        self._auto_scroll = False
 
     @on(events.MouseScrollDown)
     def enable_auto_scroll(self, event: events.MouseScrollDown) -> None:
@@ -369,10 +473,10 @@ class OutputContainer(SelectableRichLog):
         """
 
         # Calculate the relevant dimensions
-        scroll_top = self.scroll_y
+        scroll_top = self.scroll_offset.y
         view_height = self.size.height
         content_height = self.content_size.height
 
         # Check if scrolled to the bottom (allowing for minor floating point inaccuracies)
         if scroll_top + view_height >= content_height - 32:
-            self.auto_scroll = True
+            self._auto_scroll = True
