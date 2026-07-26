@@ -178,6 +178,16 @@ class Tool(BaseTool):
 
             # If this is a sub-agent, capture the summary for the parent
             summary = kwargs.get("summary", None)
+
+            # Fire memorizer with yield summary (skip if already a memorizer)
+            if getattr(coder, "auto_memory", False) and summary:
+                agent_service = AgentService.get_instance(coder)
+                if agent_service.get_agent_name(coder) != "memorizer":
+                    from cecli.helpers.memory.utils import invoke_memorizer
+
+                    asyncio.create_task(
+                        invoke_memorizer(coder, additional_context=f"Yield summary: {summary}")
+                    )
             parent_uuid = coder.parent_uuid
             if parent_uuid:
                 try:

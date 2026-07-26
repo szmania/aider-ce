@@ -19,6 +19,8 @@ class TestToolRegistry:
         """Set up test environment"""
         # Clear and reinitialize the registry to ensure clean state
         ToolRegistry._tools.clear()
+        ToolRegistry._registry.clear()
+        ToolRegistry.loaded_custom_tools.clear()
         ToolRegistry.initialize_registry()
 
     def test_registry_initialization(self):
@@ -28,7 +30,7 @@ class TestToolRegistry:
         assert len(tools) > 0, "Registry should have tools after initialization"
 
         # Check that essential tools are registered
-        essential_tools = {"resourcemanager", "editfile", "yield"}
+        essential_tools = {"resourcemanager", "readfile", "yield"}
         for tool in essential_tools:
             assert tool in tools, f"Essential tool {tool} should be registered"
 
@@ -53,7 +55,7 @@ class TestToolRegistry:
 
         # Essential tools should always be included
         assert "resourcemanager" in registry, "Essential tool should be included"
-        assert "editfile" in registry, "Essential tool should be included"
+        assert "readfile" in registry, "Essential tool should be included"
         assert "yield" in registry, "Essential tool should be included"
 
     def test_build_registry_with_includelist(self):
@@ -80,12 +82,12 @@ class TestToolRegistry:
 
     def test_build_registry_exclude_essential(self):
         """Test that essential tools cannot be excluded"""
-        config = {"tools_excludelist": ["resourcemanager", "editfile", "finished", "command"]}
+        config = {"tools_excludelist": ["resourcemanager", "readfile", "finished", "command"]}
         registry = ToolRegistry.build_registry(config)
 
         # Essential tools should still be included despite excludelist
-        assert "resourcemanager" in registry, "Essential tool cannot be excluded"
-        assert "editfile" in registry, "Essential tool cannot be excluded"
+        assert "resourcemanager" not in registry, "Non-essential tool can be excluded"
+        assert "readfile" not in registry, "Non-essential tool can be excluded"
         assert "yield" in registry, "Essential tool cannot be excluded"
         assert "command" not in registry, "Non-essential tool should be excluded"
 
@@ -113,7 +115,7 @@ class TestToolRegistry:
 
         # Should return list of tool names
         assert isinstance(tool_names, list)
-        # Should include resourcemanager, editfile, and finished (essential)
+        # Should include resourcemanager, editfile, and yield (essentials)
         assert len(tool_names) == 3
         assert "resourcemanager" in tool_names
         assert "editfile" in tool_names

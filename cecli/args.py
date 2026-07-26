@@ -445,6 +445,12 @@ def get_parser(default_config_files, git_root):
         ),
     )
     group.add_argument(
+        "--auto-memory",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Enable/disable automatic fact memorization after changes and compaction (default: True)",
+    )
+    group.add_argument(
         "--session-encrypt",
         action=argparse.BooleanOptionalAction,
         default=False,

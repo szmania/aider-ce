@@ -207,6 +207,8 @@ class Coder(metaclass=UsageMeta):
     temperature = None
     auto_lint = True
     auto_test = False
+    auto_memory = True
+    _last_memory_invoke_time = 0.0
     test_cmd = None
     lint_outcome = None
     test_outcome = None
@@ -390,6 +392,7 @@ class Coder(metaclass=UsageMeta):
         done_messages=None,
         auto_lint=True,
         auto_test=False,
+        auto_memory=True,
         lint_cmds=None,
         test_cmd=None,
         coder_commit_hashes=None,
@@ -421,6 +424,7 @@ class Coder(metaclass=UsageMeta):
         registered_servers=None,
         uuid: str = "",
         parent_uuid: str = "",
+        init_metadata={},
     ):
         from cecli.helpers.agents.service import AgentService
 
@@ -471,6 +475,9 @@ class Coder(metaclass=UsageMeta):
         self.suggest_shell_commands = suggest_shell_commands
         self.detect_urls = detect_urls
         self.args = args
+
+        # Init metadata should not persist between initializations
+        self.init_metadata = {}
 
         self.num_cache_warming_pings = num_cache_warming_pings
         self.mcp_manager = mcp_manager
@@ -703,6 +710,7 @@ class Coder(metaclass=UsageMeta):
         self.setup_lint_cmds(lint_cmds)
         self.lint_cmds = lint_cmds
         self.auto_test = auto_test
+        self.auto_memory = auto_memory
         self.test_cmd = test_cmd
 
         # Clean up todo list file on startup; sessions will restore it when needed
@@ -1865,6 +1873,13 @@ class Coder(metaclass=UsageMeta):
             ConversationService.get_chunks(self).flush_removals()
             self.last_user_message = user_message
 
+            # Fire memorizer after each user request
+            # if self.auto_memory and self.edit_format not in ["subagent"]:
+            #    from cecli.helpers.memory.utils import invoke_memorizer
+            #
+            #    context = "If the user has stated any preferences, please remember them"
+            #    asyncio.create_task(invoke_memorizer(self, additional_context=context))
+
         while True:
             self.reflected_message = None
             self.empty_response = False
@@ -2156,6 +2171,12 @@ class Coder(metaclass=UsageMeta):
                             break
                     for msg in reversed(latest_messages):
                         manager.add_message(msg, tag=tag)
+
+                    # Fire memorizer after successful compaction
+                    if self.auto_memory and self.edit_format not in ["subagent"]:
+                        from cecli.helpers.memory.utils import invoke_memorizer
+
+                        asyncio.create_task(invoke_memorizer(self, additional_context=text))
 
             if done_tokens > self.context_compaction_max_tokens or done_tokens > cur_tokens:
                 await summarize_and_update(done_messages, MessageTag.DONE)

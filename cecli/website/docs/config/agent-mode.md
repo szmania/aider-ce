@@ -220,8 +220,8 @@ agent-config:
 Certain tools are always available regardless of includelist/excludelist settings:
 
 - `ResourceManager` - Add, drop, and make files editable in the context
-- `editfile` - Basic text replacement
-- `finished` - Complete the task
+- `readfile` - Read file contents with virtual ID prefixes
+- `yield` - Complete the task
 
 The registry also supports **Custom Tools** that can be loaded from specified directories or files using the `tool_paths` configuration option. Custom tools must be Python files containing a `Tool` class that inherits from `BaseTool` and defines a `NORM_NAME` attribute.
 
@@ -314,7 +314,7 @@ agent: true
 # Agent Mode configuration
 agent-config:
   # Tool configuration
-  tools_includelist: ["resourcemanager", "editfile", "finished"]  # Optional: Whitelist of tools
+  tools_includelist: ["resourcemanager", "readfile", "yield"]  # Optional: Whitelist of tools
   tools_excludelist: ["command", "commandinteractive"]  # Optional: Blacklist of tools
   tools_paths: ["./custom-tools", "~/my-tools"]  # Optional: Directories or files containing custom tools
   

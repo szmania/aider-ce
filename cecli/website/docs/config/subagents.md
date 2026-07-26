@@ -43,6 +43,7 @@ and suggestions for improvement.
 | `name` | Yes | Unique name used to reference the sub-agent in commands and the Delegate tool |
 | `model` | No | Model override for this sub-agent. If omitted, inherits the parent agent's model |
 | `hooks` | No | Per-agent hooks configuration (see [Hooks](/config/hooks) for syntax) |
+| `agent-config` | No | Override `agent-config` property of cecli configuration with custom values for sub agent |
 | `auto_reap` | No | Controls whether this sub-agent is automatically reaped when the limit is reached. Defaults to `true` if omitted |
 
 #### System Prompt

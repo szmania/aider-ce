@@ -51,6 +51,7 @@ async def test_remove_mcp_tool_success():
     coder = MagicMock()
     coder.agent_config = {"include_context_blocks": {"servers"}, "exclude_context_blocks": set()}
     coder.mcp_manager = MagicMock()
+    coder.registered_servers = {"included": set(), "excluded": set()}
     server = MagicMock()
     server.name = "test-server"
     coder.mcp_manager.get_server.return_value = server
@@ -85,6 +86,7 @@ async def test_remove_mcp_tool_non_existent():
     coder = MagicMock()
     coder.agent_config = {"include_context_blocks": {"servers"}, "exclude_context_blocks": set()}
     coder.mcp_manager = MagicMock()
+    coder.registered_servers = {"included": set(), "excluded": set()}
     # Create a mock server that exists (to bypass the 'no servers' check)
     existing_server = MagicMock()
     existing_server.name = "existing-server"
@@ -105,6 +107,7 @@ async def test_remove_mcp_tool_not_connected():
     coder = MagicMock()
     coder.agent_config = {"include_context_blocks": {"servers"}, "exclude_context_blocks": set()}
     coder.mcp_manager = MagicMock()
+    coder.registered_servers = {"included": set(), "excluded": set()}
     server = MagicMock()
     server.name = "test-server"
     coder.mcp_manager.servers = [server]
@@ -122,6 +125,7 @@ async def test_remove_mcp_tool_wildcard():
     coder = MagicMock()
     coder.agent_config = {"include_context_blocks": {"servers"}, "exclude_context_blocks": set()}
     coder.mcp_manager = MagicMock()
+    coder.registered_servers = {"included": set(), "excluded": set()}
 
     server1 = MagicMock()
     server1.name = "server1"
@@ -158,6 +162,7 @@ async def test_remove_mcp_tool_interrupted():
     coder = MagicMock()
     coder.agent_config = {"include_context_blocks": {"servers"}, "exclude_context_blocks": set()}
     coder.mcp_manager = MagicMock()
+    coder.registered_servers = {"included": set(), "excluded": set()}
     server = MagicMock()
     server.name = "test-server"
     coder.mcp_manager.servers = [server]
@@ -186,6 +191,7 @@ async def test_remove_mcp_tool_failed():
     coder = MagicMock()
     coder.agent_config = {"include_context_blocks": {"servers"}, "exclude_context_blocks": set()}
     coder.mcp_manager = MagicMock()
+    coder.registered_servers = {"included": set(), "excluded": set()}
     server = MagicMock()
     server.name = "test-server"
     coder.mcp_manager.servers = [server]
@@ -214,6 +220,7 @@ async def test_remove_mcp_tool_no_servers_configured():
     coder = MagicMock()
     coder.agent_config = {"include_context_blocks": {"servers"}, "exclude_context_blocks": set()}
     coder.mcp_manager = MagicMock()
+    coder.registered_servers = {"included": set(), "excluded": set()}
     coder.mcp_manager.servers = []
 
     result = await ResourceManagerTool.execute(coder, remove_mcp=["test"])
@@ -227,6 +234,7 @@ async def test_remove_mcp_tool_mixed_results():
     coder = MagicMock()
     coder.agent_config = {"include_context_blocks": {"servers"}, "exclude_context_blocks": set()}
     coder.mcp_manager = MagicMock()
+    coder.registered_servers = {"included": set(), "excluded": set()}
     server1 = MagicMock()
     server1.name = "server1"
     server2 = MagicMock()
@@ -265,6 +273,7 @@ async def test_remove_mcp_tool_dictionary_iteration_fix():
     coder = MagicMock()
     coder.agent_config = {"include_context_blocks": {"servers"}, "exclude_context_blocks": set()}
     coder.mcp_manager = MagicMock()
+    coder.registered_servers = {"included": set(), "excluded": set()}
     server1 = MagicMock()
     server1.name = "server1"
     server2 = MagicMock()

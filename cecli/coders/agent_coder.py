@@ -69,11 +69,13 @@ class AgentCoder(Coder):
             "grep",
             "thinking",
             "updatetodolist",
+            "searchfacts",
         }
         self.write_tools = {
             "command",
             "editfile",
             "undochange",
+            "replacefacts",
         }
         self.edit_allowed = True
         self.max_tool_calls = 10000
@@ -97,7 +99,8 @@ class AgentCoder(Coder):
         self.tokens_calculated = False
         self.skip_cli_confirmations = False
         self.agent_finished = False
-        self.agent_config = self._get_agent_config()
+        init_metadata = kwargs.pop("init_metadata", {})
+        self.agent_config = self._get_agent_config(config=init_metadata)
         self.max_sub_agents = self.agent_config.get("max_sub_agents", 30)
         self.sub_agent_paths = self.agent_config.get("subagent_paths", [])
         self._setup_agent()
@@ -134,37 +137,52 @@ class AgentCoder(Coder):
     def _setup_agent(self):
         os.makedirs(".cecli/temp", exist_ok=True)
 
-    def _get_agent_config(self):
+    def _get_agent_config(self, config=None):
         """
         Parse and return agent configuration from args.agent_config.
+
+        Args:
+            config: Optional dict of metadata (e.g. sub-agent front matter)
+                    that is merged on top of args.agent_config. Parameter
+                    takes priority over args.agent_config values.
 
         Returns:
             dict: Agent configuration with defaults for missing values
         """
-        config = {}
-        if (
+        config = config or {}
+
+        # init_metadata provides agent-config directly, replacing args
+        if "agent_config" in config and config["agent_config"]:
+            config = config["agent_config"]
+        # Primary agent: load from args.agent_config
+        elif (
             hasattr(self, "args")
             and self.args
             and hasattr(self.args, "agent_config")
             and self.args.agent_config
         ):
             try:
-                config = json.loads(self.args.agent_config)
+                args_config = json.loads(self.args.agent_config)
 
                 # Validate that array fields are lists, wrap scalars in lists
                 list_fields = AGENT_CONFIG_LIST_FIELDS
 
                 for field in list_fields:
-                    if field in config:
-                        if config[field] is None:
-                            # YAML null / JSON null → treat as empty list
-                            config[field] = []
-                        elif not isinstance(config[field], list):
+                    if field in args_config:
+                        if args_config[field] is None:
+                            # YAML null / JSON null -> treat as empty list
+                            args_config[field] = []
+                        elif not isinstance(args_config[field], list):
                             self.start_up_errors.append(
                                 f"agent-config field '{field}' should be a list but got "
-                                f"{type(config[field]).__name__}, wrapping in list"
+                                f"{type(args_config[field]).__name__}, wrapping in list"
                             )
-                            config[field] = [config[field]]
+                            args_config[field] = [args_config[field]]
+
+                # Merge metadata (caller-provided config) on top of
+                # args.agent_config so sub-agent front matter takes priority.
+                args_config.update(config)
+                config = args_config
 
             except (json.JSONDecodeError, TypeError) as e:
                 self.start_up_errors.append(f"Failed to parse agent-config JSON: {e}")
@@ -196,8 +214,20 @@ class AgentCoder(Coder):
         config["tools_excludelist"] = nested.getter(
             config,
             ["tools_excludelist", "tools_blacklist"],
-            ["gitbranch", "gitdiff", "gitlog", "gitremote", "gitshow", "gitstatus"],
+            [
+                "gitbranch",
+                "gitdiff",
+                "gitlog",
+                "gitremote",
+                "gitshow",
+                "gitstatus",
+                "searchfacts",
+                "replacefacts",
+            ],
         )
+
+        if config["tools_includelist"]:
+            config["tools_includelist"].append("yield")
 
         config["servers_includelist"] = nested.getter(
             config, ["servers_includelist", "servers_whitelist"], []
@@ -229,7 +259,7 @@ class AgentCoder(Coder):
             config["include_context_blocks"].add("orchestration")
             config["exclude_context_blocks"].discard("orchestration")
         else:
-            config["include_context_blocks"].discord("orchestration")
+            config["include_context_blocks"].discard("orchestration")
             config["exclude_context_blocks"].add("orchestration")
             config["tools_excludelist"].append("orchestrate")
 

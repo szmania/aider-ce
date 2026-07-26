@@ -1228,6 +1228,7 @@ async def main_async(
             use_git=args.git,
             auto_lint=args.auto_lint,
             auto_test=args.auto_test,
+            auto_memory=args.auto_memory,
             lint_cmds=lint_cmds,
             test_cmd=args.test_cmd,
             commands=commands,

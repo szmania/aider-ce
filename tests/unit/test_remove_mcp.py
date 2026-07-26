@@ -27,6 +27,7 @@ class DummyCoder:
         self.mcp_manager.connected_servers = {}
         self.coroutines = MagicMock()
         self.interrupt_event = MagicMock()
+        self.registered_servers = {"included": set(), "excluded": set()}
 
 
 @pytest.fixture

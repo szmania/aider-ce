@@ -33,6 +33,14 @@ def parse_subagent_file(file_path: str) -> Optional[SubAgentConfig]:
       ---
       <system prompt body>
 
+    The ``model`` field supports sentinel placeholders that are resolved
+    at runtime to the parent coder's models::
+
+        <weak_model>   - The parent coder's weak model
+        <agent_model>  - The parent coder's agent model
+        <main_model>   - The parent coder's main model
+        <current>      - The currently active (foreground) coder's main model
+
     Args:
         file_path: Path to the .md file.
 

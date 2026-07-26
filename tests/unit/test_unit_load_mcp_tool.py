@@ -63,6 +63,7 @@ async def test_load_mcp_tool_success(mock_mcp_manager):
     coder = MagicMock()
     coder.agent_config = {"include_context_blocks": {"servers"}, "exclude_context_blocks": set()}
     coder.mcp_manager = mock_mcp_manager
+    coder.registered_servers = {"included": set(), "excluded": set()}
 
     # Mock interruptible to return (await coro, False)
     async def mock_interruptible(coro, event):
@@ -85,6 +86,7 @@ async def test_load_mcp_tool_non_existent(mock_mcp_manager):
     coder = MagicMock()
     coder.agent_config = {"include_context_blocks": {"servers"}, "exclude_context_blocks": set()}
     coder.mcp_manager = mock_mcp_manager
+    coder.registered_servers = {"included": set(), "excluded": set()}
 
     result = await ResourceManagerTool.execute(coder, load_mcp=["non-existent-server"])
 
@@ -98,6 +100,7 @@ async def test_load_mcp_tool_already_loaded(mock_mcp_manager):
     coder = MagicMock()
     coder.agent_config = {"include_context_blocks": {"servers"}, "exclude_context_blocks": set()}
     coder.mcp_manager = mock_mcp_manager
+    coder.registered_servers = {"included": set(), "excluded": set()}
     # Pre-populate connected_servers
     server = mock_mcp_manager.get_server("test-server")
     coder.mcp_manager.connected_servers = {"test-server": server}
@@ -115,6 +118,7 @@ async def test_load_mcp_tool_wildcard_and_duplicate_fix(mock_mcp_manager):
     coder = MagicMock()
     coder.agent_config = {"include_context_blocks": {"servers"}, "exclude_context_blocks": set()}
     coder.mcp_manager = mock_mcp_manager
+    coder.registered_servers = {"included": set(), "excluded": set()}
 
     # Mock interruptible to return (await coro, False)
     async def mock_interruptible(coro, event):

@@ -43,7 +43,12 @@ class TestFinishedTool:
         mock_service = MagicMock()
         mock_service.sub_agents.values.return_value = [mock_info]
 
-        with patch.object(AgentService, "_instances", {"parent-uuid": mock_service}):
+        with (
+            patch.object(
+                AgentService, "_instances", {"parent-uuid": mock_service, "sub-uuid": mock_service}
+            ),
+            patch.object(AgentService, "_primary_agent_uuid", None),
+        ):
             _ = await Tool.execute(mock_coder, summary="done")
 
         assert mock_info.summary == "done"
@@ -86,7 +91,10 @@ class TestFinishedTool:
         mock_coder.parent_uuid = "nonexistent-parent"
         mock_coder.files_edited_by_tools = set()
 
-        with patch.object(AgentService, "_instances", {}):
+        with (
+            patch.object(AgentService, "_instances", {}),
+            patch.object(AgentService, "_primary_agent_uuid", None),
+        ):
             result = await Tool.execute(mock_coder, summary="done")
             assert "Summary: done" in str(result)
 

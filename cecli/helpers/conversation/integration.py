@@ -504,6 +504,13 @@ class ConversationChunks:
         if not coder:
             return []
 
+        if coder.edit_format in ["subagent"]:
+            from cecli.helpers.agents.service import AgentService
+
+            agent_service = AgentService.get_instance(coder)
+            if agent_service.get_agent_name(coder) == "memorizer":
+                return []
+
         messages = []
         if not hasattr(coder, "abs_rules_fnames") or not coder.abs_rules_fnames:
             return messages
