@@ -2025,7 +2025,7 @@ class Coder(metaclass=UsageMeta):
         compactable_tokens = done_tokens + cur_tokens + diff_tokens + file_context_tokens
 
         # Condition 1: Is min size
-        is_min_size = all_tokens >= self.context_compaction_max_tokens * 0.25
+        is_min_size = all_tokens >= self.context_compaction_max_tokens
 
         # Condition 2: Percentage check (is chat history a significant part of the context?)
         is_worth_by_percentage = all_tokens > 0 and (compactable_tokens / all_tokens) >= 0.20
