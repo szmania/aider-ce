@@ -490,7 +490,7 @@ y = 2
 """
     # Try to replace a line with broken syntax — this should fail via eviction
     # Get the correct hashline ID for the first line using HashPos API
-    # New format uses ~4chars~ (tilde-wrapped 4-char hash), no :: separator
+    # New format uses —4chars— (tilde-wrapped 4-char hash), no :: separator
     from cecli.helpers.hashpos.hashpos import HashPos
 
     hp = HashPos(source)

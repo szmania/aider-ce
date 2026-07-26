@@ -51,7 +51,7 @@ class Tool(BaseTool):
                 "You can perform multiple 'replace' or 'delete' operations in a single call. "
                 "CRITICAL RULES: "
                 "1. Start and end markers are INCLUSIVE. Both will be modified or deleted. "
-                f"2. To target unique lines (prefixed with '{UNIQUE_HASH_DELIMITER}'), use their exact literal text as the marker. "  # noqa
+                f"2. To target unique lines (prefixed with '{UNIQUE_HASH_DELIMITER}'), use their exact literal text as the marker, excluding the prefix. "  # noqa
                 f"3. To target duplicate lines, you MUST include the exact hashed prefix (e.g., '{HASH_DELIMITER}“0车加{HASH_DELIMITER}'). "  # noqa
                 "4. Edits within the same file MUST NOT be adjacent or overlapping. "
                 "5. For empty files, you MUST use '@000' as the reference. "
@@ -97,8 +97,8 @@ class Tool(BaseTool):
                                     "description": (
                                         "The exact reference for the start of the edit. "
                                         "For duplicate lines with a specific hash, "
-                                        "use the 4-character hash wrapped in tildes (e.g., '~WecX~'). "
-                                        "For unique lines marked with the generic '~~' prefix, "
+                                        "use the 4-character hash wrapped in tildes (e.g., '—WecX—'). "
+                                        "For unique lines marked with the generic '——' prefix, "
                                         "provide the exact full text of the line. "
                                         "For empty files, use '@000'."
                                     ),
@@ -108,8 +108,8 @@ class Tool(BaseTool):
                                     "description": (
                                         "The exact reference for the end of the edit. "
                                         "For duplicate lines with a specific hash, "
-                                        "use the 4-character hash wrapped in tildes (e.g., '~WecX~'). "
-                                        "For unique lines marked with the generic '~~' prefix, "
+                                        "use the 4-character hash wrapped in tildes (e.g., '—WecX—'). "
+                                        "For unique lines marked with the generic '——' prefix, "
                                         "provide the exact full text of the line. "
                                         "For empty files, use '@000'."
                                     ),
@@ -252,7 +252,7 @@ class Tool(BaseTool):
                                 edit_end_line, hp, source_lines, file_path_key
                             )
 
-                            # Strip ~~ virtual prefixes from ReadFile output lines
+                            # Strip virtual prefixes from ReadFile output lines
                             edit_start_line = cls._strip_readfile_prefix(edit_start_line)
                             edit_end_line = cls._strip_readfile_prefix(edit_end_line)
 
@@ -596,7 +596,7 @@ class Tool(BaseTool):
 
     @staticmethod
     def _strip_readfile_prefix(value):
-        """Strip the ``~~`` virtual prefix from a ReadFile output line reference."""
+        """Strip the virtual prefix from a ReadFile output line reference."""
 
         return strip_hashline_prefix(value)
 

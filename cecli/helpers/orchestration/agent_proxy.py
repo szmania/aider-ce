@@ -295,7 +295,7 @@ class AgentProxy:
         Supports three modes:
         - **@L{number}**: e.g., `Agent.get_content_id("foo.py", "@L42")`
           returns the content ID of line 42 (1-based).
-        - **content ID passthrough**: e.g., `Agent.get_content_id("foo.py", "~abcd~")`
+        - **content ID passthrough**: e.g., `Agent.get_content_id("foo.py", "—abcd—")`
           verifies and returns an existing content ID string.
         - **text match**: e.g., `Agent.get_content_id("foo.py", "def greet(")`
           returns the content ID of the unique line containing that text.
@@ -340,7 +340,7 @@ class AgentProxy:
             except (ContentHashError, ValueError):
                 pass
 
-            # Fall back: value looks like a content ID (contains "~") but couldn't be
+            # Fall back: value looks like a content ID (contains "—") but couldn't be
             # resolved. Strip the prefix and try to match the remaining content.
             stripped = HashPos.strip_prefix(line_content)
             if stripped != line_content and stripped.strip():

@@ -1819,7 +1819,7 @@ def _raise_clear_hash_error(hp, op, key):
     if not hp or not value_stripped:
         raise ContentHashError(
             f"Could not resolve '{value}' as a content ID. "
-            "Use a hashed ID prefix (e.g., `~XXXX~`) to target the line."
+            "Use a hashed ID prefix (e.g., `—XXXX—`) to target the line."
         )
 
     # Count how many lines contain this value as a substring
@@ -1831,19 +1831,19 @@ def _raise_clear_hash_error(hp, op, key):
     if matching_count > 1:
         raise ContentHashError(
             f"Line '{value_stripped}' appears {matching_count} times in the file. "
-            "Use the hashed ID prefix (e.g., `~XXXX~`) to disambiguate "
+            "Use the hashed ID prefix (e.g., `—XXXX—`) to disambiguate "
             "which occurrence to target."
         )
     elif matching_count == 1:
         raise ContentHashError(
             f"Line '{value_stripped}' was found once in the file but could not be "
-            "resolved as a unique content ID. Use the hashed ID prefix (e.g., `~XXXX~`) "
+            "resolved as a unique content ID. Use the hashed ID prefix (e.g., `—XXXX—`) "
             "to target it precisely."
         )
     else:
         raise ContentHashError(
             f"Line '{value_stripped}' was not found in the file. "
-            "Use the exact line content or a hashed ID prefix (e.g., `~XXXX~`) "
+            "Use the exact line content or a hashed ID prefix (e.g., `—XXXX—`) "
             "to target the desired line."
         )
 

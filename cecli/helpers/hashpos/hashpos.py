@@ -3,8 +3,8 @@ import re
 import xxhash
 
 # Delimiter used to wrap public hash IDs
-HASH_DELIMITER = "~"
-UNIQUE_HASH_DELIMITER = "~~"
+HASH_DELIMITER = "—"
+UNIQUE_HASH_DELIMITER = "——"
 
 
 class HashPos:
@@ -66,7 +66,7 @@ class HashPos:
 
     _B1024_REGEX_SET = "".join(re.escape(c) for c in B1024)
 
-    # Regex matches EITHER the exact string '~~' OR a tilde-wrapped 4-character Base1024 hash
+    # Regex matches EITHER the exact string '——' OR a tilde-wrapped 4-character Base1024 hash
     HASH_PREFIX_RE = re.compile(
         rf"^({UNIQUE_HASH_DELIMITER}|{HASH_DELIMITER}[{_B1024_REGEX_SET}]{{4}}{HASH_DELIMITER})"
     )

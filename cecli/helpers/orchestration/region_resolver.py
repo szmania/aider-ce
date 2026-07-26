@@ -27,7 +27,7 @@ class AgentRegion:
     ``get_end(name)`` re-read the file and re-resolve patterns at each call.
     Use these directly in ``EditFile`` calls for always-fresh IDs.
 
-    When a region spec uses a **content ID** (e.g. `"~abcd~"`) instead of
+    When a region spec uses a **content ID** (e.g. `"—abcd—"`) instead of
     text, the referenced line content is snapshotted on first resolution.
     If the ID goes stale after intervening edits, subsequent resolutions
     fall back to content matching against the snapshotted line text.
@@ -228,7 +228,7 @@ class AgentRegion:
             end_hint = extracted_end
 
         # Strip hashline prefixes from text patterns — the LLM may have copied
-        # content-ID-prefixed lines from a ReadFile response (e.g. ~XYZ12::text).
+        # content-ID-prefixed lines from a ReadFile response (e.g. —XYZ12—text).
         # Content-ID patterns and special markers are left untouched.
         if not self._looks_like_content_id(start_pattern) and start_pattern not in ("@000", "000@"):
             start_pattern = HashPos.strip_prefix(start_pattern)

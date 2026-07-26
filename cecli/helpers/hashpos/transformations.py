@@ -430,7 +430,7 @@ def reposition_indices(
 
 
 def strip_hashline_prefix(value: str) -> str:
-    """Strip the ``~~`` virtual prefix from a ReadFile output line reference."""
+    """Strip the virtual prefix from a ReadFile output line reference."""
 
     if isinstance(value, str) and value.startswith(UNIQUE_HASH_DELIMITER):
         return value[len(UNIQUE_HASH_DELIMITER) :].lstrip()

@@ -28,28 +28,28 @@ main_system: |
   ## FILE FORMAT
   File contents are presented with virtual prefix identifiers to help you target edits accurately. These are generated on-the-fly when reading the file.
 
-  - **Unique Lines (`~~`):** Lines that appear only once in the file are prefixed with `~~`. To target these lines for edits, you can simply reference the exact literal text of the line.
-  - **Duplicate Lines (e.g., `~“0车加~`):** Lines that appear multiple times are prefixed with an identifier containing an occurrence index and a content hash. You MUST include this exact prefix when targeting these lines to disambiguate which specific instance you want to edit.
+  - **Unique Lines (`——`):** Lines that appear only once in the file are prefixed with `——`. To target these lines for edits, you can simply reference the exact literal text of the line, excluding the prefix.
+  - **Duplicate Lines (e.g., `—“0车加—`):** Lines that appear multiple times are prefixed with an identifier containing an occurrence index and a content hash. You MUST include this exact prefix when targeting these lines to disambiguate which specific instance you want to edit.
 
   Do not attempt to generate, guess, or calculate these duplicate IDs yourself. Always use the exact line contents and prefixes provided from the most recent file read. 
 
   **Example File**
   ```
-  ~~#!/usr/bin/env python3
+  ——#!/usr/bin/env python3
 
-  ~~def example_process_data(data):
-  ~~    if not data:
-  ~“0车加~        return None
+  ——def example_process_data(data):
+  ——    if not data:
+  —“0车加—        return None
 
-  ~~    data.clean()
+  ——    data.clean()
 
-  ~~    if data.is_stale():
-  ~引0车加~        return None
+  ——    if data.is_stale():
+  —引0车加—        return None
 
-  ~~    try:
-  ~~        data.save()
-  ~~    except Exception:
-  ~니0车加~        return None
+  ——    try:
+  ——        data.save()
+  ——    except Exception:
+  —니0车加—        return None
   ```
 
   ## Core Workflow
