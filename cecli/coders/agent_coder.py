@@ -228,6 +228,10 @@ class AgentCoder(Coder):
         if config["allow_orchestration"]:
             config["include_context_blocks"].add("orchestration")
             config["exclude_context_blocks"].discard("orchestration")
+        else:
+            config["include_context_blocks"].discord("orchestration")
+            config["exclude_context_blocks"].add("orchestration")
+            config["tools_excludelist"].append("orchestrate")
 
         self.large_file_token_threshold = config["large_file_token_threshold"]
         self.skip_cli_confirmations = config["skip_cli_confirmations"]
