@@ -18,6 +18,72 @@ from cecli.deprecated_args import add_deprecated_mcp_args, add_deprecated_model_
 
 from .dump import dump  # noqa: F401
 
+# ── Deep-merge field sets ────────────────────────────────────────────
+# These define which config keys require special merge handling for
+# .cecli.conf.yml files (deep-merge instead of shallow-overwrite).
+
+DEEP_MERGE_LIST_FIELDS: frozenset[str] = frozenset(
+    {
+        # ── Top-level argparse action="append" args ──────────────────
+        # These are excluded from configargparse for .cecli.conf.yml files
+        # (to prevent shallow overwrite), so they must be deep-merged here.
+        "rules",
+        "file",
+        "read",
+        "mcp_servers_files",
+        "set_env",
+        "api_key",
+        "alias",
+        "exempt_paths",
+        "lint_cmd",
+        # ── Nested agent-config array fields ─────────────────────────
+        "skills_paths",
+        "skills_includelist",
+        "skills_excludelist",
+        "skills_init",
+        "subagent_paths",
+        "tools_paths",
+        "tools_includelist",
+        "tools_excludelist",
+        "servers_includelist",
+        "servers_excludelist",
+        "allowed_commands",
+    }
+)
+
+
+DEEP_MERGE_JSON_FIELDS: frozenset[str] = frozenset(
+    {
+        "agent_config",
+        "mcp_servers",
+        "hooks",
+        "model_providers",
+        "security_config",
+        "retries",
+        "custom",
+        "tui_config",
+    }
+)
+
+
+# Agent-config array fields (subset of DEEP_MERGE_LIST_FIELDS used by
+# agent_coder to validate agent config before passing to sub-agents).
+AGENT_CONFIG_LIST_FIELDS: frozenset[str] = frozenset(
+    {
+        "skills_paths",
+        "skills_includelist",
+        "skills_excludelist",
+        "skills_init",
+        "subagent_paths",
+        "tools_paths",
+        "tools_includelist",
+        "tools_excludelist",
+        "servers_includelist",
+        "servers_excludelist",
+        "allowed_commands",
+    }
+)
+
 
 def resolve_cecli_ignore_path(path_str, git_root=None):
     path = Path(path_str)

@@ -21,6 +21,7 @@ class CoderMock:
         self.interrupt_event = MagicMock()
         self.registered_servers = {"included": set(), "excluded": set()}
         self.io = MagicMock()
+        self.agent_config = {"include_context_blocks": {"servers"}}
 
     async def mock_interruptible(self, coro, event):
         """Mock interruptible that just executes the coroutine."""

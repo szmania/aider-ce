@@ -12,6 +12,7 @@ from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
 
+from cecli.args import AGENT_CONFIG_LIST_FIELDS
 from cecli.change_tracker import ChangeTracker
 from cecli.helpers import nested, responses
 from cecli.helpers.agents.service import AgentService
@@ -149,6 +150,22 @@ class AgentCoder(Coder):
         ):
             try:
                 config = json.loads(self.args.agent_config)
+
+                # Validate that array fields are lists, wrap scalars in lists
+                list_fields = AGENT_CONFIG_LIST_FIELDS
+
+                for field in list_fields:
+                    if field in config:
+                        if config[field] is None:
+                            # YAML null / JSON null → treat as empty list
+                            config[field] = []
+                        elif not isinstance(config[field], list):
+                            self.start_up_errors.append(
+                                f"agent-config field '{field}' should be a list but got "
+                                f"{type(config[field]).__name__}, wrapping in list"
+                            )
+                            config[field] = [config[field]]
+
             except (json.JSONDecodeError, TypeError) as e:
                 self.start_up_errors.append(f"Failed to parse agent-config JSON: {e}")
                 return {}

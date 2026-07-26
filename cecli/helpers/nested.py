@@ -1,6 +1,17 @@
 import re
 from typing import Any, Dict, List, Union
 
+from cecli.args import DEEP_MERGE_JSON_FIELDS, DEEP_MERGE_LIST_FIELDS
+from cecli.helpers.config_utils import (
+    _canonical_repr,
+    _deduplicate_list,
+    _normalize_keys,
+    deep_merge,
+    deep_merge_config_dicts,
+    is_cecli_conf_file,
+    read_and_merge_all_configs,
+)
+
 # Precompiled regex for normalizing bracket notation to dot notation in paths
 # e.g., "result[0]._.file_path" -> "result.0._.file_path"
 _BRACKET_RE = re.compile(r"\[(\d+)\]")
@@ -96,16 +107,16 @@ def getter(
     return default
 
 
-def deep_merge(dict1, dict2):
-    """
-    Recursively merges dict2 into dict1.
-    If a key exists in both and both values are dicts, it merges the sub-dicts.
-    Otherwise, the value from dict2 overwrites the value from dict1.
-    """
-    merged = dict1.copy()  # Create a copy to avoid modifying original dict1 in place
-    for key, value in dict2.items():
-        if key in merged and isinstance(merged[key], dict) and isinstance(value, dict):
-            merged[key] = deep_merge(merged[key], value)
-        else:
-            merged[key] = value
-    return merged
+__all__ = [
+    "DEEP_MERGE_JSON_FIELDS",
+    "DEEP_MERGE_LIST_FIELDS",
+    "_canonical_repr",
+    "_deduplicate_list",
+    "_normalize_keys",
+    "deep_merge",
+    "deep_merge_config_dicts",
+    "is_cecli_conf_file",
+    "read_and_merge_all_configs",
+    "arg_resolver",
+    "getter",
+]

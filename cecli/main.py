@@ -537,13 +537,18 @@ async def main_async(
     return_coder=False,
     from_coder=None,
 ):
+    import logging
+
+    import yaml
+
     from cecli import models, urls, utils
-    from cecli.args import get_parser
+    from cecli.args import DEEP_MERGE_JSON_FIELDS, DEEP_MERGE_LIST_FIELDS, get_parser
     from cecli.coders import Coder
     from cecli.coders.base_coder import UnknownEditFormat
     from cecli.commands import Commands, ReloadProgramSignal, SwitchCoderSignal
     from cecli.deprecated_args import handle_deprecated_model_args
     from cecli.format_settings import format_settings, scrub_sensitive_info
+    from cecli.helpers import config_utils
     from cecli.helpers.conversation import ConversationService, MessageTag
     from cecli.helpers.copypaste import ClipboardWatcher
     from cecli.helpers.file_searcher import handle_core_files
@@ -569,20 +574,52 @@ async def main_async(
     else:
         git_root = get_git_root()
     conf_fname = handle_core_files(Path(".cecli.conf.yml"))
-    default_config_files = [
+    # Split config files into two groups:
+    #   - conf_yml_files:  .cecli/conf.yml  (shallow merge via configargparse)
+    #   - cecli_conf_yml_files: .cecli.conf.yml (deep merge handled by us)
+    # configargparse must NOT see .cecli.conf.yml files because it would
+    # shallow-merge (overwrite) them, destroying values from earlier files
+    # before our deep-merge code can run.
+    all_config_paths = [
         str(Path.home() / ".cecli" / "conf.yml"),
         str(Path.home() / ".cecli.conf.yml"),
         str(Path(".cecli.conf.yml")),
     ]
     if git_root:
-        default_config_files.append(str(Path(git_root) / ".cecli.conf.yml"))
-    parser = get_parser(default_config_files, git_root)
+        all_config_paths.append(str(Path(git_root) / ".cecli.conf.yml"))
+
+    conf_yml_files = [
+        p for p in all_config_paths if p.endswith("conf.yml") and not p.endswith(".cecli.conf.yml")
+    ]
+    cecli_conf_yml_files = [p for p in all_config_paths if p.endswith(".cecli.conf.yml")]
+
+    # ── Read and merge ALL config files as YAML upfront ─────────────────
+    # Decode all files as YAML, shallow-merge .cecli/conf.yml, then
+    # deep-merge .cecli.conf.yml on top for a fully resolved config dict.
+    merged_config = config_utils.read_and_merge_all_configs(
+        all_config_paths, conf_yml_files, cecli_conf_yml_files
+    )
+
+    # Write merged config to a temp YAML file so configargparse can
+    # consume it as a single, already-merged config source. CLI args
+    # parsed on top will correctly override config-file values.
+    import tempfile
+
+    _tmp_fd, _tmp_cfg = tempfile.mkstemp(suffix=".yml", prefix="cecli_merged_")
+    os.close(_tmp_fd)
+
+    with open(_tmp_cfg, "w") as f:
+        yaml.dump(merged_config, f)
+
+    parser = get_parser([_tmp_cfg], git_root)
     args, unknown = parser.parse_known_args(argv)
 
-    # Load dotenv files and re-parse args before workspace logic
-    # to allow environment variables to be used in workspace config
+    # ── Load dotenv files ──────────────────────────────────────────────
+    # env_file is now fully resolved from the merged config (including
+    # values from .cecli.conf.yml which were previously ignored).
     loaded_dotenvs = load_dotenv_files(git_root, args.env_file, args.encoding)
     args, unknown = parser.parse_known_args(argv)
+    os.unlink(_tmp_cfg)
 
     uses_workspace = False
     if args.workspaces or args.workspace_name:
@@ -611,14 +648,58 @@ async def main_async(
 
     if git_root:
         git_conf = Path(git_root) / conf_fname
-        if git_conf not in default_config_files:
-            default_config_files.append(str(git_conf))
+        if git_conf not in all_config_paths:
+            all_config_paths.append(str(git_conf))
+            cecli_conf_yml_files.append(str(git_conf))
 
+    # ── Re-merge if workspace changed git_root ─────────────────────────
     if uses_workspace:
-        parser = get_parser(default_config_files, git_root)
+        merged_config = config_utils.read_and_merge_all_configs(
+            all_config_paths, conf_yml_files, cecli_conf_yml_files
+        )
+
+        _tmp_fd, _tmp_cfg = tempfile.mkstemp(suffix=".yml", prefix="cecli_merged_")
+        os.close(_tmp_fd)
+
+        with open(_tmp_cfg, "w") as f:
+            yaml.dump(merged_config, f)
+
+        parser = get_parser([_tmp_cfg], git_root)
+        args, unknown = parser.parse_known_args(argv)
+
+        # Re-load dotenv files in case the new git_root has an env_file
+        loaded_dotenvs = load_dotenv_files(git_root, args.env_file, args.encoding)
+        os.unlink(_tmp_cfg)
         args, unknown = parser.parse_known_args(argv)
 
     set_args_error_data(args)
+
+    # ── Normalize array fields ─────────────────────────────────────────
+    # (previously done inside load_and_apply_cecli_conf_files)
+    for key in DEEP_MERGE_LIST_FIELDS:
+        if hasattr(args, key):
+            val = getattr(args, key)
+
+            if val is None or (isinstance(val, str) and val.strip() == ""):
+                setattr(args, key, [])
+
+            elif isinstance(val, str):
+                setattr(args, key, [val])
+
+            elif not isinstance(val, list):
+                logging.warning(
+                    "args.%s is not a list (type: %s), coercing to empty list",
+                    key,
+                    type(val).__name__,
+                )
+                setattr(args, key, [])
+
+    for key in DEEP_MERGE_JSON_FIELDS:
+        if hasattr(args, key):
+            val = getattr(args, key)
+
+            if val is None or (isinstance(val, str) and val.strip() == ""):
+                setattr(args, key, "{}")
 
     if len(unknown):
         print("Unknown Args: ", unknown)

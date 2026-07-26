@@ -318,7 +318,7 @@ pyperclip==1.11.0
     # via
     #   -c requirements/common-constraints.txt
     #   -r requirements/requirements.in
-python-dotenv==1.2.1
+python-dotenv==1.2.2
     # via
     #   -c requirements/common-constraints.txt
     #   litellm
