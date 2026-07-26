@@ -198,13 +198,14 @@ def extract_hint(
     """
 
     # @L hint — direct line number, always resolvable
-    m = re.search(r"[ \t]+@L([0-9]+)[ \t]*$", pattern)
+    m = re.search(r"(?:^|[ \t]+)@L([0-9]+)[ \t]*$", pattern)
 
     if m:
-        return pattern[: m.start()], int(m.group(1)) - 1, "L"
+        stripped = pattern[: m.start()]
+        return stripped, int(m.group(1)) - 1, "L"
 
     # @A{{regex}} hint — first regex match, filter to lines AFTER
-    m = re.search(r"[ \t]+@A\{\{(.+?)\}\}[ \t]*$", pattern)
+    m = re.search(r"(?:^|[ \t]+)@A\{\{(.+?)\}\}[ \t]*$", pattern)
 
     if m:
         stripped = pattern[: m.start()]
@@ -222,7 +223,7 @@ def extract_hint(
         return stripped, None, None
 
     # @B{{regex}} hint — last regex match, filter to lines BEFORE
-    m = re.search(r"[ \t]+@B\{\{(.+?)\}\}[ \t]*$", pattern)
+    m = re.search(r"(?:^|[ \t]+)@B\{\{(.+?)\}\}[ \t]*$", pattern)
 
     if m:
         stripped = pattern[: m.start()]

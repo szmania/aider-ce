@@ -554,8 +554,8 @@ As such, results from previous calls can be reused and helper methods can be def
 | `Agent.get_value(result, path, default?)` | Safely access nested values in tool results using dot-notation (e.g. `"result.0.content"`)  |
 
 | `Agent.get_content_id(path, text)` | Resolve a content ID from `@L{num}` or line text for EditFile |
-| `Agent.resolve_regions(path, regions)` | Batch-resolve text patterns to content IDs. Use `start_line_hint` / `end_line_hint` in region spec entries for disambiguation (supports `@L<num>`, `@A{{regex}}`, `@B{{regex}}` — same hint syntax as ReadFile). Ambiguous patterns raise immediately. The returned `AgentRegion` has `.get_start(name)`, `.get_end(name)`, `.names()`, `.get(name)` |
-| `Agent.edit_region(path, edits)` | Thin wrapper around EditFile that accepts pre-resolved region dicts `{"start": content_id, "end": content_id}`. Use with `Agent.resolve_regions()` and `regions.get(name)` |
+| `Agent.resolve_regions(path, regions)` | Batch-resolve text patterns to content IDs. Use `start_line_hint` / `end_line_hint` in region spec entries for disambiguation. Unlike ReadFile (where hints are embedded inline), hints are passed as **separate keys**. For `@L<num>` hints, using an **integer** (e.g., `start_line_hint=394`) is preferred over a string (e.g., `start_line_hint="@L394"`). Ambiguous patterns raise immediately. The returned `AgentRegion` has `.get_start(name)`, `.get_end(name)`, `.names()`, `.get(name)` |
+| `Agent.edit_region(path, edits)` | Thin wrapper around EditFile that accepts pre-resolved region dicts `{"start": content_id, "end": content_id}`. Returns the EditFile ToolResult. Use with `Agent.resolve_regions()` and `regions.get(name)` |
 
 | `await Agent.sleep(seconds)` | Pause execution (0-120s max) |
 
@@ -644,12 +644,15 @@ regions = Agent.resolve_regions("foo.py", [
 #### Step 2 — Use `regions.get(name)` with `Agent.edit_region()` (recommended shorthand)
 
 ```python
-await Agent.edit_region(
+result = await Agent.edit_region(
     file_path="foo.py",
     edits=[
         {"region": regions.get("my_func"), "text": "def my_func():\n    return 42"},
     ],
 )
+
+# edit_region calls EditFile under the hood
+change_id = Agent.get_value(result, "result.0._.change_id")                                                                                                          
 ```
 
 #### Alternative: Call `EditFile` directly with `regions.get_start()` / `regions.get_end()`

@@ -280,12 +280,14 @@ def resolve_content_to_hashline_ids(
     start_value: str,
     end_value: str = None,
     start_hint_line: int | None = None,
+    exact: bool = True,
 ) -> tuple:
     """
     Resolve potential line content values to proper hashline content IDs.
 
     If start_value or end_value does not look like a content ID (hash),
-    search for the content in the original file using exact line matching.
+    search for the content in the original file using exact line matching
+    (or substring matching when exact=False).
 
     For start_value: Only resolves if exactly one line exactly matches it as a
     substring (unique match).
@@ -322,18 +324,27 @@ def resolve_content_to_hashline_ids(
             return False
 
     def _find_exact_line_matches(lines, value):
-        """Find all line indices where the value exactly matches the line content."""
+        """Find all line indices where the value matches the line content."""
+        if exact:
+            return [i for i, line in enumerate(lines) if line == value]
         value_stripped = value.strip()
-        return [i for i, line in enumerate(lines) if line.strip() == value_stripped]
+        return [i for i, line in enumerate(lines) if value_stripped in line]
 
     def _find_multiline_match(lines, value):
-        """Find the start index where the full multiline value exactly matches consecutive lines."""
-        value_lines = value.strip().splitlines()
+        """Find the start index where the full multiline value matches consecutive lines."""
+        if exact:
+            value_lines = value.splitlines()
+        else:
+            value_lines = value.strip().splitlines()
         if len(value_lines) <= 1:
             return None
         for i in range(len(lines) - len(value_lines) + 1):
-            if all(lines[i + j].strip() == value_lines[j].strip() for j in range(len(value_lines))):
-                return i
+            if exact:
+                if all(lines[i + j] == value_lines[j] for j in range(len(value_lines))):
+                    return i
+            else:
+                if all(value_lines[j].strip() in lines[i + j] for j in range(len(value_lines))):
+                    return i
         return None
 
     def _resolve_to_hash_id(lines, idx, hp):

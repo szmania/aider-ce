@@ -376,6 +376,7 @@ class AgentProxy:
         self,
         file_path: str,
         regions: list[dict[str, str]],
+        exact: bool = True,
     ):
         """
         Store named region patterns for lazy content-ID resolution.
@@ -384,12 +385,18 @@ class AgentProxy:
         `.get_end(name)`, so they are always fresh — even after
         intervening edits shift hashline positions.
 
+        Args:
+            file_path: Path to the file containing the target regions.
+            regions: List of region spec dicts with "name", "start", "end" keys.
+            exact: When True (default), use exact line matching (no stripping).
+                   When False, use substring matching with stripped content.
+
         Returns an :class:`AgentRegion` instance.
         """
 
         from cecli.helpers.orchestration.region_resolver import AgentRegion
 
-        return AgentRegion(file_path, self._coder, regions)
+        return AgentRegion(file_path, self._coder, regions, exact=exact)
 
     async def edit_region(
         self,

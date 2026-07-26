@@ -52,7 +52,9 @@ class AgentRegion:
         file_path: str,
         coder: Any,
         region_specs: list[dict[str, str]],
+        exact: bool = True,
     ) -> None:
+        self._exact = exact
         self._file_path = file_path
         self._coder = coder
         self._specs: dict[str, dict[str, str]] = {}
@@ -202,9 +204,15 @@ class AgentRegion:
                 # String hint — parse through _extract_l_hint
                 _, start_hint, start_hint_type = self._extract_l_hint(explicit_start, lines)
                 if start_hint is None:
+                    # String hint like "@L394" may fail because the regex
+                    # requires the @L to be preceded by whitespace or be at
+                    # the start of the string. Guide the user to use an
+                    # integer hint instead.
                     raise ValueError(
                         f"start_line_hint '{explicit_start}' for region "
-                        f"'{name}' could not be resolved"
+                        f"'{name}' could not be resolved. "
+                        f"Use an integer line number instead: "
+                        f"start_line_hint={explicit_start.replace('@L', '')}"
                     )
             else:
                 # Integer hint — treat as @L (1-based, converted to 0-based)
@@ -217,9 +225,15 @@ class AgentRegion:
             if isinstance(explicit_end, str):
                 _, end_hint, end_hint_type = self._extract_l_hint(explicit_end, lines)
                 if end_hint is None:
+                    # String hint like "@L437" may fail because the regex
+                    # requires @L to be preceded by whitespace or be at
+                    # the start of the string. Guide the user to use an
+                    # integer hint instead.
                     raise ValueError(
                         f"end_line_hint '{explicit_end}' for region "
-                        f"'{name}' could not be resolved"
+                        f"'{name}' could not be resolved. "
+                        f"Use an integer line number instead: "
+                        f"end_line_hint={explicit_end.replace('@L', '')}"
                     )
             else:
                 end_hint = explicit_end - 1
@@ -246,6 +260,7 @@ class AgentRegion:
             start_pattern,
             end_pattern,
             start_hint_line=start_hint if start_hint_type == "L" else None,
+            exact=self._exact,
         )
 
         # Resolve line numbers from content IDs
