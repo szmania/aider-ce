@@ -2,6 +2,7 @@ from abc import ABC, abstractmethod
 
 from cecli.tools.utils.helpers import handle_tool_error
 from cecli.tools.utils.output import print_tool_response
+from cecli.tools.utils.responses import ToolResponse
 from cecli.tools.validations import ToolValidations
 
 
@@ -15,6 +16,9 @@ class BaseTool(ABC):
 
     # Declarative validations (maps param paths to lists of validation method names)
     VALIDATIONS = {}
+
+    # Result format configuration ("str" or "list")
+    RESULT_TYPE = "str"
 
     # Invocation tracking for detecting repeated tool calls
     _invocations = {}  # Dict to store last 3 invocations per tool
@@ -37,16 +41,18 @@ class BaseTool(ABC):
         pass
 
     @classmethod
-    def process_response(cls, coder, params):
+    def process_response(cls, coder, params, _convert=True):
         """
         Process the tool response by creating an instance and calling execute.
 
         Args:
             coder: The Coder instance
             params: Dictionary of parameters
+            _convert: If True (default), ToolResponse results are converted to str.
+                         If False, ToolResponse is returned as-is for sandbox use.
 
         Returns:
-            str: Result message
+            str or ToolResponse: Result message (or ToolResponse when _convert=False)
         """
 
         # Validate required parameters from SCHEMA
@@ -84,7 +90,7 @@ class BaseTool(ABC):
                     return handle_tool_error(coder, tool_name, ValueError(error_msg))
 
         # Check for repeated invocations if TRACK_INVOCATIONS is enabled
-        if cls.TRACK_INVOCATIONS:
+        if cls.TRACK_INVOCATIONS and _convert:
             tool_name = None
             if cls.SCHEMA and "function" in cls.SCHEMA:
                 tool_name = cls.SCHEMA["function"].get("name", "Unknown Tool")
@@ -133,7 +139,12 @@ class BaseTool(ABC):
         params = ToolValidations.validate_params(params, cls.VALIDATIONS, cls.SCHEMA)
 
         try:
-            return cls.execute(coder, **params)
+            result = cls.execute(coder, **params)
+
+            if isinstance(result, ToolResponse):
+                return result if not _convert else str(result)
+
+            return result
         except Exception as e:
             return handle_tool_error(coder, cls.SCHEMA.get("function").get("name"), e)
 
@@ -154,3 +165,20 @@ class BaseTool(ABC):
     def clear_invocation_cache(cls):
         cls._invocations.clear()
         cls._invocation_summary.clear()
+
+    @classmethod
+    def ptc_format(cls, result):
+        """Post-tool-call formatting hook for orchestration sandbox exposure.
+
+        By default, passes through the result unchanged. Tools can override
+        this to reshape the output that gets exposed to the orchestration
+        sandbox (e.g., stripping placeholder entries).
+
+        Args:
+            result: The result from ``execute()`` (typically a ``ToolResponse``
+                    or string).
+
+        Returns:
+            The (possibly modified) result.
+        """
+        return result

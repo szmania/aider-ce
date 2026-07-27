@@ -166,13 +166,62 @@ Agent Mode can also be configured directly in your configuration file. See the [
 - **`command_timeout`**: Time in seconds to wait for shell commands to finish before automatic backgrounding occurs (default: None)
 - **`diff_colors`**: When enabled, diff output in edit tool responses uses color-coded lines - removed lines in magenta, added lines in light green, and context lines in plain text (default: true)
 
+- **`orchestration`**: A nested configuration object for the Orchestrate tool's Python sandbox.
+  When absent or empty, the sandbox runs with default restrictions. See [Orchestration
+  Configuration](#orchestration-configuration) below for details.
+
+#### Orchestration Configuration
+
+The `Orchestrate` tool runs user code in a secure Python sandbox with the following
+restrictions:
+- **No imports** — only pre-imported modules (`re`, `math`, `itertools`, `collections`,
+  `datetime`, `traceback`, `json`, `pathlib`) are available
+- **No private/dunder access** — attributes starting with `_` are blocked
+- **No dangerous builtins** — `eval`, `exec`, `open`, `compile`, `breakpoint`,
+  `__import__`, `globals`, `locals`, `setattr`, `delattr` are blocked
+- **No global/nonlocal statements**
+- **Loop protection** — `while`/`for` loops yield cooperatively to prevent hangs
+
+These restrictions can be selectively relaxed via the `orchestration` config block:
+
+- **`allowed_imports`**: Array of module names to allow importing. Example:
+  `["os", "typing"]`. Only standard library modules should be allowed; third-party
+  modules may execute arbitrary code at import time.
+
+- **`allowed_builtins`**: Array of builtin function names to add to the sandbox.
+  Example: `["setattr", "property"]`. Dangerous builtins (`eval`, `exec`, `open`, etc.)
+  cannot be added.
+
+- **`allow_classes`**: Boolean (default: `false`). When `true`, class definitions are
+  permitted and dunder methods (`__init__`, `__str__`, `__repr__`, `__iter__`, etc.)
+  are allowed inside class bodies.
+
+- **`disable_security`**: Boolean (default: `false`). When `true`, the AST-level security
+  filter is skipped entirely. ⚠ Use with extreme caution — this disables all import
+  blocking, dunder blocking, and dangerous builtin blocking.
+
+- **`disable_loop_protection`**: Boolean (default: `false`). When `true`, the cooperative
+  yield injection is skipped. Use only if you are certain the orchestration code has no
+  unbounded loops.
+
+Example:
+
+```yaml
+agent-config:
+  orchestration:
+    allowed_imports:
+      - os
+      - typing
+    allow_classes: true
+```
+
 #### Essential Tools
 
 Certain tools are always available regardless of includelist/excludelist settings:
 
 - `ResourceManager` - Add, drop, and make files editable in the context
-- `editfile` - Basic text replacement
-- `finished` - Complete the task
+- `readfile` - Read file contents with virtual ID prefixes
+- `yield` - Complete the task
 
 The registry also supports **Custom Tools** that can be loaded from specified directories or files using the `tool_paths` configuration option. Custom tools must be Python files containing a `Tool` class that inherits from `BaseTool` and defines a `NORM_NAME` attribute.
 
@@ -265,7 +314,7 @@ agent: true
 # Agent Mode configuration
 agent-config:
   # Tool configuration
-  tools_includelist: ["resourcemanager", "editfile", "finished"]  # Optional: Whitelist of tools
+  tools_includelist: ["resourcemanager", "readfile", "yield"]  # Optional: Whitelist of tools
   tools_excludelist: ["command", "commandinteractive"]  # Optional: Blacklist of tools
   tools_paths: ["./custom-tools", "~/my-tools"]  # Optional: Directories or files containing custom tools
   
@@ -275,7 +324,7 @@ agent-config:
   
   # Sub-agent configuration
   subagent_paths: [".cecli/subagents"]  # Optional: Directories to search for sub-agent definitions
-  max_sub_agents: 3  # Optional: Maximum concurrent sub-agents (default: 3)
+  max_sub_agents: 30  # Optional: Maximum concurrent sub-agents (default: 3)
   allow_nested_delegation: false  # Optional: Allow sub-agents to delegate further (default: false)
 
   # Context blocks configuration
@@ -288,7 +337,16 @@ agent-config:
   allowed_commands: ["wc -l*"]  # Commands matching these glob patterns will not prompt for confirmation
   show_lint_errors: false  # When enabled, linting errors are shown in tool output (default: false)
   hot_reload: false  # When enabled, skills configuration is hot-reloaded automatically (default: false)
-фвδ::  diff_colors: true  # When enabled, diff output uses color-coded lines (default: true)
+  diff_colors: true  # When enabled, diff output uses color-coded lines (default: true)
+
+  # Orchestration sandbox configuration (optional)
+  orchestration:
+    allowed_imports: []  # Optional: Module names to allow importing
+    allowed_builtins: []  # Optional: Builtin names to add
+    allow_classes: false  # Optional: Allow class definitions
+    disable_security: false  # Optional: Disable security filter (⚠ dangerous)
+    disable_loop_protection: false  # Optional: Disable loop yield injection
+
   # Skills configuration (see Skills documentation for details)
   skills_paths: ["~/my-skills", "./project-skills"]  # Directories to search for skills
   skills_includelist: ["python-refactoring", "react-components"]  # Optional: Whitelist of skills to include

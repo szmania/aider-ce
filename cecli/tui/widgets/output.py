@@ -10,7 +10,8 @@ from rich.style import Style as RichStyle
 from rich.text import Text
 from textual import events, on
 from textual.message import Message
-from textual.widgets import RichLog
+
+from .selectable_log import SelectableRichLog
 
 
 class CostUpdate(Message):
@@ -21,7 +22,7 @@ class CostUpdate(Message):
         super().__init__()
 
 
-class OutputContainer(RichLog):
+class OutputContainer(SelectableRichLog):
     """Scrollable output area using RichLog widget for rich rendering.
 
     Uses Textual's RichLog widget for efficient streaming and display
@@ -54,6 +55,11 @@ class OutputContainer(RichLog):
 
     async def start_response(self):
         """Start a new LLM response section with streaming support."""
+
+        # Insert blank line between consecutive assistant responses
+        if self._last_write_type == "assistant":
+            self.output("", check_duplicates=False)
+
         # Clear the line buffer for new response
         self._line_buffer = ""
         # Reset first line flag

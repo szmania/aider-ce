@@ -8,7 +8,7 @@ The VALIDATIONS dict maps parameter paths (dot-separated, optionally with []
 for list iteration) to lists of validation method names that are executed
 sequentially on the parameter value.
 
-Example::
+Example:
 
     VALIDATIONS = {
         "delegations": ["coerce_list"],

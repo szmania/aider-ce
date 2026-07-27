@@ -504,6 +504,13 @@ class ConversationChunks:
         if not coder:
             return []
 
+        if coder.edit_format in ["subagent"]:
+            from cecli.helpers.agents.service import AgentService
+
+            agent_service = AgentService.get_instance(coder)
+            if agent_service.get_agent_name(coder) == "memorizer":
+                return []
+
         messages = []
         if not hasattr(coder, "abs_rules_fnames") or not coder.abs_rules_fnames:
             return messages
@@ -809,6 +816,10 @@ class ConversationChunks:
                 block = coder._generate_context_block("servers")
                 if block:
                     message_blocks["servers"] = block
+            if "orchestration" in coder.allowed_context_blocks:
+                block = coder._generate_context_block("orchestration")
+                if block:
+                    message_blocks["orchestration"] = block
 
         # Add static blocks to conversation manager with stable hash keys
         for block_type, block_content in message_blocks.items():

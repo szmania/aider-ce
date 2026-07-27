@@ -43,6 +43,7 @@ and suggestions for improvement.
 | `name` | Yes | Unique name used to reference the sub-agent in commands and the Delegate tool |
 | `model` | No | Model override for this sub-agent. If omitted, inherits the parent agent's model |
 | `hooks` | No | Per-agent hooks configuration (see [Hooks](/config/hooks) for syntax) |
+| `agent-config` | No | Override `agent-config` property of cecli configuration with custom values for sub agent |
 | `auto_reap` | No | Controls whether this sub-agent is automatically reaped when the limit is reached. Defaults to `true` if omitted |
 
 #### System Prompt
@@ -56,7 +57,7 @@ Add sub-agent paths to your YAML configuration file:
 ```yaml
 # .cecli.conf.yml or ~/.cecli.conf.yml
 agent-config:
-    max_sub_agents: 3  # Maximum concurrent sub-agents (default: 3)
+    max_sub_agents: 30  # Maximum concurrent sub-agents (default: 3)
     subagent_paths:
         - ".cecli/subagents"  # Default path
         - "~/team-agents"     # Custom path for shared agent definitions
@@ -141,7 +142,7 @@ Each agent gets its own output container. When you switch agents:
 
 ### Max Sub-Agents
 
-The `max_sub_agents` setting (default: 3) limits how many concurrent sub-agents can exist. This prevents resource exhaustion.
+The `max_sub_agents` setting (default: 30) limits how many concurrent sub-agents can exist. This prevents resource exhaustion.
 
 When the limit is reached:
 

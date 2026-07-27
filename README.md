@@ -123,8 +123,10 @@ This command will make sure all commands ran by the coding agent happen in conte
 * [TUI Configuration](https://github.com/cecli-dev/cecli/blob/main/cecli/website/docs/config/tui.md)
 * [Skills](https://github.com/cecli-dev/cecli/blob/main/cecli/website/docs/config/skills.md)
 * [Subagents](https://github.com/cecli-dev/cecli/blob/main/cecli/website/docs/config/subagents.md)
+* [Persistent Memory](https://github.com/cecli-dev/cecli/blob/main/cecli/website/docs/config/persistent-memory.md)
 * [Session Management](https://github.com/cecli-dev/cecli/blob/main/cecli/website/docs/sessions.md)
 * [Hooks](https://github.com/cecli-dev/cecli/blob/main/cecli/website/docs/config/hooks.md)
+* [Agent Client Protocol (ACP)](https://github.com/cecli-dev/cecli/blob/main/cecli/website/docs/config/api.md)
 * [Workspaces](https://github.com/cecli-dev/cecli/blob/main/cecli/website/docs/config/workspaces.md)
 * [Custom Commands](https://github.com/cecli-dev/cecli/blob/main/cecli/website/docs/config/custom-commands.md)
 * [Custom System Prompts](https://github.com/cecli-dev/cecli/blob/main/cecli/website/docs/config/custom-system-prompts.md)
@@ -145,11 +147,11 @@ The current priorities are to improve core capabilities and user experience of t
   * [x] [Include import information in repo map for richer context](https://github.com/Aider-AI/aider/issues/2688)
   * [x] [Handle non-unique symbols that break down in large codebases](https://github.com/Aider-AI/aider/issues/2341)
 
-3. **Context Discovery** - [Discussion](https://github.com/cecli-dev/cecli/issues/46)
-  * [ ] Develop AST-based search capabilities
+3. **Context Discovery** - [Discussion - Done with Cymbal Library](https://github.com/cecli-dev/cecli/issues/46)
+  * [x] Develop AST-based search capabilities
   * [x] Enhance file search with ripgrep integration
-  * [ ] Implement RAG (Retrieval-Augmented Generation) for better code retrieval
-  * [ ] Build an explicit workflow and local tooling for internal discovery mechanisms
+  * [x] Implement RAG (Retrieval-Augmented Generation) for better code retrieval
+  * [x] Build an explicit workflow and local tooling for internal discovery mechanisms
 
 4. **Context Delivery** - [Discussion](https://github.com/cecli-dev/cecli/issues/47)
   * [x] Use workflow for internal discovery to better target file snippets needed for specific tasks (ExploreCode and ReadRange)
@@ -189,11 +191,11 @@ The current priorities are to improve core capabilities and user experience of t
   * [x] Update agent mode edit tools to work with hashline identification
   * [x] Update internal file diff representation to support hashline propagation
 
-10. **Dynamic Context Management** 
+10. **Dynamic Context Management (Accomplished with subagents, orchestrate, and the facts db)** 
   * [x] Update compaction to use observational memory sub agent calls to generate decision records that are used as the compaction basis
-  * [ ] Persist decision records to disk for sessions with some settings for managing lifetimes of such persistence
-  * [ ] Integrate RLM to extract information from decision records on disk and other definable notes
-  * [ ] Add a "describe" tool that launches a sub agent workflow that populates an RLM call's context with:
+  * [x] Persist decision records to disk for sessions with some settings for managing lifetimes of such persistence
+  * [x] Integrate RLM-like facility to extract information from decision records on disk and other definable notes
+  * [x] Add a "describe" tool that launches a sub agent workflow that populates an RLM call's context with:
     * Current Conversation History
     * Past Decision Records
     * Repo Map Found Files

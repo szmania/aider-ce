@@ -5,6 +5,8 @@ This package contains individual command implementations that follow the
 BaseCommand pattern for modular, testable command execution.
 """
 
+from cecli.signals import ReloadProgramSignal, SwitchCoderSignal
+
 from .add import AddCommand
 from .agent import AgentCommand
 from .agent_model import AgentModelCommand
@@ -21,7 +23,7 @@ from .context_blocks import ContextBlocksCommand
 from .context_management import ContextManagementCommand
 from .copy import CopyCommand
 from .copy_context import CopyContextCommand
-from .core import Commands, ReloadProgramSignal, SwitchCoderSignal
+from .core import Commands
 from .diff import DiffCommand
 from .drop import DropCommand
 from .editor import EditCommand, EditorCommand

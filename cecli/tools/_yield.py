@@ -5,6 +5,7 @@ from cecli.helpers.threading import ThreadSafeEvent
 from cecli.tools.utils.base_tool import BaseTool
 from cecli.tools.utils.helpers import ToolError
 from cecli.tools.utils.output import color_markers, tool_footer, tool_header
+from cecli.tools.utils.responses import ToolResponse
 from cecli.tools.validations import ToolValidations
 
 logger = logging.getLogger(__name__)
@@ -49,6 +50,8 @@ class Tool(BaseTool):
 
         cls.clear_invocation_cache()
 
+        response = ToolResponse(cls.NORM_NAME)
+
         if coder:
             # Check for active child sub-agents and await their tasks before finishing
             try:
@@ -88,10 +91,11 @@ class Tool(BaseTool):
                                     await t
                                 except (asyncio.CancelledError, Exception):
                                     pass
-                            return (
+                            response.append_result(
                                 "Yield interrupted while waiting for sub-agents. "
                                 "Sub-agent outputs above may be incomplete."
                             )
+                            return response
 
                         # Retrieve exceptions from completed sub-agent tasks so they
                         # are not silently lost.
@@ -155,10 +159,11 @@ class Tool(BaseTool):
                     await agent_service.reap_all_finished_agents(parent=coder)
                     # Don't mark as finished — the coder should review sub-agent
                     # outputs and decide how to proceed
-                    return (
+                    response.append_result(
                         "Sub-agents have finished. Please examine their output above "
                         "in order to decide how you will proceed."
                     )
+                    return response
             except Exception as e:
                 logger.warning("Error awaiting child sub-agents before yield: %s", e)
 
@@ -173,6 +178,16 @@ class Tool(BaseTool):
 
             # If this is a sub-agent, capture the summary for the parent
             summary = kwargs.get("summary", None)
+
+            # Fire memorizer with yield summary (skip if already a memorizer)
+            if getattr(coder, "auto_memory", False) and summary:
+                agent_service = AgentService.get_instance(coder)
+                if agent_service.get_agent_name(coder) != "memorizer":
+                    from cecli.helpers.memory.utils import invoke_memorizer
+
+                    asyncio.create_task(
+                        invoke_memorizer(coder, additional_context=f"Yield summary: {summary}")
+                    )
             parent_uuid = coder.parent_uuid
             if parent_uuid:
                 try:
@@ -190,11 +205,14 @@ class Tool(BaseTool):
                 coder.files_edited_by_tools = set()
 
             if summary:
-                return f"Yielded. Summary: {summary}"
-            return "Yielded."
+                response.append_result(f"Yielded. Summary: {summary}")
+                return response
+            response.append_result("Yielded.")
+            return response
 
         # coder.io.tool_Error("Error: Could not mark agent task as finished")
-        return "Error: Could not yield control"
+        response.append_error("Could not yield control")
+        return response
 
     @classmethod
     def format_output(cls, coder, mcp_server, tool_response):

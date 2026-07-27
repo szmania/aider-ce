@@ -10,7 +10,6 @@ import tempfile
 from pathlib import Path
 
 from cecli.dump import dump  # noqa: F401
-from cecli.waiting import Spinner
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".bmp", ".tiff", ".webp", ".pdf"}
 
@@ -311,6 +310,8 @@ def run_install(cmd):
         pass  # Continue even if ensurepip fails
 
     try:
+        from cecli.waiting import Spinner
+
         output = []
         process = subprocess.Popen(
             cmd,

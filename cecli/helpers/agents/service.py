@@ -14,6 +14,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from uuid import uuid4
 
 import cecli.models as models
+from cecli.helpers.coroutines import fire_and_forget
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +24,14 @@ logger = logging.getLogger(__name__)
 DEFAULT_SUMMARY_NO_SUMMARY = "(no summary)"
 DEFAULT_SUMMARY_COMPLETED = "(completed without explicit summary)"
 DEFAULT_SUMMARY_INTERRUPTED = "(interrupted)"
+
+# Sentinel model markers that resolve to a parent coder's models at runtime.
+# These can be used in the ``model`` field of sub-agent .md config files
+# to dynamically select the appropriate model without hard-coding a name.
+MODEL_SENTINEL_WEAK = "<weak_model>"
+MODEL_SENTINEL_AGENT = "<agent_model>"
+MODEL_SENTINEL_MAIN = "<main_model>"
+MODEL_SENTINEL_CURRENT = "<current>"
 
 
 class SubAgentStatus(Enum):
@@ -181,11 +190,20 @@ class AgentService:
         """Scan directories for .md sub-agent definition files and load them.
 
         Each .md file should contain YAML front matter with:
+
           ---
           name: <agent-name>
           model: <optional-model-override>
           ---
           <system prompt body>
+
+        The ``model`` field supports sentinel placeholders that are resolved
+        at runtime to the parent coder's models:
+
+            ``<weak_model>``   - The parent coder's weak model
+            ``<agent_model>``  - The parent coder's agent model
+            ``<main_model>``   - The parent coder's main model
+            ``<current>``      - The currently active (foreground) coder's main model
         """
         from pathlib import Path
 
@@ -196,20 +214,29 @@ class AgentService:
         if default_dir not in paths:
             paths = [default_dir] + list(paths)
 
+        # Also scan the built-in defaults directory for .yml definitions
+        import cecli.helpers.agents.defaults as _defaults_pkg
+
+        defaults_dir = str(Path(_defaults_pkg.__file__).parent)
+        if defaults_dir not in paths:
+            paths = [defaults_dir] + list(paths)
+
         for directory in paths:
             dir_path = Path(directory).expanduser()
             if not dir_path.is_dir():
                 continue
-            for md_file in sorted(dir_path.glob("*.md")):
+            for agent_file in sorted(list(dir_path.glob("*.md"))):
                 try:
-                    config = parse_subagent_file(str(md_file))
+                    config = parse_subagent_file(str(agent_file))
                     if config and config.name:
                         cls._global_registry[config.name] = config
-                        logger.info("Loaded sub-agent '%s' from %s", config.name, md_file)
+                        logger.info("Loaded sub-agent '%s' from %s", config.name, agent_file)
                 except (ValueError, OSError) as exc:
-                    logger.warning("Failed to parse sub-agent file %s: %s", md_file, exc)
+                    logger.warning("Failed to parse sub-agent file %s: %s", agent_file, exc)
                 except Exception as exc:
-                    logger.warning("Unexpected error parsing sub-agent file %s: %s", md_file, exc)
+                    logger.warning(
+                        "Unexpected error parsing sub-agent file %s: %s", agent_file, exc
+                    )
 
     # ------------------------------------------------------------------ #
     # Instance
@@ -228,7 +255,7 @@ class AgentService:
     @property
     def max_sub_agents(self) -> int:
         """Return the max number of sub-agents allowed for this coder."""
-        return getattr(self.coder, "max_sub_agents", 3)
+        return getattr(self.coder, "max_sub_agents", 30)
 
     # ------------------------------------------------------------------ #
     # Internal helpers
@@ -262,6 +289,42 @@ class AgentService:
             return tui_ref()
         # If it is already a plain reference (e.g., in tests), use it directly.
         return tui_ref
+
+    def _resolve_model_sentinel(self, value: str, parent_coder: Any):
+        """Resolve a sentinel model marker to the appropriate Model instance.
+
+        Allows sub-agent .md config files to use placeholders like
+        ``<weak_model>``, ``<agent_model>``, ``<main_model>``, or
+        ``<current>`` in the ``model`` field instead of hard-coding a
+        specific model name.  The sentinel is resolved at runtime using
+        the parent coder's model hierarchy.
+
+        Args:
+            value: The sentinel string (e.g. ``"<weak_model>"``) or a
+                   regular model name (returned as ``None``).
+            parent_coder: The parent coder instance whose models are used.
+
+        Returns:
+            A ``Model`` instance if *value* is a recognised sentinel,
+            ``None`` otherwise (so callers can fall through to the
+            normal ``Model()`` constructor path).
+        """
+        if value == MODEL_SENTINEL_WEAK:
+            model = parent_coder.main_model.weak_model
+            return model if model is not None else parent_coder.main_model
+        elif value == MODEL_SENTINEL_AGENT:
+            model = parent_coder.main_model.agent_model
+            return model if model is not None else parent_coder.main_model
+        elif value == MODEL_SENTINEL_MAIN:
+            return parent_coder.main_model
+        elif value == MODEL_SENTINEL_CURRENT:
+            # Use the foreground coder's model if set, otherwise fall back to parent
+            foreground = self.foreground_coder
+            if foreground is not None:
+                return foreground.main_model
+            return parent_coder.main_model
+
+        return None
 
     # ------------------------------------------------------------------ #
 
@@ -477,6 +540,9 @@ class AgentService:
 
         from cecli.coders import Coder
 
+        metadata = getattr(config, "metadata", {}).copy()
+        agent_config = metadata.get("agent-config", {})
+
         kwargs = dict(
             io=parent_coder.io,
             from_coder=parent_coder,
@@ -484,18 +550,34 @@ class AgentService:
             cur_messages=[],
             uuid=new_uuid,
             parent_uuid=parent_coder.uuid,
+            map_tokens=0,
+            init_metadata={"agent_config": agent_config},
         )
+
+        if agent_config:
+            kwargs.update(
+                dict(
+                    registered_tools=None,
+                    registered_servers=None,
+                    mcp_manager=None,
+                )
+            )
 
         model_override = getattr(config, "model", None)
         if model_override:
-            kwargs["main_model"] = models.Model(
-                model_override,
-                from_model=parent_coder.main_model,
-                agent_model=model_override,
-            )
+            # Resolve model sentinels (e.g. "<weak_model>", "<agent_model>")
+            resolved = self._resolve_model_sentinel(model_override, parent_coder)
+            if resolved is not None:
+                kwargs["main_model"] = resolved
+            else:
+                kwargs["main_model"] = models.Model(
+                    model_override,
+                    from_model=parent_coder.main_model,
+                    agent_model=model_override,
+                )
 
         new_coder = await Coder.create(**kwargs)
-        new_coder.max_sub_agents = getattr(self.coder, "max_sub_agents", 3)
+        new_coder.max_sub_agents = getattr(self.coder, "max_sub_agents", 30)
         # IOProxy wrapping is handled by base_coder.py's Coder.__init__
 
         # Re-acquire the lock to register — we must re-check max agents since
@@ -575,7 +657,7 @@ class AgentService:
 
         Args:
 
-        .. note::
+        .. note:
 
             **Ordering dependency with mark_sub_agent_finished()**
 
@@ -605,6 +687,23 @@ class AgentService:
                 if info.status == SubAgentStatus.RUNNING:
                     info.status = SubAgentStatus.FINISHED
                     info.summary = info.summary or DEFAULT_SUMMARY_COMPLETED
+
+                if info.auto_reap and info.independent:
+
+                    async def _cleanup():
+                        await asyncio.sleep(5)
+
+                        # Cleanup conversation resources
+                        from cecli.helpers.conversation.service import (
+                            ConversationService,
+                        )
+
+                        ConversationService.destroy_instances(info.coder.uuid)
+                        # Remove from tracking and clean up
+                        self._cleanup_sub_agent(info.coder.uuid)
+
+                    fire_and_forget(_cleanup())
+
             except asyncio.CancelledError:
                 await self._inject_sub_agent_result(info)
                 info.status = SubAgentStatus.FINISHED
@@ -872,6 +971,31 @@ class AgentService:
                 return parent_info.coder
 
         return self.coder
+
+    def get_agent_name(self, coder_or_uuid: Any) -> Optional[str]:
+        """Return the sub-agent name for the given coder or UUID.
+
+        Looks up the sub-agent info by UUID and returns its ``name`` field
+        (the configured sub-agent type, e.g. ``"worker"``, ``"memorizer"``).
+        Returns ``None`` if the given coder/UUID is not a known sub-agent
+        (e.g. it is the primary coder or has no entry in ``sub_agents``).
+
+        Args:
+            coder_or_uuid: A coder instance (with ``.uuid``) or a UUID string.
+
+        Returns:
+            The sub-agent name string, or ``None`` if not found.
+        """
+        if hasattr(coder_or_uuid, "uuid"):
+            uid = str(coder_or_uuid.uuid)
+        else:
+            uid = str(coder_or_uuid)
+
+        info = self.sub_agents.get(uid)
+        if info is not None:
+            return info.name
+
+        return None
 
     # ------------------------------------------------------------------ #
     # Foreground agent tracking

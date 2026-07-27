@@ -3,7 +3,7 @@
 Provides a higher-level API for accessing conversation history, making model
 calls, and working with sub-agents from within hook implementations.
 
-Typical usage::
+Typical usage:
 
     from cecli.hooks import HookHelpers
 

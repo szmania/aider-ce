@@ -55,7 +55,7 @@ from cecli.reasoning_tags import (
     remove_reasoning_content,
     replace_reasoning_tags,
 )
-from cecli.repo import ANY_GIT_ERROR, GitRepo
+from cecli.repo import ANY_GIT_ERROR, GitRepo, GitRepoProxy
 from cecli.repomap import RepoMap
 from cecli.report import update_error_prefix
 from cecli.run_cmd import run_cmd_async
@@ -207,6 +207,8 @@ class Coder(metaclass=UsageMeta):
     temperature = None
     auto_lint = True
     auto_test = False
+    auto_memory = True
+    _last_memory_invoke_time = 0.0
     test_cmd = None
     lint_outcome = None
     test_outcome = None
@@ -390,6 +392,7 @@ class Coder(metaclass=UsageMeta):
         done_messages=None,
         auto_lint=True,
         auto_test=False,
+        auto_memory=True,
         lint_cmds=None,
         test_cmd=None,
         coder_commit_hashes=None,
@@ -410,6 +413,7 @@ class Coder(metaclass=UsageMeta):
         auto_accept_architect=True,
         mcp_manager=None,
         enable_context_compaction=False,
+        max_compaction_retries=3,
         context_compaction_max_tokens=None,
         context_compaction_summary_tokens=8192,
         map_cache_dir=".",
@@ -420,6 +424,7 @@ class Coder(metaclass=UsageMeta):
         registered_servers=None,
         uuid: str = "",
         parent_uuid: str = "",
+        init_metadata={},
     ):
         from cecli.helpers.agents.service import AgentService
 
@@ -471,6 +476,9 @@ class Coder(metaclass=UsageMeta):
         self.detect_urls = detect_urls
         self.args = args
 
+        # Init metadata should not persist between initializations
+        self.init_metadata = {}
+
         self.num_cache_warming_pings = num_cache_warming_pings
         self.mcp_manager = mcp_manager
         self.enable_context_compaction = enable_context_compaction
@@ -478,6 +486,8 @@ class Coder(metaclass=UsageMeta):
         self.context_compaction_current_ratio = 0
         self.context_compaction_max_tokens = context_compaction_max_tokens
         self.context_compaction_summary_tokens = context_compaction_summary_tokens
+        self.max_compaction_retries = max_compaction_retries
+
         self.max_reflections = nested.getter(self.args, "max_reflections", 3)
 
         if not fnames:
@@ -571,11 +581,13 @@ class Coder(metaclass=UsageMeta):
         self.repo = repo
         if use_git and self.repo is None:
             try:
-                self.repo = GitRepo(
-                    self.io,
-                    fnames,
-                    None,
-                    models=main_model.commit_message_models(),
+                self.repo = GitRepoProxy(
+                    GitRepo(
+                        self.io,
+                        fnames,
+                        None,
+                        models=main_model.commit_message_models(),
+                    )
                 )
             except FileNotFoundError:
                 pass
@@ -698,6 +710,7 @@ class Coder(metaclass=UsageMeta):
         self.setup_lint_cmds(lint_cmds)
         self.lint_cmds = lint_cmds
         self.auto_test = auto_test
+        self.auto_memory = auto_memory
         self.test_cmd = test_cmd
 
         # Clean up todo list file on startup; sessions will restore it when needed
@@ -1860,6 +1873,13 @@ class Coder(metaclass=UsageMeta):
             ConversationService.get_chunks(self).flush_removals()
             self.last_user_message = user_message
 
+            # Fire memorizer after each user request
+            # if self.auto_memory and self.edit_format not in ["subagent"]:
+            #    from cecli.helpers.memory.utils import invoke_memorizer
+            #
+            #    context = "If the user has stated any preferences, please remember them"
+            #    asyncio.create_task(invoke_memorizer(self, additional_context=context))
+
         while True:
             self.reflected_message = None
             self.empty_response = False
@@ -2016,6 +2036,32 @@ class Coder(metaclass=UsageMeta):
         file_context_tokens = self.summarizer.count_tokens(file_context_messages)
         all_tokens = self.summarizer.count_tokens(all_messages)
 
+        # Determine if compaction is worthwhile
+        compactable_tokens = done_tokens + cur_tokens + diff_tokens + file_context_tokens
+
+        # Condition 1: Is min size
+        is_min_size = all_tokens >= self.context_compaction_max_tokens
+
+        # Condition 2: Percentage check (is chat history a significant part of the context?)
+        is_worth_by_percentage = all_tokens > 0 and (compactable_tokens / all_tokens) >= 0.20
+
+        # Condition 3: Absolute savings check (would compacting save enough tokens to fit?)
+        tokens_over_limit = all_tokens - (self.context_compaction_max_tokens or all_tokens)
+        potential_savings = compactable_tokens * 0.90
+        is_worth_by_absolute_savings = (
+            tokens_over_limit > 0 and potential_savings >= tokens_over_limit
+        )
+
+        if not force:
+            if not is_min_size:
+                return
+
+            if not (is_worth_by_percentage or is_worth_by_absolute_savings):
+                self.io.tool_output(
+                    "Skipping compaction: Not enough chat history to make a difference. Use /drop to remove files."
+                )
+                return
+
         message_tokens = done_tokens + cur_tokens
         file_tokens = diff_tokens + file_context_tokens
         combined_tokens = done_tokens + cur_tokens + diff_tokens + file_context_tokens
@@ -2126,14 +2172,17 @@ class Coder(metaclass=UsageMeta):
                     for msg in reversed(latest_messages):
                         manager.add_message(msg, tag=tag)
 
+                    # Fire memorizer after successful compaction
+                    if self.auto_memory and self.edit_format not in ["subagent"]:
+                        from cecli.helpers.memory.utils import invoke_memorizer
+
+                        asyncio.create_task(invoke_memorizer(self, additional_context=text))
+
             if done_tokens > self.context_compaction_max_tokens or done_tokens > cur_tokens:
                 await summarize_and_update(done_messages, MessageTag.DONE)
 
             if cur_tokens > self.context_compaction_max_tokens or cur_tokens > done_tokens:
                 await summarize_and_update(cur_messages, MessageTag.CUR)
-
-            self.io.tool_output("...chat history compacted.")
-            self.io.update_spinner(self.io.last_spinner_text)
 
             manager.clear_tag(MessageTag.DIFFS)
             manager.clear_tag(MessageTag.FILE_CONTEXTS)
@@ -2142,6 +2191,26 @@ class Coder(metaclass=UsageMeta):
             ConversationService.get_chunks(self).reset_clear_count()
             ObservationService.get_instance(self).reset_index()
             self.format_chat_chunks()
+
+            # Post-compaction token floor check
+            # Recalculate tokens after compaction to prevent infinite loops
+            # on already-minimal context
+            all_messages = manager.get_messages_dict()
+            post_compaction_tokens = self.summarizer.count_tokens(all_messages)
+            token_floor = (
+                self.context_compaction_max_tokens * 0.25
+                if self.context_compaction_max_tokens
+                else 0
+            )
+
+            if post_compaction_tokens < token_floor:
+                self.io.tool_output(
+                    "...context is already at minimum size, cannot compact further."
+                )
+            else:
+                self.io.tool_output("...chat history compacted.")
+
+            self.io.update_spinner(self.io.last_spinner_text)
 
         except Exception as e:
             self.io.tool_warning(f"Context compaction failed: {e}")
@@ -2432,22 +2501,35 @@ class Coder(metaclass=UsageMeta):
         max_input_tokens = self.get_active_model().info.get("max_input_tokens") or 0
 
         if max_input_tokens and input_tokens >= max_input_tokens:
-            self.io.tool_error(
-                f"Your estimated chat context of {input_tokens:,} tokens exceeds the"
-                f" {max_input_tokens:,} token limit for {self.get_active_model().name}!"
-            )
-            self.io.tool_output("To reduce the chat context:")
-            self.io.tool_output("- Use /drop to remove unneeded files from the chat")
-            self.io.tool_output("- Use /clear to clear the chat history")
-            self.io.tool_output("- Break your code into smaller files")
-            self.io.tool_output(
-                "It's probably safe to try and send the request, most providers won't charge if"
-                " the context limit is exceeded."
-            )
+            if self.enable_context_compaction:
+                self.io.tool_output(
+                    f"Estimated chat context of {input_tokens:,} tokens exceeds the"
+                    f" {max_input_tokens:,} token limit. Attempting to compact..."
+                )
+                await self.compact_context_if_needed(force=True)
 
-            if not await self.io.confirm_ask("Try to proceed anyway?"):
-                return False
-        return True
+                # After compaction, re-format messages and re-check tokens
+                messages = self.format_messages()
+                input_tokens = self.get_active_model().token_count(messages)
+
+            if max_input_tokens and input_tokens >= max_input_tokens:
+                self.io.tool_error(
+                    f"Your estimated chat context of {input_tokens:,} tokens still exceeds the"
+                    f" {max_input_tokens:,} token limit for {self.get_active_model().name}!"
+                )
+                self.io.tool_output("To reduce the chat context:")
+                self.io.tool_output("- Use /drop to remove unneeded files from the chat")
+                self.io.tool_output("- Use /clear to clear the chat history")
+                self.io.tool_output("- Break your code into smaller files")
+                self.io.tool_output(
+                    "It's probably safe to try and send the request, most providers won't charge if"
+                    " the context limit is exceeded."
+                )
+
+                if not await self.io.confirm_ask("Try to proceed anyway?"):
+                    return None
+
+        return messages
 
     def get_active_model(self):
         return self.main_model
@@ -2508,7 +2590,8 @@ class Coder(metaclass=UsageMeta):
 
         messages = result
 
-        if not await self.check_tokens(messages):
+        messages = await self.check_tokens(messages)
+        if not messages:
             return
 
         if self.verbose:
@@ -3476,30 +3559,74 @@ class Coder(metaclass=UsageMeta):
         completion = None
         self.token_profiler.start()
 
+        litellm_ex = LiteLLMExceptions()
+
         try:
-            completion_coro = model.send_completion(
-                messages,
-                functions,
-                self.stream,
-                self.temperature,
-                tools=tools,
-                override_kwargs=self.model_kwargs.copy(),
-                interrupt_event=self.interrupt_event,
+            # Compaction retry loop for ContextWindowExceededError
+            max_compaction_retries = (
+                2 if self.edit_format in ("agent", "subagent") else self.max_compaction_retries
             )
+            compaction_retry_count = 0
 
-            try:
-                (hash_object, completion), interrupted = await coroutines.interruptible(
-                    completion_coro, self.interrupt_event
-                )
-            except TypeError:
-                self.io.tool_warning(
-                    "TypeError in interruptible() — this may indicate a bug "
-                    "in the LLM response handling. Converting to KeyboardInterrupt."
-                )
-                raise KeyboardInterrupt
+            while True:
+                try:
+                    completion_coro = model.send_completion(
+                        messages,
+                        functions,
+                        self.stream,
+                        self.temperature,
+                        tools=tools,
+                        override_kwargs=self.model_kwargs.copy(),
+                        interrupt_event=self.interrupt_event,
+                    )
 
-            if interrupted:
-                raise KeyboardInterrupt
+                    try:
+                        (hash_object, completion), interrupted = await coroutines.interruptible(
+                            completion_coro, self.interrupt_event
+                        )
+                    except TypeError:
+                        self.io.tool_warning(
+                            "TypeError in interruptible() — this may indicate a bug "
+                            "in the LLM response handling. Converting to KeyboardInterrupt."
+                        )
+                        raise KeyboardInterrupt
+
+                    if interrupted:
+                        raise KeyboardInterrupt
+
+                    break  # Success
+
+                except litellm.ContextWindowExceededError as err:
+                    if not self.enable_context_compaction:
+                        raise err
+
+                    if compaction_retry_count >= max_compaction_retries:
+                        self.io.tool_error(
+                            f"Context window exceeded after {max_compaction_retries}"
+                            " compaction attempt(s)."
+                        )
+                        raise err
+
+                    compaction_retry_count += 1
+                    self.io.tool_error(
+                        f"Compacting context... retry {compaction_retry_count}"
+                        f"/{max_compaction_retries}"
+                    )
+
+                    try:
+                        await self.compact_context_if_needed(
+                            force=True,
+                            message="Context window exceeded, please summarize to retry.",
+                        )
+                    except Exception:
+                        self.io.tool_error(
+                            "Context compaction failed." " Please use /clear or /compact manually."
+                        )
+                        raise err
+
+                    # Re-format messages after compaction and retry
+                    messages = self.format_messages()
+                    continue
 
             self.chat_completion_call_hashes.append(hash_object.hexdigest())
 
@@ -3519,8 +3646,8 @@ class Coder(metaclass=UsageMeta):
             # Calculate costs for successful responses
             self.calculate_and_show_tokens_and_cost(messages, completion)
 
-        except LiteLLMExceptions().exceptions_tuple() as err:
-            ex_info = LiteLLMExceptions().get_ex_info(err)
+        except litellm_ex.exceptions_tuple() as err:
+            ex_info = litellm_ex.get_ex_info(err)
             if ex_info.name == "ContextWindowExceededError":
                 # Still calculate costs for context window errors
                 self.token_profiler.on_error()
@@ -4266,9 +4393,12 @@ class Coder(metaclass=UsageMeta):
         if tokens < warn_number_of_tokens:
             return
 
-        self.io.tool_warning("Warning: it's best to only add files that need changes to the chat.")
-        self.io.tool_warning(urls.edit_errors)
-        self.warning_given = True
+        if self.context_compaction_current_ratio > 0.5:
+            self.io.tool_warning(
+                "Warning: it's best to only add files that need changes to the chat."
+            )
+            self.io.tool_warning(urls.edit_errors)
+            self.warning_given = True
 
     async def prepare_to_edit(self, edits):
         res = []

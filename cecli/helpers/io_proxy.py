@@ -49,10 +49,14 @@ class IOProxy(Generic[T]):
         # Register a per-coder input queue (TUI mode only)
         # Allows the TUI to push input directly to this coder's queue,
         # eliminating the shared-queue routing loop in get_input().
-        if hasattr(target, "_per_coder_queues"):
-            _input_q = _queue.Queue()
-            target.register_coder_queue(coder_uuid, _input_q)
-            super().__setattr__("_input_queue", _input_q)
+        # In TUI mode, register this coder's input queue in the global
+        # queue registry so the TUI can push input directly to the
+        # correct coder without iterating a shared queue.
+        from cecli.helpers import queues as _queues
+
+        _input_q = _queue.Queue()
+        _queues.register_coder_queue(coder_uuid, _input_q)
+        super().__setattr__("_input_queue", _input_q)
 
     @classmethod
     def unwrap(cls, io):
@@ -133,7 +137,7 @@ class IOProxy(Generic[T]):
             tuple[str, str | None]: (user_input, coder_uuid).
         """
         # TUI mode: call target (iterates all per-coder queues)
-        if hasattr(self._target, "_per_coder_queues"):
+        if hasattr(self._target, "output_queue"):
             while True:
                 result = await self._target.get_input(*args, **kwargs)
                 if isinstance(result, tuple) and len(result) == 2:

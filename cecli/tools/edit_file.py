@@ -1,20 +1,22 @@
 from cecli.helpers.hashline import (
+    HASH_DELIMITER,
+    UNIQUE_HASH_DELIMITER,
     ContentHashError,
     apply_hashline_operations,
     get_hashline_diff,
-    normalize_hashline,
     resolve_content_to_hashline_ids,
     strip_hashline,
 )
+from cecli.helpers.hashpos.hashpos import HashPos
+from cecli.helpers.hashpos.transformations import resolve_at_l, strip_hashline_prefix
 from cecli.tools.utils.base_tool import BaseTool
 from cecli.tools.utils.helpers import (
     ToolError,
     apply_change,
-    format_tool_result,
-    handle_tool_error,
     validate_file_for_edit,
 )
 from cecli.tools.utils.output import color_markers, tool_footer, tool_header
+from cecli.tools.utils.responses import ToolResponse
 from cecli.tools.validations import ToolValidations
 
 VALID_OPERATIONS = {"replace", "delete", "insert"}
@@ -34,6 +36,7 @@ USER_EDIT_CATEGORIES = {
 
 class Tool(BaseTool):
     NORM_NAME = "editfile"
+    RESULT_TYPE = "list"
     TRACK_INVOCATIONS = False
     VALIDATIONS = {
         "edits": ["coerce_list"],
@@ -44,13 +47,16 @@ class Tool(BaseTool):
         "function": {
             "name": "EditFile",
             "description": (
-                "Edit text in one or more files using content ID markers. "
+                "Edit text in one or more files using virtual identifiers. "
                 "You can perform multiple 'replace' or 'delete' operations in a single call. "
                 "CRITICAL RULES: "
-                "1. Start and end content IDs are INCLUSIVE. Both will be modified or deleted. "
-                "2. Content IDs MUST include the `::` demarcator. "
-                "3. Edits within the same file MUST NOT be adjacent or overlapping. "
-                "4. For empty files, you MUST use '@000' as the content ID reference."
+                "1. Start and end markers are INCLUSIVE. Both will be modified or deleted. "
+                f"2. To target unique lines (prefixed with '{UNIQUE_HASH_DELIMITER}'), use their exact literal text as the marker, excluding the prefix. "  # noqa
+                f"3. To target duplicate lines, you MUST include the exact hashed prefix (e.g., '{HASH_DELIMITER}“0车加{HASH_DELIMITER}'). "  # noqa
+                "4. Edits within the same file MUST NOT be adjacent or overlapping. "
+                "5. For empty files, you MUST use '@000' as the reference. "
+                "6. Identifiers track global occurrences. Adding, modifying, or deleting a line can instantly "
+                "change the prefixes of identical lines anywhere else in the file. Re-read to get fresh IDs after editing."  # noqa
             ),
             "parameters": {
                 "type": "object",
@@ -89,15 +95,23 @@ class Tool(BaseTool):
                                 "start_line": {
                                     "type": "string",
                                     "description": (
-                                        "The exact content ID and demarcator for the start of the edit "
-                                        "(e.g., 'abc::'). For empty files, use '@000'."
+                                        "The exact reference for the start of the edit. "
+                                        "For duplicate lines with a specific hash, "
+                                        "use the 4-character hash wrapped in tildes (e.g., '—WecX—'). "
+                                        "For unique lines marked with the generic '——' prefix, "
+                                        "provide the exact full text of the line. "
+                                        "For empty files, use '@000'."
                                     ),
                                 },
                                 "end_line": {
                                     "type": "string",
                                     "description": (
-                                        "The exact content ID and demarcator for the end of the edit "
-                                        "(e.g., 'xyz::'). For empty files, use '@000'."
+                                        "The exact reference for the end of the edit. "
+                                        "For duplicate lines with a specific hash, "
+                                        "use the 4-character hash wrapped in tildes (e.g., '—WecX—'). "
+                                        "For unique lines marked with the generic '——' prefix, "
+                                        "provide the exact full text of the line. "
+                                        "For empty files, use '@000'."
                                     ),
                                 },
                             },
@@ -153,7 +167,8 @@ class Tool(BaseTool):
                 force=True,
             )
 
-        tool_name = "EditFile"
+        # tool_name = "EditFile"
+        response = ToolResponse(cls.NORM_NAME, result_type=cls.RESULT_TYPE)
         try:
             # 1. Validate edits parameter
             if not isinstance(edits, list):
@@ -184,6 +199,17 @@ class Tool(BaseTool):
                     # Validate file and get content
                     abs_path, rel_path, original_content = validate_file_for_edit(
                         coder, file_path_key
+                    )
+
+                    if abs_path:
+                        coder.file_read_cache.discard(abs_path)
+
+                    # Build HashPos index once per file for @L{num} resolution
+                    hp = HashPos(original_content or "")
+                    source_lines = (
+                        original_content.splitlines()
+                        if original_content and original_content.strip()
+                        else []
                     )
 
                     # Process all edits for this file using batch operations
@@ -218,11 +244,22 @@ class Tool(BaseTool):
                                 edit_start_line = "@000"
                                 edit_end_line = "@000"
 
-                            # 3. Auto-sanitize malformed boundaries (strip accidentally appended code)
-                            if isinstance(edit_start_line, str) and "::" in edit_start_line:
-                                edit_start_line = normalize_hashline(edit_start_line)
-                            if isinstance(edit_end_line, str) and "::" in edit_end_line:
-                                edit_end_line = normalize_hashline(edit_end_line)
+                            # Resolve @L{num} notation directly to content ID
+                            edit_start_line = cls._resolve_at_l_num(
+                                edit_start_line, hp, source_lines, file_path_key
+                            )
+                            edit_end_line = cls._resolve_at_l_num(
+                                edit_end_line, hp, source_lines, file_path_key
+                            )
+
+                            # Strip virtual prefixes from ReadFile output lines
+                            edit_start_line = cls._strip_readfile_prefix(edit_start_line)
+                            edit_end_line = cls._strip_readfile_prefix(edit_end_line)
+
+                            # Resolve remaining non-hashline content values to content IDs
+                            edit_start_line, edit_end_line = resolve_content_to_hashline_ids(
+                                original_content, edit_start_line, edit_end_line
+                            )
 
                             # ---------------------------------------------------------
 
@@ -234,11 +271,6 @@ class Tool(BaseTool):
                                     edit_file = strip_hashline(edit_file)
 
                             edit_file = edit_file_raw
-
-                            # Try to resolve line content values to content IDs
-                            edit_start_line, edit_end_line = resolve_content_to_hashline_ids(
-                                original_content, edit_start_line, edit_end_line
-                            )
 
                             # Validate required fields based on operation type
                             # (Note: The check for 'edit_file is None' will now be safely
@@ -397,21 +429,19 @@ class Tool(BaseTool):
             # If dry run, return all results
             if dry_run:
                 dry_run_messages = "\n".join(r.get("dry_run_message", "") for r in all_results)
-                return format_tool_result(
-                    coder,
-                    tool_name,
-                    "",
-                    dry_run=True,
-                    dry_run_message=dry_run_messages or "Dry run: No changes would be made",
-                )
+                response.append_result(dry_run_messages or "Dry run: No changes would be made")
+                return response
 
             # 4. Check if any edits succeeded overall
             if total_successful_edits == 0:
                 coder.edit_allowed = True
                 error_msg = "No edits were successfully applied:\n" + "\n".join(all_failed_edits)
+                response.append_error(all_failed_edits)
                 raise ToolError(error_msg)
 
             # 5. Format and return result
+
+            cls.clear_invocation_cache()
 
             if files_processed == 1:
                 # Single file case
@@ -421,35 +451,47 @@ class Tool(BaseTool):
                 )
                 if result["failed_edits"]:
                     success_message += f" ({len(result['failed_edits'])} failed)"
-                    # Include failed edit details in message to LLM
                     success_message += "\nFailed edits:\n" + "\n".join(result["failed_edits"])
-                change_id_to_return = result.get("change_id")
-            else:
-                # Multiple files case
-                success_message = (
-                    f"Applied {total_successful_edits} edits across {files_processed} files"
+
+                response.append_result(
+                    content=f"\u2713 {success_message}",
+                    metadata={
+                        "change_id": result.get("change_id"),
+                        "file_path": result.get("file_path"),
+                        "successful_edits": result.get("successful_edits"),
+                        "failed_edits": result.get("failed_edits", []),
+                    },
                 )
-                if all_failed_edits:
-                    success_message += f" ({len(all_failed_edits)} failed)"
-                    # Include failed edit details in message to LLM
-                    success_message += "\nFailed edits:\n" + "\n".join(all_failed_edits)
-                change_id_to_return = None  # Multiple change IDs, can't return single one
+            else:
+                # Multiple files case — append per-file structured results
+                for result in all_results:
+                    per_file_message = (
+                        f"Applied {result['successful_edits']} edits in {result['file_path']}"
+                    )
+                    if result["failed_edits"]:
+                        per_file_message += f" ({len(result['failed_edits'])} failed)"
+                        per_file_message += "\nFailed edits:\n" + "\n".join(result["failed_edits"])
 
-            cls.clear_invocation_cache()
+                    response.append_result(
+                        content=f"\u2713 {per_file_message}",
+                        metadata={
+                            "change_id": result.get("change_id"),
+                            "file_path": result.get("file_path"),
+                            "successful_edits": result.get("successful_edits"),
+                            "failed_edits": result.get("failed_edits", []),
+                        },
+                    )
 
-            return format_tool_result(
-                coder,
-                tool_name,
-                success_message,
-                change_id=change_id_to_return,
-            )
+            return response
 
         except ToolError as e:
             coder.edit_allowed = False
-            return handle_tool_error(coder, tool_name, e, add_traceback=False)
+            response.append_error(str(e))
+            return response
         except Exception as e:
             coder.edit_allowed = False
-            return handle_tool_error(coder, tool_name, e)
+            response.append_error(str(e))
+            return response
 
     @classmethod
     def format_output(cls, coder, mcp_server, tool_response):
@@ -535,6 +577,28 @@ class Tool(BaseTool):
                         coder.io.tool_output("")
 
         tool_footer(coder=coder, tool_response=tool_response, params=params)
+
+    @classmethod
+    def _resolve_at_l_num(cls, line_spec, hp, source_lines, file_path):
+        """Resolve @L{num} notation to a content ID using a pre-built HashPos index.
+
+        Returns the input unchanged if it's not an @L{num} spec.
+        Raises ToolError if the line number is out of range.
+        """
+
+        from cecli.tools.utils.helpers import ToolError
+
+        try:
+            return resolve_at_l(line_spec, hp, source_lines)
+
+        except ValueError as e:
+            raise ToolError(str(e)) from e
+
+    @staticmethod
+    def _strip_readfile_prefix(value):
+        """Strip the virtual prefix from a ReadFile output line reference."""
+
+        return strip_hashline_prefix(value)
 
     @classmethod
     def _categorize_edit_error(cls, error_msg: str) -> str:

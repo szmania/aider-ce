@@ -91,7 +91,9 @@ class McpServer:
 
         command = self.config["command"]
 
-        env = {**os.environ, **self.config["env"]} if self.config.get("env") else None
+        env = os.environ.copy()
+        if self.config.get("env"):
+            env.update(self.config["env"])
 
         server_params = StdioServerParameters(
             command=command,

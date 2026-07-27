@@ -767,6 +767,8 @@ class BackgroundCommandManager:
         Returns:
             Tuple of (folder path, rel file paths list, alias paths list), or None if output fits in one page.
         """
+        import math
+
         if not output or len(output) <= page_size:
             return None
 
@@ -774,7 +776,7 @@ class BackgroundCommandManager:
         abs_folder = abs_root_path_func(folder_path)
         os.makedirs(abs_folder, exist_ok=True)
 
-        num_pages = (len(output) + page_size - 1) // page_size
+        num_pages = math.ceil((len(output) + page_size - 1) // page_size)
 
         for i in range(num_pages):
             page_num = i + 1

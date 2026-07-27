@@ -15,10 +15,11 @@ except ImportError:
 import xxhash
 
 from cecli.helpers.background_commands import BackgroundCommandManager
-from cecli.run_cmd import run_cmd_subprocess
+from cecli.run_cmd import run_cmd, run_cmd_subprocess
 from cecli.tools.utils.base_tool import BaseTool
 from cecli.tools.utils.helpers import ToolError
 from cecli.tools.utils.output import color_markers, tool_footer, tool_header
+from cecli.tools.utils.responses import ToolResponse
 from cecli.tools.validations import ToolValidations
 
 
@@ -77,6 +78,23 @@ class Tool(BaseTool):
                         ),
                         "default": False,
                     },
+                    "user_input_required": {
+                        "type": "boolean",
+                        "description": (
+                            "When True, runs the command interactively using a "
+                            "pseudo-terminal (PTY), allowing the user to provide "
+                            "inputs like passwords or navigate terminal interfaces. "
+                            "Handles TUI suspension automatically."
+                        ),
+                        "default": False,
+                    },
+                    "timeout": {
+                        "type": "integer",
+                        "description": (
+                            "Timeout in seconds for command execution. " "Default is 30 seconds."
+                        ),
+                        "default": 30,
+                    },
                 },
                 "required": [],
             },
@@ -102,43 +120,62 @@ class Tool(BaseTool):
         action=None,
         stdin=None,
         pty=False,
+        user_input_required=False,
+        timeout=0,
         **kwargs,
     ):
         """
         Execute a shell command or interact with background processes.
 
         For new commands: provide 'command' (and optionally 'background', 'stdin', 'pty').
+        When 'user_input_required' is True, runs the command interactively using a
+        pseudo-terminal (PTY), allowing the user to provide inputs like passwords
+        or navigate terminal interfaces.
         For background interactions: provide 'background_key' + 'action' (stdin/stop).
 
-        Commands run with timeout based on agent_config['command_timeout'] (default: 30 seconds).
+        Commands run with timeout from agent_config['command_timeout'] (default: 30 seconds),
         """
+        response = ToolResponse(
+            "command",
+            result_type=cls.RESULT_TYPE if hasattr(cls, "RESULT_TYPE") else "str",
+        )
         # Handle interactions with an existing background command
         if background_key:
             if action == "stdin":
                 if not stdin:
-                    return "Error: 'stdin' is required when action='stdin'."
+                    response.append_error("'stdin' is required when action='stdin'.")
+                    return response
                 cls.clear_invocation_cache()
                 success = BackgroundCommandManager.send_command_input(background_key, stdin)
                 if success:
-                    return f"Sent input to background command {background_key}: {stdin}"
+                    response.append_result(
+                        f"Sent input to background command {background_key}: {stdin}"
+                    )
+                    return response
                 else:
-                    return f"Error: Background command {background_key} not found or not running."
+                    response.append_error(
+                        f"Background command {background_key} not found or not running."
+                    )
+                    return response
 
             elif action == "stop":
                 return await cls._stop_background_command(coder, background_key)
 
             else:
-                return f"Error: Unknown action '{action}'. " "Use one of: stdin, stop."
+                response.append_error(f"Unknown action '{action}'. Use one of: stdin, stop.")
+                return response
 
         if not command:
-            return "Error: 'command' must be provided."
+            response.append_error("'command' must be provided.")
+            return response
 
         # Check for implicit background (trailing & on Linux)
         if ".cecli/agents" in command:
-            return (
-                "Error: Do not attempt to access internal files with "
+            response.append_error(
+                "Do not attempt to access internal files with "
                 "standard cli tools. Please use the tools you have been provided."
             )
+            return response
 
         if not background and command.strip().endswith("&"):
             background = True
@@ -147,16 +184,24 @@ class Tool(BaseTool):
         # Get user confirmation
         confirmed = await cls._get_confirmation(coder, command, background)
         if not confirmed:
-            return "Command execution skipped by user."
+            response.append_result("Command execution skipped by user.")
+            return response
 
         command = coder.format_command_with_prefix(command)
 
-        # Determine timeout from agent_config (default: 30 seconds)
-        timeout = 0
+        # Determine timeout from agent_config (default: 30 seconds) as fallback
+        config_timeout = 0
         if hasattr(coder, "agent_config"):
-            timeout = coder.agent_config.get("command_timeout", 30)
+            config_timeout = coder.agent_config.get("command_timeout", 30)
+        # Use LLM-specified timeout if provided, otherwise fallback to config
+        if timeout == 0:
+            timeout = config_timeout
+        # Clamp LLM timeout between config_timeout (minimum) and max(300, config_timeout) (maximum)
+        timeout = max(config_timeout, min(timeout, max(300, config_timeout)))
 
-        if background:
+        if user_input_required:
+            return await cls._execute_interactive(coder, command)
+        elif background:
             return await cls._execute_background(coder, command, use_pty=pty, stdin=stdin)
         elif timeout > 0:
             return await cls._execute_with_timeout(coder, command, timeout, use_pty=pty)
@@ -240,11 +285,13 @@ class Tool(BaseTool):
         if stdin:
             BackgroundCommandManager.send_command_input(command_key, stdin)
 
-        return (
+        response = ToolResponse(cls.NORM_NAME)
+        response.append_result(
             f"Background command started: {command_string}\n"
             f"Command key: {command_key}\n"
             "Output will be injected into chat stream."
         )
+        return response
 
     @classmethod
     async def _execute_with_timeout(cls, coder, command_string, timeout, use_pty=None):
@@ -260,6 +307,8 @@ class Tool(BaseTool):
         import time
 
         from cecli.helpers.background_commands import CircularBuffer
+
+        response = ToolResponse(cls.NORM_NAME)
 
         coder.io.tool_output(
             f"⛭ Executing shell command with {timeout}s timeout.", type="tool-result"
@@ -342,7 +391,8 @@ class Tool(BaseTool):
                 except subprocess.TimeoutExpired:
                     process.kill()
                 BackgroundCommandManager.stop_background_command(command_key)
-                return "Command execution interrupted by user."
+                response.append_result("Command execution interrupted by user.")
+                return response
 
             # Check if process has completed
             exit_code = process.poll()
@@ -353,7 +403,7 @@ class Tool(BaseTool):
                 # Format output
                 output_content = output or ""
                 # Tokens are roughly 3-4 characters
-                output_limit = coder.large_file_token_threshold * 3.5
+                output_limit = int(coder.large_file_token_threshold * 3.5)
 
                 if coder.context_management_enabled and len(output_content) > output_limit * 1.25:
                     # Save full output to paginated files instead of truncating
@@ -387,15 +437,17 @@ class Tool(BaseTool):
                     coder.io.tool_output(output_content, type="tool-result")
 
                 if exit_code == 0:
-                    return (
+                    response.append_result(
                         f"Shell command completed within {timeout}s timeout (exit code 0)."
                         f" Output:\n{output_content}"
                     )
+                    return response
                 else:
-                    return (
+                    response.append_result(
                         f"Shell command completed within {timeout}s timeout with exit code"
                         f" {exit_code}. Output:\n{output_content}"
                     )
+                    return response
 
             # Check if timeout has expired
             elapsed = time.time() - start_time
@@ -409,11 +461,12 @@ class Tool(BaseTool):
                 # Get any output captured so far
                 current_output = buffer.get_all(clear=False)
 
-                return (
+                response.append_result(
                     f"Command exceeded {timeout}s timeout and is continuing in background.\n"
                     f"Command key: {command_key}\n"
                     f"Output captured so far:\n{current_output}\n"
                 )
+                return response
 
             # Wait a bit before checking again
             await asyncio.sleep(1)
@@ -423,6 +476,7 @@ class Tool(BaseTool):
         """
         Execute command in foreground (blocking).
         """
+        response = ToolResponse(cls.NORM_NAME)
         should_print = True
         tui = None
         if coder.tui and coder.tui():
@@ -470,9 +524,85 @@ class Tool(BaseTool):
             coder.io.tool_output(output_content, type="tool-result")
 
         if exit_status == 0:
-            return f"Shell command executed successfully (exit code 0). Output:\n{output_content}"
+            response.append_result(
+                f"Shell command executed successfully (exit code 0). Output:\n{output_content}"
+            )
+            return response
         else:
-            return f"Shell command failed with exit code {exit_status}. Output:\n{output_content}"
+            response.append_result(
+                f"Shell command failed with exit code {exit_status}. Output:\n{output_content}"
+            )
+            return response
+
+    @classmethod
+    async def _execute_interactive(cls, coder, command_string):
+        """
+        Execute command interactively, allowing the user to provide inputs
+        like passwords or navigate terminal interfaces.
+        Handles TUI suspension automatically.
+        """
+        import asyncio
+
+        response = ToolResponse(cls.NORM_NAME)
+
+        coder.io.tool_output(
+            f"\u26ed Starting interactive shell command: {command_string}", type="tool-result"
+        )
+
+        tui = coder.tui() if coder.tui else None
+
+        def _run_interactive():
+            return run_cmd(
+                command_string,
+                verbose=coder.verbose,
+                error_print=coder.io.tool_error,
+                cwd=coder.root,
+                should_print=True,
+            )
+
+        if tui:
+            coder.io.tool_output(
+                ">>> Suspending TUI for interactive command <<<", type="tool-result"
+            )
+            exit_status, combined_output = tui.run_obstructive(_run_interactive)
+        else:
+            coder.io.tool_output(
+                ">>> You may need to interact with the command below <<<", type="tool-result"
+            )
+            coder.io.tool_output(" \n")
+            await coder.io.stop_input_task()
+            await asyncio.sleep(1)
+            exit_status, combined_output = _run_interactive()
+            await asyncio.sleep(1)
+            coder.io.tool_output(" \n", type="tool-result")
+            coder.io.tool_output(" \n", type="tool-result")
+
+        coder.io.tool_output(">>> Interactive command finished <<<", type="tool-result")
+
+        # Format the output for the result message, include more content
+        output_content = combined_output or ""
+        output_limit = coder.large_file_token_threshold
+        if coder.context_management_enabled and len(output_content) > output_limit:
+            output_content = (
+                output_content[:output_limit]
+                + f"\n... (output truncated at {output_limit} characters, based on"
+                " large_file_token_threshold)"
+            )
+
+        cls.clear_invocation_cache()
+
+        if exit_status == 0:
+            response.append_result(
+                "Interactive command finished successfully (exit code 0)."
+                f" Output:\n{output_content}"
+            )
+            return response
+        else:
+            response.append_result(
+                f"Interactive command finished with exit code {exit_status}."
+                f" Output:\n{output_content}"
+            )
+            return response
 
     @classmethod
     async def _stop_background_command(cls, coder, command_key):
@@ -482,19 +612,25 @@ class Tool(BaseTool):
         success, output, exit_code = BackgroundCommandManager.stop_background_command(command_key)
 
         if success:
-            return (
+            response = ToolResponse(cls.NORM_NAME)
+            response.append_result(
                 f"Background command stopped: {command_key}\n"
                 f"Exit code: {exit_code}\n"
                 f"Final output:\n{output}"
             )
+            return response
         else:
-            return output  # Error message from manager
+            response = ToolResponse(cls.NORM_NAME)
+            response.append_result(output)
+            return response
 
     @classmethod
     async def _handle_errors(cls, coder, command_string, e):
         """Handle errors during command execution."""
         coder.io.tool_error(f"Error executing shell command: {str(e)}")
-        return f"Error executing command: {str(e)}"
+        response = ToolResponse(cls.NORM_NAME)
+        response.append_error(f"Error executing command: {str(e)}")
+        return response
 
     @classmethod
     def format_output(cls, coder, mcp_server, tool_response):
@@ -518,6 +654,10 @@ class Tool(BaseTool):
         action = params.get("action")
         stdin = params.get("stdin")
         pty = params.get("pty", False)
+        timeout = params.get("timeout", 30)
+        user_input_required = params.get("user_input_required", False)
+
+        coder.io.tool_output("")
 
         coder.io.tool_output("")
 
@@ -529,6 +669,10 @@ class Tool(BaseTool):
             extras.append(f"action={action}")
         if pty:
             extras.append("pty=True")
+        if timeout != 30:
+            extras.append(f"timeout={timeout}s")
+        if user_input_required:
+            extras.append("user_input_required=True")
 
         if extras:
             coder.io.tool_output(f"{color_start}Options:{color_end} {', '.join(extras)}")

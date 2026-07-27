@@ -149,7 +149,6 @@ class HookRegistry:
                             loaded_hooks.append(hook.name)
                         else:
                             print(f"Warning: Could not register hook '{hook.name}': {e}")
-                        print(f"Warning: Could not register hook '{hook.name}': {e}")
 
         return loaded_hooks
 

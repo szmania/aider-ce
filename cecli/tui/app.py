@@ -17,11 +17,11 @@ from textual.theme import Theme
 
 from cecli import __version__
 from cecli.editor import pipe_editor
+from cecli.helpers import queues
 from cecli.helpers.agents.service import AgentService
 from cecli.helpers.coroutines import is_active
 from cecli.helpers.file_system import FileSystemService
 from cecli.io import CommandCompletionException
-from cecli.tui.io import TextualInputOutput
 
 from .widgets import (
     CompletionBar,
@@ -44,6 +44,13 @@ class TUI(App):
     """Main Textual application for cecli TUI."""
 
     CSS_PATH = "styles.tcss"
+
+    # Enable Textual's global container text selection (Textual 8.2.0+)
+    # This allows users to click-and-drag to select text across mounted widget
+    # boundaries, which is essential since we use individual widget blocks
+    # instead of a monolithic RichLog.
+    ENABLE_SELECT_AUTO_SCROLL = True
+    SELECT_AUTO_SCROLL_SPEED = 20
 
     BINDINGS = [
         # Binding("ctrl+c", "quit", "Quit", show=True),
@@ -95,6 +102,8 @@ class TUI(App):
             variables={
                 "input-cursor-foreground": colors.get("input-cursor-foreground", "#00ff87"),
                 "input-cursor-text-style": other.get("input-cursor-text-style", "underline"),
+                "screen-selection-background": colors.get("background", "#1e1e1e"),
+                "screen-selection-foreground": colors.get("success", "#00aa00"),
             },
         )
 
@@ -241,6 +250,8 @@ class TUI(App):
             "variables": {
                 "input-cursor-foreground": "#00ff87",
                 "input-cursor-text-style": "underline",
+                "screen-selection-background": "#1e1e1e",
+                "screen-selection-foreground": "#00ff87",
             },
         }
 
@@ -916,8 +927,8 @@ class TUI(App):
                 else None
             )
             # Route to per-coder queue when available
-            if coder_uuid and coder_uuid in TextualInputOutput._per_coder_queues:
-                TextualInputOutput._per_coder_queues[coder_uuid].put(
+            if coder_uuid and coder_uuid in queues._per_coder_queues:
+                queues._per_coder_queues[coder_uuid].put(
                     {"text": user_input, "coder_uuid": coder_uuid}
                 )
             else:
@@ -958,11 +969,10 @@ class TUI(App):
         output_container.action_page_down()
 
     def action_interrupt(self):
-        """Interrupt the current task.
-
-        Resolves the foreground coder (primary or sub-agent) so the interrupt
-        targets whichever agent is currently active in the TUI.
         """
+        Interrupt the current task, or copy selected text to clipboard.
+        """
+
         # Determine which coder is in the foreground
         coder = self.worker.coder if self.worker else None
         if coder:
@@ -1250,6 +1260,19 @@ class TUI(App):
 
         return self.query_one("#output", OutputContainer)
 
+    def get_selected_log_text(self) -> str | None:
+        """Get selected text from the visible output container or screen."""
+        output_container = self._get_visible_container()
+        return output_container.get_selected_text()
+
+    def copy_selected_log_text(self):
+        output_container = self._get_visible_container()
+        output_container.get_selected_text(copy=True)
+
+    def clear_selected_log_text(self):
+        output_container = self._get_visible_container()
+        output_container.clear_selection()
+
     def _get_visible_coder(self):
         """Return the currently visible coder (foreground or primary)."""
         from cecli.helpers.agents.service import AgentService
@@ -1327,8 +1350,8 @@ class TUI(App):
 
         coder_uuid = self._confirmation_coder_uuid
         # Route to per-coder queue when available
-        if coder_uuid and coder_uuid in TextualInputOutput._per_coder_queues:
-            TextualInputOutput._per_coder_queues[coder_uuid].put(
+        if coder_uuid and coder_uuid in queues._per_coder_queues:
+            queues._per_coder_queues[coder_uuid].put(
                 {"confirmed": message.result, "coder_uuid": coder_uuid}
             )
         else:
@@ -1742,6 +1765,40 @@ class TUI(App):
         input_area.focus()
 
 
+def patch_color_name_to_rgb():
+    """Inject Rich 256-color names into Textual's COLOR_NAME_TO_RGB dict.
+
+    Textual's COLOR_NAME_TO_RGB only knows ANSI-16 + CSS named colors.
+    Rich's 256-color names (spring_green2, bright_cyan, etc.) are parsed
+    correctly by Content.from_markup() but silently dropped at render time
+    because Color.parse() doesn't recognize them.
+
+    This patch resolves every Rich color name to its truecolor RGB via
+    RichStyle.parse() and adds it to the dict, making all Rich color names
+    work natively in Textual's Static widgets.
+    """
+    from rich.color import ANSI_COLOR_NAMES
+    from rich.style import Style as RichStyle
+    from textual._color_constants import COLOR_NAME_TO_RGB
+
+    added = 0
+    for name in ANSI_COLOR_NAMES:
+        if name in COLOR_NAME_TO_RGB:
+            continue
+        try:
+            style = RichStyle.parse(name)
+        except Exception:
+            continue
+        if style.color is None or style.color.type is None:
+            continue
+        triplet = style.color.get_truecolor()
+        if triplet is not None:
+            COLOR_NAME_TO_RGB[name] = (triplet.red, triplet.green, triplet.blue)
+            added += 1
+
+    return added
+
+
 def patch_textual_strip_render_with_cache():
     # 1. Define the logic
     def modified_render_ansi(cls, style: Style, color_system: ColorSystem) -> str:
@@ -1774,5 +1831,6 @@ def patch_textual_strip_render_with_cache():
     textual.strip.Strip.render_ansi = classmethod(cached_version)
 
 
-# Execute the patch
+# Execute the patches
+patch_color_name_to_rgb()
 # patch_textual_strip_render_with_cache()

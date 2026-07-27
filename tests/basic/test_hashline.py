@@ -15,14 +15,12 @@ def test_hashline_basic():
     lines = result.splitlines()
     assert len(lines) == 3
 
-    # Check each line has the format "{variable-length-hash}::content" (HashPos format)
+    # Check each line has HashPos format: unique lines use —— prefix, duplicates use —4char—
     for i, line in enumerate(lines, start=1):
-        # Format should be "{hash}::content"
-        assert "::" in line
-        # Extract hash fragment (everything before "::")
-        hash_fragment = line.split("::", 1)[0]
-        # Check hash fragment is between 3 and 6 chars (3 encoded bytes)
-        assert 3 <= len(hash_fragment) <= 6
+        # Unique lines should use —— prefix
+        assert line.startswith("——"), f"Line {i} should have —— prefix but got: {line!r}"
+        hash_fragment = line[:2]
+        assert hash_fragment == "——"
 
 
 def test_hashline_with_start_line():
@@ -32,15 +30,12 @@ def test_hashline_with_start_line():
 
     lines = result.splitlines()
     assert len(lines) == 2
-    # Check format is {variable-length-hash}::content (HashPos format)
-    # Note: start_line parameter is ignored by HashPos but kept for compatibility
+    # Check format is HashPos format (start_line is ignored by HashPos)
     for line in lines:
-        # Format should be "{hash}::content"
-        assert "::" in line
-        # Extract hash fragment (everything before "::")
-        hash_fragment = line.split("::", 1)[0]
-        # Check hash fragment is between 3 and 6 chars (3 encoded bytes)
-        assert 3 <= len(hash_fragment) <= 6
+        # Unique lines should use —— prefix
+        assert line.startswith("——"), f"Expected —— prefix but got: {line!r}"
+        hash_fragment = line[:2]
+        assert hash_fragment == "——"
     """Test hashline with empty string."""
     result = hashline("")
     assert result == ""
@@ -52,13 +47,12 @@ def test_hashline_single_line():
     result = hashline(text)
     lines = result.splitlines()
     assert len(lines) == 1
-    # Check format is {variable-length-hash}::content (HashPos format)
+    # Check format is HashPos format: ——content (unique) or —4char—content (duplicate)
     line = lines[0]
-    assert "::" in line
-    # Extract hash fragment (everything before "::")
-    hash_fragment = line.split("::", 1)[0]
-    # Check hash fragment is between 3 and 6 chars (3 encoded bytes)
-    assert 3 <= len(hash_fragment) <= 6
+    # Unique line should use —— prefix
+    assert line.startswith("——"), f"Expected —— prefix but got: {line!r}"
+    hash_fragment = line[:2]
+    assert hash_fragment == "——"
 
 
 def test_hashline_preserves_newlines():
@@ -69,20 +63,20 @@ def test_hashline_preserves_newlines():
     # The result should have hashes on each line but no trailing newline
     lines = result.splitlines()
     assert len(lines) == 2
-    # Check each line has the correct format
+    # Check each line has HashPos format
     for line in lines:
-        assert "::" in line
-        # Extract hash fragment (everything before "::")
-        hash_fragment = line.split("::", 1)[0]
-        assert 3 <= len(hash_fragment) <= 6
+        # Unique lines should use —— prefix
+        assert line.startswith("——"), f"Expected —— prefix but got: {line!r}"
+        hash_fragment = line[:2]
+        assert hash_fragment == "——"
     # HashPos doesn't preserve trailing newlines in the formatted output
     # The splitlines() above verifies we have the right number of lines
 
 
 def test_strip_hashline_basic():
     """Test basic strip_hashline functionality."""
-    # Create a hashline-formatted text with correct HashPos format: {variable-length-hash}::content
-    text = "abc::Hello\nbad::World\n1a2::Test"
+    # Create a hashline-formatted text with HashPos format
+    text = "——Hello\n——World\n——Test"
     stripped = strip_hashline(text)
     assert stripped == "Hello\nWorld\nTest"
 
@@ -91,24 +85,25 @@ def test_strip_hashline_with_negative_line_numbers():
     """Test strip_hashline with negative line numbers."""
     # HashPos format doesn't support negative line numbers in the prefix
     # Test with standard HashPos format
-    text = "abc::Hello\nbad::World\n1a2::Test"
+    # HashPos format: ——content (unique) or —4char—content (duplicate)
+    text = "——Hello\n——World\n——Test"
     stripped = strip_hashline(text)
     assert stripped == "Hello\nWorld\nTest"
 
 
 def test_strip_hashline_mixed_lines():
     """Test strip_hashline with mixed hashline and non-hashline lines."""
-    # HashPos format: {variable-length-hash}::content
+    # HashPos format: ——content (unique) or —4char—content (duplicate)
     # Plain lines without hashes should be left unchanged
-    text = "abc::Hello\nPlain line\nbad::World"
+    text = "——Hello\nPlain line\n——World"
     stripped = strip_hashline(text)
     assert stripped == "Hello\nPlain line\nWorld"
 
 
 def test_strip_hashline_preserves_newlines():
     """Test that strip_hashline preserves newline characters."""
-    # HashPos format: {variable-length-hash}::content
-    text = "abc::Line 1\nbad::Line 2\n"
+    # HashPos format: ——content (unique) or —4char—content (duplicate)
+    text = "——Line 1\n——Line 2\n"
     stripped = strip_hashline(text)
     # strip_hashline should preserve newlines
     assert stripped == "Line 1\nLine 2\n"
@@ -158,14 +153,14 @@ def test_hashline_different_inputs():
 def test_parse_hashline():
     """Test parse_hashline function."""
     # Test basic parsing (HashPos format)
-    hash_fragment, line_num_str, line_num = parse_hashline("abc")
-    assert hash_fragment == "abc"
+    hash_fragment, line_num_str, line_num = parse_hashline("—0abc—")
+    assert hash_fragment == "—0abc—"
     assert line_num_str is None  # HashPos doesn't include line numbers
     assert line_num is None
 
     # Test with content after hash
-    hash_fragment, line_num_str, line_num = parse_hashline("bad::Hello World")
-    assert hash_fragment == "bad"
+    hash_fragment, line_num_str, line_num = parse_hashline("—bad1—Hello World")
+    assert hash_fragment == "—bad1—"
     assert line_num_str is None
     assert line_num is None
 

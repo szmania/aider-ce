@@ -19,7 +19,7 @@ class ToolRegistry:
     """Registry for tool discovery and management."""
 
     _tools: Dict[str, Type] = {}  # normalized name -> Tool class
-    _essential_tools: Set[str] = {"resourcemanager", "editfile", "yield"}
+    _essential_tools: Set[str] = {"yield"}
     _registry: Dict[str, Type] = {}  # cached filtered registry
     loaded_custom_tools: List[str] = []
 
@@ -140,10 +140,19 @@ class ToolRegistry:
         # Build the final registry from the working set
         registry = {name: cls._tools[name] for name in working_set if name in cls._tools}
 
-        # Store the built registry in the class attribute
-        cls._registry = registry
-        cls.loaded_custom_tools = loaded_custom_tools
+        # Union into the class-level registry so tools from every agent's
+        # config accumulate.  Per-instance filtering happens later in
+        # get_tool_list() via self.registered_tools.
+        cls._registry.update(registry)
+        for tool_name in loaded_custom_tools:
+            if tool_name not in cls.loaded_custom_tools:
+                cls.loaded_custom_tools.append(tool_name)
         return registry
+
+    @classmethod
+    def get_essential_tools(cls) -> Set[str]:
+        """Return the set of essential tool names that must never be filtered."""
+        return cls._essential_tools.copy()
 
     @classmethod
     def get_registered_tools(cls) -> List[str]:

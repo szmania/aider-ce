@@ -51,13 +51,12 @@ def test_dash_prefixed_pattern_is_searched_literally(search_term, tmp_path, monk
         ],
     )
 
-    import json
-
-    data = json.loads(result)
-    assert "operations" in data
-    assert len(data["operations"]) == 1
-    op = data["operations"][0]
-    assert op["pattern"] == search_term
-    assert op["error"] is None
-    assert "total_files" in op
+    response_dict = result.to_dict()
+    operations = response_dict["result"]
+    assert len(operations) == 1
+    op = operations[0]
+    assert op["_"]["pattern"] == search_term
+    assert op["_"]["error"] is None
+    assert "total_files" in op["_"]
+    assert isinstance(op["_"]["total_files"], int)
     coder.io.tool_error.assert_not_called()

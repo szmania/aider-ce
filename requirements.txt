@@ -31,11 +31,11 @@ attrs==25.4.0
     #   aiohttp
     #   jsonschema
     #   referencing
-backoff==2.2.1
+beautifulsoup4==4.14.2
     # via
     #   -c requirements/common-constraints.txt
     #   -r requirements/requirements.in
-beautifulsoup4==4.14.2
+blinker==1.9.0
     # via
     #   -c requirements/common-constraints.txt
     #   -r requirements/requirements.in
@@ -89,10 +89,6 @@ filelock==3.20.0
     # via
     #   -c requirements/common-constraints.txt
     #   huggingface-hub
-flake8==7.3.0
-    # via
-    #   -c requirements/common-constraints.txt
-    #   -r requirements/requirements.in
 frozenlist==1.8.0
     # via
     #   -c requirements/common-constraints.txt
@@ -165,10 +161,6 @@ json-repair==0.60.1
     # via
     #   -c requirements/common-constraints.txt
     #   -r requirements/requirements.in
-json5==0.12.1
-    # via
-    #   -c requirements/common-constraints.txt
-    #   -r requirements/requirements.in
 jsonschema==4.25.1
     # via
     #   -c requirements/common-constraints.txt
@@ -201,10 +193,6 @@ markupsafe==3.0.3
     # via
     #   -c requirements/common-constraints.txt
     #   jinja2
-mccabe==0.7.0
-    # via
-    #   -c requirements/common-constraints.txt
-    #   flake8
 mcp==1.25.0
     # via
     #   -c requirements/common-constraints.txt
@@ -290,10 +278,6 @@ py-cymbal==0.2.1
     # via
     #   -c requirements/common-constraints.txt
     #   -r requirements/requirements.in
-pycodestyle==2.14.0
-    # via
-    #   -c requirements/common-constraints.txt
-    #   flake8
 pycparser==2.23
     # via
     #   -c requirements/common-constraints.txt
@@ -317,10 +301,6 @@ pydub==0.25.1
     # via
     #   -c requirements/common-constraints.txt
     #   -r requirements/requirements.in
-pyflakes==3.4.0
-    # via
-    #   -c requirements/common-constraints.txt
-    #   flake8
 pygments==2.19.2
     # via
     #   -c requirements/common-constraints.txt
@@ -338,7 +318,7 @@ pyperclip==1.11.0
     # via
     #   -c requirements/common-constraints.txt
     #   -r requirements/requirements.in
-python-dotenv==1.2.1
+python-dotenv==1.2.2
     # via
     #   -c requirements/common-constraints.txt
     #   litellm
@@ -425,7 +405,7 @@ starlette==0.50.0
     # via
     #   -c requirements/common-constraints.txt
     #   mcp
-textual==6.8.0
+textual==8.2.8
     # via
     #   -c requirements/common-constraints.txt
     #   -r requirements/requirements.in
@@ -516,6 +496,10 @@ wcwidth==0.2.14
     # via
     #   -c requirements/common-constraints.txt
     #   prompt-toolkit
+websockets==16.1.1
+    # via
+    #   -c requirements/common-constraints.txt
+    #   -r requirements/requirements.in
 xxhash==3.6.0
     # via
     #   -c requirements/common-constraints.txt

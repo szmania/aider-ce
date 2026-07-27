@@ -11,7 +11,6 @@ import signal
 import subprocess
 import sys
 import time
-import webbrowser
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime
@@ -360,7 +359,7 @@ class InputOutput:
         encoding="utf-8",
         line_endings="platform",
         dry_run=False,
-        editingmode=EditingMode.EMACS,
+        editingmode="EMACS",
         fancy_input=True,
         file_watcher=None,
         multiline_mode=False,
@@ -526,10 +525,10 @@ class InputOutput:
                 "input": self.input,
                 "output": self.output,
                 "lexer": PygmentsLexer(MarkdownLexer),
-                "editing_mode": self.editingmode,
+                "editing_mode": EditingMode(self.editingmode),
                 "bottom_toolbar": self.get_bottom_toolbar,
             }
-            if self.editingmode == EditingMode.VI:
+            if self.editingmode == "VI":
                 session_kwargs["cursor"] = ModalCursorShapeConfig()
             if self.input_history_file is not None:
                 session_kwargs["history"] = FileHistory(self.input_history_file)
@@ -1235,6 +1234,8 @@ class InputOutput:
         self, url, prompt="Open URL for more info?", allow_never=True, acknowledge=False
     ):
         """Offer to open a URL in the browser, returns True if opened."""
+        import webbrowser
+
         if url in self.never_prompts:
             return False
         if await self.confirm_ask(
