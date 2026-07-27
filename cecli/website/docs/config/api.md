@@ -1,9 +1,10 @@
+---
 parent: Configuration
 nav_order: 42
 description: Pseudo-ACP (Agent Client Protocol) WebSocket API for connecting external tools and UIs to cecli's event stream.
 ---
 
-# WebSocket API
+# Agent Client Protocol (ACP)
 {: .no_toc }
 
 cecli includes an optional WebSocket server that broadcasts real-time events

@@ -4,7 +4,7 @@ nav_order: 45
 description: Agent Memory (a.k.a. persistent memory) is a SQLite-backed fact database that persists knowledge across sessions using a dedicated memorizer sub-agent.
 ---
 
-# Agent Memory (Persistent Memory)
+# Agent Memory
 
 Agent Memory — also referred to as *persistent memory* — gives cecli the ability to remember important facts about your project, preferences, and decisions **across sessions**. Rather than relying solely on the current conversation context, cecli can store structured facts in a local SQLite database and recall them when needed.
 
