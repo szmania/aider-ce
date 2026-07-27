@@ -1315,7 +1315,6 @@ class Model(ModelSettings):
 
         if self.debug:
             self._log_messages(messages)
-            kwargs["logger_fn"] = self._log_request
 
         kwargs["messages"] = messages
 
@@ -1381,6 +1380,9 @@ class Model(ModelSettings):
 
                 kwargs = deep_merge(kwargs, {"allowed_openai_params": ["tools", "tool_choice"]})
 
+                if self.debug:
+                    kwargs["logger_fn"] = self._log_request
+
                 completion_coro = litellm.acompletion(**kwargs)
                 res, interrupted = await coroutines.interruptible(completion_coro, interrupt_event)
                 if interrupted:
@@ -1428,6 +1430,12 @@ class Model(ModelSettings):
                 else:
                     await asyncio.sleep(retry_delay)
                 continue
+            except Exception as err:
+                if self.debug:
+                    import traceback
+
+                    traceback.print_exc()
+                raise err
 
     async def simple_send_with_retries(
         self,
