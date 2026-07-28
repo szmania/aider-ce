@@ -139,7 +139,7 @@ def load_mcp_oauth_tokens():
         return {}
 
     try:
-        with safe_open(token_file, "r", encoding="utf-8") as f:
+        with safe_open(token_file, "r") as f:
             # File might be empty
             return json.load(f) or {}
     except Exception:
@@ -153,7 +153,7 @@ def save_mcp_oauth_token(server_name, token_data):
 
     token_file = get_token_file_path()
     try:
-        with safe_open(token_file, "w", encoding="utf-8") as f:
+        with safe_open(token_file, "w") as f:
             json.dump(tokens, f, indent=2)
         # Set restrictive permissions (owner read/write only)
         os.chmod(token_file, 0o600)
@@ -165,7 +165,7 @@ def save_mcp_oauth_tokens(tokens_dict):
     """Save all OAuth tokens to file."""
     token_file = get_token_file_path()
     try:
-        with safe_open(token_file, "w", encoding="utf-8") as f:
+        with safe_open(token_file, "w") as f:
             json.dump(tokens_dict, f, indent=2)
         # Set restrictive permissions (owner read/write only)
         os.chmod(token_file, 0o600)

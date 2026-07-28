@@ -50,7 +50,7 @@ class PromptRegistry:
 
                 file_path = os.path.abspath(file_name)
                 if os.path.exists(file_path):
-                    with safe_open(file_path, "r", encoding="utf-8") as f:
+                    with safe_open(file_path, "r") as f:
                         file_content = f.read()
                     return yaml.safe_load(file_content) or {}
                 else:

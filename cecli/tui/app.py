@@ -1406,7 +1406,7 @@ class TUI(App):
 
         for fname in files_to_process:
             try:
-                with safe_open(fname, "r", encoding="utf-8", errors="ignore") as f:
+                with safe_open(fname, "r", errors="ignore") as f:
                     content = f.read()
 
                 lexer = guess_lexer_for_filename(fname, content)

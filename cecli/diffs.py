@@ -13,10 +13,10 @@ def main():
 
     file_orig, file_updated = sys.argv[1], sys.argv[2]
 
-    with safe_open(file_orig, "r", encoding="utf-8") as f:
+    with safe_open(file_orig, "r") as f:
         lines_orig = f.readlines()
 
-    with safe_open(file_updated, "r", encoding="utf-8") as f:
+    with safe_open(file_updated, "r") as f:
         lines_updated = f.readlines()
 
     for i in range(len(file_updated)):

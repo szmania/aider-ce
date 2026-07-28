@@ -411,7 +411,7 @@ class Tool(BaseTool):
             os.makedirs(os.path.dirname(abs_path), exist_ok=True)
 
             # Create an empty file
-            with safe_open(abs_path, "w", encoding="utf-8"):
+            with safe_open(abs_path, "w"):
                 pass
 
             # Add the file to editable context

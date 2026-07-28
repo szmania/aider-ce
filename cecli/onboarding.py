@@ -262,7 +262,7 @@ def start_openrouter_oauth_flow(io):
             config_dir = os.path.expanduser("~/.cecli")
             os.makedirs(config_dir, exist_ok=True)
             key_file = os.path.join(config_dir, "oauth-keys.env")
-            with safe_open(key_file, "a", encoding="utf-8") as f:
+            with safe_open(key_file, "a") as f:
                 f.write(f'OPENROUTER_API_KEY="{api_key}"\n')
             io.tool_warning("cecli will load the OpenRouter key automatically in future sessions.")
             io.tool_output()

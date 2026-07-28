@@ -81,7 +81,7 @@ def enumerate_files(fnames, spec, use_spec=False):
 
 def process_filename(filename, args):
     try:
-        with safe_open(filename, "r", encoding=args.encoding) as file:
+        with safe_open(filename, "r") as file:
             code = file.read()
     except UnicodeDecodeError:
         return

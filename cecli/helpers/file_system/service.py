@@ -268,7 +268,7 @@ class FileSystemService:
         if self.trie_index:
             self.trie_index.save(trie_path)
         if self.trigram_index:
-            with open(ngram_path, "wb") as f:
+            with safe_open(ngram_path, "wb") as f:
                 pickle.dump(self.trigram_index, f)
 
         # Store metadata for cache validation
@@ -310,7 +310,7 @@ class FileSystemService:
                 return False
 
             # Load ngram index
-            with open(ngram_path, "rb") as f:
+            with safe_open(ngram_path, "rb") as f:
                 self.trigram_index = pickle.load(f)
 
             # Check if cache is stale

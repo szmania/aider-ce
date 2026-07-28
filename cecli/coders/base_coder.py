@@ -1430,7 +1430,7 @@ class Coder(metaclass=UsageMeta):
             if not mime_type:
                 continue
 
-            with open(fname, "rb") as image_file:
+            with safe_open(fname, "rb") as image_file:
                 encoded_string = base64.b64encode(image_file.read()).decode("utf-8")
             image_url = f"data:{mime_type};base64,{encoded_string}"
             rel_fname = self.get_rel_fname(fname)

@@ -25,7 +25,7 @@ def load_and_apply_cecli_conf_files(
 
         for config_file in existing_cecli_conf:
             try:
-                with safe_open(config_file, "r", encoding="utf-8") as f:
+                with safe_open(config_file, "r") as f:
                     config_data = yaml.safe_load(f)
 
                     if isinstance(config_data, dict):
@@ -201,7 +201,7 @@ def read_and_merge_all_configs(
     for path in all_config_paths:
         if os.path.exists(path):
             try:
-                with safe_open(path, "r", encoding="utf-8") as f:
+                with safe_open(path, "r") as f:
                     data = yaml.safe_load(f)
 
                     if isinstance(data, dict):

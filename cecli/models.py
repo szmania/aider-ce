@@ -1543,7 +1543,7 @@ class Model(ModelSettings):
         os.makedirs(".cecli/logs/litellm", exist_ok=True)
         log_file_path = f".cecli/logs/litellm/request-{time.time()}.log"
 
-        with safe_open(log_file_path, "a", encoding="utf-8") as f:
+        with safe_open(log_file_path, "a") as f:
             json.dump(
                 model_call_dict,
                 f,

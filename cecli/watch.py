@@ -56,7 +56,7 @@ def load_gitignores(gitignore_paths: list[Path]) -> Optional[PathSpec]:
     for path in gitignore_paths:
         if path.exists():
             try:
-                with safe_open(path, "r", encoding="utf-8", errors="ignore") as f:
+                with safe_open(path, "r", errors="ignore") as f:
                     patterns.extend(f.readlines())
             except Exception:
                 pass  # Ignore files that can't be read

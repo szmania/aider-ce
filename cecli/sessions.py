@@ -203,7 +203,7 @@ class SessionManager:
                     return False
                 session_file.write_bytes(session_crypto.encrypt_session_dict(session_data, key))
             else:
-                with safe_open(session_file, "w", encoding="utf-8") as f:
+                with safe_open(session_file, "w") as f:
                     json.dump(session_data, f, indent=2)
             return True
         except session_crypto.SessionCryptoError as e:
