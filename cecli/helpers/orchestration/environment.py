@@ -427,7 +427,7 @@ class AgentExecutionEnv:
 
         return entries
 
-    async def execute(self, code_str: str) -> dict:
+    async def execute(self, code_str: str, values: dict | None = None) -> dict:
 
         code_str = code_str.strip()
         code_str = _escape_newlines_in_strings(code_str)
@@ -436,6 +436,14 @@ class AgentExecutionEnv:
         self.globals.update(extra_globals)
         if not code_str:
             return {"results": "", "state_variables": self._state_snapshot()}
+
+        injected_keys = []
+
+        if values:
+            for key, value in values.items():
+                var_name = f"_o_{key}"
+                self.globals[var_name] = value
+                injected_keys.append(var_name)
 
         captured_output: list[str] = []
 
@@ -515,6 +523,8 @@ class AgentExecutionEnv:
         finally:
             self.locals.pop("__agent_async_runner", None)
             self.globals["__builtins__"]["print"] = print
+            for key in injected_keys:
+                self.globals.pop(key, None)
             # Mutation tracking is handled automatically by TrackedDict
 
         return _build_result()
@@ -609,24 +619,6 @@ to extract specific fields by dot-path::
 Result list items are plain dicts — use item['content'] / item.get('content')
 and item['_'] / item.get('_') to access data and metadata respectively.
 
-### Creating New Files
-
-Use `ResourceManager` to create an empty file, then `EditFile` to write
-initial content (use `@000` for start/end on empty files)::
-
-    rm = Agent.get_tool("ResourceManager")
-    edit = Agent.get_tool("EditFile")
-
-    await rm.call(create=["path/to/new_file.py"])
-    await edit.call(edits=[{
-        "file_path": "path/to/new_file.py",
-        "operation": "replace",
-        "start_line": "@000",
-        "end_line": "@000",
-        "text": "def greet(name):\n    return f\"Hello, {name}!\"\n",
-    }])
-
-After creation, use `resolve_regions` and `edit_region` for targeted edits.
 
 ### Editing with Regions
 

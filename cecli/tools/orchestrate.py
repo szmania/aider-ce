@@ -35,6 +35,18 @@ class Tool(BaseTool):
                             "context block for available primitives and calling conventions."
                         ),
                     },
+                    "values": {
+                        "type": "object",
+                        "description": (
+                            "Optional key-value dictionary of variables to inject "
+                            "into the execution environment. Values must be strings "
+                            "or numbers. Each key is exposed as a global variable "
+                            "with the prefix '_o_' (e.g., '{\"file_content\": \"...\"}' "
+                            "becomes '_o_file_content' in the code). Non-string/number "
+                            "values are omitted with an error message."
+                            "This is useful especially for longer strings like file contents."
+                        ),
+                    },
                 },
                 "required": ["code"],
             },
@@ -42,14 +54,36 @@ class Tool(BaseTool):
     }
 
     @classmethod
-    async def execute(cls, coder, code, **kwargs):
+    async def execute(cls, coder, code, values=None, **kwargs):
         BaseTool.clear_invocation_cache()
         env = OrchestrationService.get_instance(coder)
-        result = await env.execute(code)
+
+        errors = []
+        sanitized = {}
+
+        if values and isinstance(values, dict):
+            for key, value in values.items():
+                if not isinstance(key, str):
+                    errors.append(f"Values key '{key}' is not a string, skipping.")
+                    continue
+
+                if isinstance(value, (int, float, str, bool)):
+                    sanitized[key] = value
+                else:
+                    errors.append(
+                        f"Value for '{key}' is not a string or number "
+                        f"(got {type(value).__name__}), skipping."
+                    )
+
+        result = await env.execute(code, values=sanitized)
         response = ToolResponse(cls.NORM_NAME, result_type="list")
         response.append_result(
             content=result["results"], metadata={"state_variables": result["state_variables"]}
         )
+
+        for error in errors:
+            response.append_error(error)
+
         return response
 
     @classmethod
