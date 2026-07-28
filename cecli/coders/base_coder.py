@@ -34,6 +34,7 @@ from uuid import uuid4 as generate_unique_id
 import cecli.prompts.utils.system as prompts
 from cecli import __version__, models, urls, utils
 from cecli.commands import Commands, SwitchCoderSignal
+from cecli.decoding import safe_open
 from cecli.exceptions import LiteLLMExceptions
 from cecli.helpers import command_parser, coroutines, nested, responses
 from cecli.helpers.conversation import ConversationService, MessageTag
@@ -3755,7 +3756,7 @@ class Coder(metaclass=UsageMeta):
                 completion, self.interrupt_event
             ):
                 if self.args.debug:
-                    with open(".cecli/logs/chunks.log", "a") as f:
+                    with safe_open(".cecli/logs/chunks.log", "a") as f:
                         print(chunk, file=f)
 
                 # Check if confirmation is in progress and wait if needed

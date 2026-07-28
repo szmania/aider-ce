@@ -7,6 +7,7 @@ from cecli.commands.utils.helpers import (
     iter_all_coders,
     update_server_registration,
 )
+from cecli.decoding import safe_open
 from cecli.helpers.background_commands import BackgroundCommandManager
 from cecli.tools.utils.base_tool import BaseTool
 from cecli.tools.utils.helpers import ToolError, parse_arg_as_list
@@ -410,7 +411,7 @@ class Tool(BaseTool):
             os.makedirs(os.path.dirname(abs_path), exist_ok=True)
 
             # Create an empty file
-            with open(abs_path, "w", encoding="utf-8"):
+            with safe_open(abs_path, "w", encoding="utf-8"):
                 pass
 
             # Add the file to editable context

@@ -2,6 +2,7 @@ import os
 from pathlib import Path
 from typing import Any, Dict
 
+from cecli.decoding import safe_open
 from cecli.helpers.monorepo.project import Project
 
 
@@ -39,7 +40,7 @@ class WorkspaceManager:
         import json
 
         metadata_path = self.path / ".cecli-workspace.json"
-        with open(metadata_path, "w") as f:
+        with safe_open(metadata_path, "w") as f:
             json.dump(self.config, f, indent=2)
 
     def get_working_directory(self) -> Path:

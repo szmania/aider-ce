@@ -15,6 +15,8 @@ from mcp.client.stdio import stdio_client
 from mcp.client.streamable_http import streamable_http_client
 from mcp.shared.auth import OAuthClientMetadata
 
+from cecli.decoding import safe_open
+
 from .oauth import (
     FileBasedTokenStorage,
     create_oauth_callback_server,
@@ -103,7 +105,7 @@ class McpServer:
 
         try:
             os.makedirs(".cecli/logs/", exist_ok=True)
-            with open(".cecli/logs/mcp-errors.log", "w") as err_file:
+            with safe_open(".cecli/logs/mcp-errors.log", "w") as err_file:
                 stdio_transport = await self.exit_stack.enter_async_context(
                     stdio_client(server_params, errlog=err_file)
                 )

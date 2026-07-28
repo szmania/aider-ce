@@ -41,6 +41,7 @@ from rich.style import Style as RichStyle
 from rich.text import Text
 
 from cecli.commands import SwitchCoderSignal
+from cecli.decoding import safe_open
 from cecli.helpers import coroutines
 from cecli.helpers.threading import ThreadSafeEvent
 from cecli.report import update_error_prefix
@@ -199,7 +200,7 @@ class AutoCompleter(Completer):
 
         for fname in process_fnames:
             try:
-                with open(fname, "r", encoding=self.encoding) as f:
+                with safe_open(fname, "r", encoding=self.encoding) as f:
                     content = f.read()
             except (FileNotFoundError, UnicodeDecodeError, IsADirectoryError):
                 continue
@@ -760,7 +761,7 @@ class InputOutput:
         delay = initial_delay
         for attempt in range(max_retries):
             try:
-                with open(str(filename), "w", encoding=self.encoding, newline=newline) as f:
+                with safe_open(str(filename), "w", encoding=self.encoding, newline=newline) as f:
                     f.write(content)
                 return  # Successfully wrote the file
             except PermissionError as err:
@@ -1224,7 +1225,7 @@ class InputOutput:
             editor = os.environ.get("EDITOR", "vi")
             subprocess.call([editor, tmpfile.name])
 
-        with open(tmpfile.name, "r", encoding=self.encoding) as f:
+        with safe_open(tmpfile.name, "r", encoding=self.encoding) as f:
             edited = f.read()
 
         os.unlink(tmpfile.name)

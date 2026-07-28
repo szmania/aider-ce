@@ -16,6 +16,7 @@ from textual.app import App, ComposeResult
 from textual.theme import Theme
 
 from cecli import __version__
+from cecli.decoding import safe_open
 from cecli.editor import pipe_editor
 from cecli.helpers import queues
 from cecli.helpers.agents.service import AgentService
@@ -1405,7 +1406,7 @@ class TUI(App):
 
         for fname in files_to_process:
             try:
-                with open(fname, "r", encoding="utf-8", errors="ignore") as f:
+                with safe_open(fname, "r", encoding="utf-8", errors="ignore") as f:
                     content = f.read()
 
                 lexer = guess_lexer_for_filename(fname, content)
