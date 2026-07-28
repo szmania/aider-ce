@@ -1454,6 +1454,7 @@ class AgentCoder(Coder):
         inp = self.wrap_user_input(inp)
 
         BaseTool.clear_invocation_cache()
+        ConversationService.get_chunks(self).reset_message_tracker()
         self.agent_finished = False
         self.turn_count = 0
         return inp

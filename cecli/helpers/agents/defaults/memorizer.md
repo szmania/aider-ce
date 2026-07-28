@@ -2,6 +2,7 @@
 name: memorizer
 description: A sub-agent charged with maintaining and interacting with a fact database about the project. Can be used for looking up known facts to aid with tasks.
 model: <weak_model>
+auto_reap: true
 agent-config:
   allow_orchestration: false
   tools_includelist:

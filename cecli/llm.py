@@ -101,6 +101,18 @@ class LazyLiteLLM:
 
             logging_worker.GLOBAL_LOGGING_WORKER = NoOpLoggingWorker()
 
+        # Patch Delta.__init__ to support 'reasoning_text' -> 'reasoning_content' mapping
+        _original_delta_init = self._lazy_module.types.utils.Delta.__init__
+
+        def _patched_delta_init(self_delta, *args, **kwargs):
+            # Intercept and map 'reasoning_text' to 'reasoning_content'
+            if kwargs.get("reasoning_content") is None and "reasoning_text" in kwargs:
+                kwargs["reasoning_content"] = kwargs.pop("reasoning_text", None)
+            # Pass the modified kwargs to the original __init__
+            _original_delta_init(self_delta, *args, **kwargs)
+
+        self._lazy_module.types.utils.Delta.__init__ = _patched_delta_init
+
 
 litellm = LazyLiteLLM()
 

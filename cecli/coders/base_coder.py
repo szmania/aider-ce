@@ -200,6 +200,7 @@ class Coder(metaclass=UsageMeta):
     max_reflections = 3
     num_tool_calls = 0
     max_tool_calls = 25
+    turn_count = 0
     edit_format = None
     file_diffs = True
     hashlines = False

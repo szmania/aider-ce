@@ -277,7 +277,6 @@ async def invoke_memorizer(
             name="memorizer",
             prompt=prompt,
             independent=True,
-            auto_reap=True,
         )
     except Exception:
         logger.debug("Failed to spawn memorizer sub-agent", exc_info=True)

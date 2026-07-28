@@ -20,6 +20,7 @@ class ConversationChunks:
         self.uuid = coder.uuid
         self.last_clear_count = 0
         self._deferred_removals = set()
+        self.message_tracker = dict()
 
     @classmethod
     def get_instance(cls, coder) -> "ConversationChunks":
@@ -976,10 +977,31 @@ class ConversationChunks:
     def reset_clear_count(self):
         self.last_clear_count = 0
 
+    def reset_message_tracker(self):
+        self.message_tracker = dict()
+
+    def update_message_tracker(self, coder, message_type="default"):
+        if coder.edit_format not in ("agent", "subagent"):
+            self.message_tracker[message_type] = coder.turn_count
+
+    def debounce_message_injection(self, coder, message_type="default", frequency=10):
+        if coder.edit_format not in ("agent", "subagent"):
+            return False
+
+        if not self.message_tracker.get(message_type):
+            return False
+
+        should_send = coder.turn_count - self.message_tracker[message_type] > frequency
+
+        return not should_send
+
     def _cancel_post_message_injections(self, modulus=10):
         coder = self.get_coder()
         if not coder:
             return False
+
+        if self.debounce_message_injection(coder):
+            return True
 
         # Add system reminder as a pre-prompt context block
         if coder.edit_format in ("agent", "subagent"):
@@ -992,10 +1014,12 @@ class ConversationChunks:
             if coder.turn_count % modulus != 0:
                 # and coder.turn_count % modulus != 0
                 if not coder.edit_allowed:
+                    self.update_message_tracker(coder)
                     return False
                 else:
                     return True
 
+        self.update_message_tracker(coder)
         return False
 
     def add_copy_paste_tool_instructions(self) -> None:

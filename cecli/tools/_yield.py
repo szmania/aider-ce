@@ -53,6 +53,7 @@ class Tool(BaseTool):
         response = ToolResponse(cls.NORM_NAME)
 
         if coder:
+            waited_for_sub_agents = False
             # Check for active child sub-agents and await their tasks before finishing
             try:
                 agent_service = AgentService.get_instance(coder)
@@ -67,6 +68,7 @@ class Tool(BaseTool):
                     coder.io.tool_warning(
                         f"Waiting for {len(active_tasks)} sub-agent(s) to complete before yielding..."
                     )
+                    waited_for_sub_agents = True
 
                     # Single asyncio.wait that includes both the sub-agent tasks and
                     # the interrupt event, avoiding nested asyncio.wait() calls.
@@ -180,7 +182,7 @@ class Tool(BaseTool):
             summary = kwargs.get("summary", None)
 
             # Fire memorizer with yield summary (skip if already a memorizer)
-            if getattr(coder, "auto_memory", False) and summary:
+            if not waited_for_sub_agents and getattr(coder, "auto_memory", False) and summary:
                 agent_service = AgentService.get_instance(coder)
                 if agent_service.get_agent_name(coder) != "memorizer":
                     from cecli.helpers.memory.utils import invoke_memorizer
