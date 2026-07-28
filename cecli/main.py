@@ -3,9 +3,28 @@ import sys
 
 try:
     if sys.platform == "win32":
-        sys.stdout.reconfigure(encoding="utf-8")
-        sys.stderr.reconfigure(encoding="utf-8")
-except Exception:
+        if sys.stdout is not None:
+            try:
+                sys.stdout.reconfigure(encoding="utf-8")
+            except AttributeError:
+                pass
+
+        if sys.stderr is not None:
+            try:
+                sys.stderr.reconfigure(encoding="utf-8")
+            except AttributeError:
+                pass
+
+        if sys.stdin is not None:
+            try:
+                sys.stdin.reconfigure(encoding="utf-8")
+            except AttributeError:
+                pass
+except AttributeError:
+    # Happens if streams were overridden by a test framework or GUI (e.g., pythonw.exe)
+    pass
+except sys.UnsupportedOperation:
+    # Happens in certain edge-case piping scenarios
     pass
 
 try:
