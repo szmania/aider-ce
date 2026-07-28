@@ -23,7 +23,9 @@ class Tool(BaseTool):
                 "other tools programmatically. Use this instead of making many "
                 "individual tool calls for batch operations. The environment provides "
                 "`Agent.get_tool(name)` to get tool proxies, `gather(*tasks)` for "
-                "parallel execution, and `state` for persistent storage across calls."
+                "parallel execution, and `state` for persistent storage across calls. "
+                "Use the `values` argument instead of writing string variables inline "
+                "to prevent string escaping issues."
             ),
             "parameters": {
                 "type": "object",
@@ -100,6 +102,9 @@ class Tool(BaseTool):
         except ToolError:
             coder.io.tool_error("Invalid Tool JSON")
             return
+
+        if params.get("values"):
+            coder.io.tool_output(f"{color_start}values:{color_end} True")
 
         code = params.get("code", "")
         if code:
