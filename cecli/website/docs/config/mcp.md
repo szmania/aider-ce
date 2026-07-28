@@ -171,6 +171,26 @@ mcp-servers:
       url: https://mcp.deepwiki.com/mcp
 ```
 
+### You.com Search (Paid Service)
+
+You.com MCP provides live web and news search with LLM-ready results, useful when the model needs current information — release notes, library docs, error messages — beyond its training cutoff, and as the search complement to `/web` (search first, then scrape the best result).
+
+**Free tier — no account, no API key.** The `?profile=free` endpoint used in the configuration below is limited to 100 queries per day (rate limited per IP) and exposes the `you-search` tool only.
+
+**Paid tier.** An [API key](https://you.com/platform?utm_source=cecli-dev-cecli&utm_medium=oss_integration&utm_campaign=2026-07-oss-integrations&utm_content=docs) raises the rate limit and unlocks the remaining tools: `you-contents` (page content extraction), `you-research` (cited multi-source research), `you-finance`, `you-discover`, and `you-balance`. Usage beyond the free allowance is pay-as-you-go — see [pricing](https://you.com/pricing?utm_source=cecli-dev-cecli&utm_medium=oss_integration&utm_campaign=2026-07-oss-integrations&utm_content=docs) and the [MCP server docs](https://you.com/docs/build-with-agents/mcp-server?utm_source=cecli-dev-cecli&utm_medium=oss_integration&utm_campaign=2026-07-oss-integrations&utm_content=docs).
+
+```yaml
+mcp-servers:
+  mcpServers:
+    youcom:
+      transport: http
+      url: https://api.you.com/mcp?profile=free
+      # With a You.com API key (unlocks you-contents and you-research):
+      # url: https://api.you.com/mcp
+      # headers:
+      #   Authorization: "Bearer <your YDC_API_KEY>"
+```
+
 ### Serena
 
 Serena MCP provides LSP support for the current project, offering code analysis, symbol navigation, and project-specific tooling. It runs as a local stdio server and provides context-aware development assistance directly within the IDE environment.
