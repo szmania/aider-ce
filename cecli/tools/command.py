@@ -210,7 +210,12 @@ class Tool(BaseTool):
 
     @classmethod
     async def _get_confirmation(cls, coder, command_string, background):
-        """Get user confirmation for command execution."""
+        """Get user confirmation for command execution.
+
+        NOTE: This does NOT print the command itself. The caller (format_output
+        via _print_tool_call_info) is responsible for displaying the command
+        before this runs. Do not print the command here or it will appear twice.
+        """
         # Hash command for dict key lookup
         command_hash = cls._hash_command(command_string)
 
@@ -231,8 +236,6 @@ class Tool(BaseTool):
                     if fnmatch.fnmatch(command_string, pattern):
                         return True
 
-        formatted_command = coder.format_command_with_prefix(command_string)
-
         if background:
             prompt = "Allow execution of this background command?"
         else:
@@ -240,7 +243,6 @@ class Tool(BaseTool):
 
         confirmed = await coder.io.confirm_ask(
             prompt,
-            subject=formatted_command,
             explicit_yes_required=True,
             allow_never=True,
             group_response="Command Tool",
@@ -251,7 +253,6 @@ class Tool(BaseTool):
             if command_hash not in cls.ALLOWED_SESSION_COMMANDS:
                 session_allowed = await coder.io.confirm_ask(
                     "Allow this command for the rest of the session?",
-                    subject=formatted_command,
                 )
                 cls.ALLOWED_SESSION_COMMANDS[command_hash] = session_allowed
 
@@ -686,7 +687,7 @@ class Tool(BaseTool):
             coder.io.tool_output(f"{color_start}Action:{color_end} {action}")
         elif command:
             coder.io.tool_output(f"{color_start}Command:{color_end}")
-            coder.io.tool_output(command)
+            coder.io.tool_output(coder.format_command_with_prefix(command))
 
         coder.io.tool_output("")
 
