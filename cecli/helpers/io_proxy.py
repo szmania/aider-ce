@@ -10,6 +10,9 @@ import queue as _queue
 import weakref
 from typing import TYPE_CHECKING, Any, Generic, TypeVar
 
+from cecli.report import update_error_prefix
+from cecli.signals import ReloadProgramSignal, SwitchCoderSignal
+
 T = TypeVar("T")
 
 
@@ -218,7 +221,24 @@ class IOProxy(Generic[T]):
             try:
                 task.cancel()
                 await task
-            except (asyncio.CancelledError, Exception):
+            except (
+                asyncio.CancelledError,
+                EOFError,
+                ReloadProgramSignal,
+                SystemExit,
+                SwitchCoderSignal,
+            ):
+                pass
+            except (
+                Exception,
+                IndexError,
+                RuntimeError,
+            ):
+                import traceback
+
+                traceback_str = traceback.format_exc()
+                update_error_prefix(traceback_str)
+                update_error_prefix(str(task))
                 pass
             state["output_task"] = None
 

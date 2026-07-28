@@ -40,11 +40,11 @@ from rich.spinner import SPINNERS
 from rich.style import Style as RichStyle
 from rich.text import Text
 
-from cecli.commands import SwitchCoderSignal
 from cecli.decoding import safe_open
 from cecli.helpers import coroutines
 from cecli.helpers.threading import ThreadSafeEvent
 from cecli.report import update_error_prefix
+from cecli.signals import ReloadProgramSignal, SwitchCoderSignal
 
 from .dump import dump  # noqa: F401
 from .editor import pipe_editor
@@ -1136,6 +1136,7 @@ class InputOutput:
             except (
                 asyncio.CancelledError,
                 EOFError,
+                ReloadProgramSignal,
                 SystemExit,
                 SwitchCoderSignal,
             ):
