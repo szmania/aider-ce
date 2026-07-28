@@ -981,9 +981,13 @@ class ConversationChunks:
         self.message_tracker = dict()
 
     def update_message_tracker(self, coder, message_type="default"):
-        self.message_tracker[message_type] = coder.turn_count
+        if coder.edit_format not in ("agent", "subagent"):
+            self.message_tracker[message_type] = coder.turn_count
 
     def debounce_message_injection(self, coder, message_type="default", frequency=10):
+        if coder.edit_format not in ("agent", "subagent"):
+            return False
+
         if not self.message_tracker.get(message_type):
             return False
 
