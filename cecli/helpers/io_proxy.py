@@ -18,6 +18,7 @@ T = TypeVar("T")
 
 logger = logging.getLogger(__name__)
 
+
 class IOProxy(Generic[T]):
     """Facade wrapping an InputOutput instance with coder context.
 

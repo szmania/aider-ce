@@ -469,7 +469,7 @@ class Coder(metaclass=UsageMeta):
         try:
             self.security_config = json.loads(security_config)
         except (json.JSONDecodeError, TypeError):
-            self.security_config = {} 
+            self.security_config = {}
 
         self.ignore_mentions = ignore_mentions
         if not self.ignore_mentions:
