@@ -1430,20 +1430,27 @@ class TUI(App):
         should_sort = True
 
         if prefix:
-            matches = self._get_path_completions(prefix)
-            matches.extend(sorted([s for s in symbols if prefix_lower in s.lower()]))
+            matches, matches_set = self._get_path_completions(prefix)
+            # Use a set to efficiently filter out symbols already in matches
+            for s in symbols:
+                if prefix_lower in s.lower() and s not in matches_set:
+                    matches.append(s)
+                    matches_set.add(s)
             should_sort = False
         else:
             matches = list(symbols)
 
-        matches = list(dict.fromkeys(matches))
         return matches[:50] if not should_sort else sorted(matches)[:50]
 
-    def _get_path_completions(self, prefix: str) -> list[str]:
+    def _get_path_completions(self, prefix: str) -> tuple[list[str], set[str]]:
         """Get filesystem path completions relative to coder root.
 
         Uses FileSystemService when available for efficient trie/trigram
         lookups, with fallback to legacy filesystem iteration.
+
+        Returns:
+            tuple[list[str], set[str]]: A tuple of (ordered_list, fast_lookup_set)
+                containing the matched path completions.
         """
         coder = self.worker.coder
         root = Path(coder.root) if hasattr(coder, "root") else Path.cwd()
@@ -1462,7 +1469,8 @@ class TUI(App):
                         matches = fs.search(prefix, threshold=0.1)
 
                     if matches:
-                        return matches if is_fuzzy else sorted(matches)
+                        result = sorted(matches) if not is_fuzzy else matches
+                        return result, set(result)
         except Exception:
             pass
 
@@ -1493,7 +1501,8 @@ class TUI(App):
         except (PermissionError, OSError):
             pass
 
-        return sorted(completions)
+        result = sorted(completions)
+        return result, set(result)
 
     def _get_suggestions(self, text: str) -> list[str]:
         """Get completion suggestions for given text."""
@@ -1550,7 +1559,7 @@ class TUI(App):
 
                 # Check if this command needs path-based completion
                 if cmd_name in self.PATH_COMPLETION_COMMANDS:
-                    suggestions = self._get_path_completions(arg_prefix)
+                    suggestions, suggestions_set = self._get_path_completions(arg_prefix)
                     # For /read-only and /read-only-stub, also include add completions
                     if cmd_name in {"/add", "/read-only", "/read-only-stub"}:
                         try:
@@ -1558,8 +1567,10 @@ class TUI(App):
                                 commands.get_completions(cmd_name, coder=active_coder) or []
                             )
                             for c in add_completions:
-                                if arg_prefix_lower in str(c).lower() and str(c) not in suggestions:
-                                    suggestions.append(str(c))
+                                c_str = str(c)
+                                if arg_prefix_lower in c_str.lower() and c_str not in suggestions_set:
+                                    suggestions.append(c_str)
+                                    suggestions_set.add(c_str)
                         except Exception:
                             pass
                 else:
