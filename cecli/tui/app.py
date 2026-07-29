@@ -1568,7 +1568,10 @@ class TUI(App):
                             )
                             for c in add_completions:
                                 c_str = str(c)
-                                if arg_prefix_lower in c_str.lower() and c_str not in suggestions_set:
+                                if (
+                                    arg_prefix_lower in c_str.lower()
+                                    and c_str not in suggestions_set
+                                ):
                                     suggestions.append(c_str)
                                     suggestions_set.add(c_str)
                         except Exception:
