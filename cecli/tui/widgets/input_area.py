@@ -395,3 +395,22 @@ class InputArea(TextArea):
 
             if val.startswith("/") or "@" in val or possible_path or self.completion_active:
                 self.post_message(self.CompletionRequested(val))
+
+    def _refresh_size(self) -> None:
+        """Refresh size, clamping cursor to document bounds first.
+
+        Workaround for a Textual bug where undo of a multi-line paste leaves
+        cursor_location pointing to a line that no longer exists after undo,
+        causing a ValueError when _refresh_size triggers scroll_cursor_visible.
+        """
+        try:
+            doc_line_count = self.document.line_count
+            cursor_row, cursor_col = self.cursor_location
+            if cursor_row >= doc_line_count:
+                clamped_row = max(0, doc_line_count - 1)
+                line_text = self.document.get_line(clamped_row)
+                clamped_col = min(cursor_col, len(line_text))
+                self.cursor_location = (clamped_row, clamped_col)
+        except (ValueError, IndexError, AttributeError):
+            pass
+        super()._refresh_size()
