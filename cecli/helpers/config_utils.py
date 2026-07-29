@@ -6,6 +6,8 @@ from typing import Any, Dict, List
 
 import yaml
 
+from cecli.decoding import safe_open
+
 
 def load_and_apply_cecli_conf_files(
     cecli_conf_yml_files: List[str], args: Any, parser: Any
@@ -23,7 +25,7 @@ def load_and_apply_cecli_conf_files(
 
         for config_file in existing_cecli_conf:
             try:
-                with open(config_file, "r") as f:
+                with safe_open(config_file, "r") as f:
                     config_data = yaml.safe_load(f)
 
                     if isinstance(config_data, dict):
@@ -199,7 +201,7 @@ def read_and_merge_all_configs(
     for path in all_config_paths:
         if os.path.exists(path):
             try:
-                with open(path, "r") as f:
+                with safe_open(path, "r") as f:
                     data = yaml.safe_load(f)
 
                     if isinstance(data, dict):

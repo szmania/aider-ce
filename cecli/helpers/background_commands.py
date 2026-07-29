@@ -12,6 +12,8 @@ import threading
 from collections import deque
 from typing import Dict, List, Optional, Tuple
 
+from cecli.decoding import safe_open
+
 try:
     import pty
     import termios
@@ -783,7 +785,7 @@ class BackgroundCommandManager:
             filename = f"{page_num}.txt"
             abs_path = os.path.join(abs_folder, filename)
             page_content = output[i * page_size : (i + 1) * page_size]
-            with open(abs_path, "w") as f:
+            with safe_open(abs_path, "w") as f:
                 f.write(page_content)
 
         file_paths = [f"{folder_path}/{page_num}.txt" for page_num in range(1, num_pages + 1)]

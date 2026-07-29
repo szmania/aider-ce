@@ -24,6 +24,7 @@ import pathspec
 
 import cecli.prompts.utils.system as prompts
 from cecli import utils
+from cecli.decoding import safe_open
 
 from .dump import dump  # noqa: F401
 
@@ -778,7 +779,7 @@ class GitRepo:
             return self.get_tracked_files()
 
         try:
-            with open(metadata_path, "r") as f:
+            with safe_open(metadata_path, "r") as f:
                 config = json.load(f)
         except Exception:
             return self.get_tracked_files()
@@ -903,7 +904,7 @@ class GitRepo:
         gitignore_path = dir_path / ".gitignore"
         if gitignore_path.is_file():
             try:
-                with open(gitignore_path, "r") as f:
+                with safe_open(gitignore_path, "r") as f:
                     patterns = [
                         line.rstrip("\n") for line in f if line.strip() and not line.startswith("#")
                     ]

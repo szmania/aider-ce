@@ -12,6 +12,8 @@ git repositories (git ls-files) or filesystem scanning (os.scandir).
 
 import os
 
+from cecli.decoding import safe_open
+
 from .builders import GitBuilder, ScandirBuilder
 from .ignore import FileIgnoreFilter
 from .ngram_index import TrigramIndex
@@ -266,7 +268,7 @@ class FileSystemService:
         if self.trie_index:
             self.trie_index.save(trie_path)
         if self.trigram_index:
-            with open(ngram_path, "wb") as f:
+            with safe_open(ngram_path, "wb") as f:
                 pickle.dump(self.trigram_index, f)
 
         # Store metadata for cache validation
@@ -276,7 +278,7 @@ class FileSystemService:
             "build_hash": self._build_hash,
             "file_count": self.count(),
         }
-        with open(meta_path, "w") as f:
+        with safe_open(meta_path, "w") as f:
             json.dump(meta, f)
 
     def load(self, path: str) -> bool:
@@ -294,7 +296,7 @@ class FileSystemService:
 
         try:
             # Load metadata
-            with open(meta_path) as f:
+            with safe_open(meta_path) as f:
                 meta = json.load(f)
 
             self.root = meta["root"]
@@ -308,7 +310,7 @@ class FileSystemService:
                 return False
 
             # Load ngram index
-            with open(ngram_path, "rb") as f:
+            with safe_open(ngram_path, "rb") as f:
                 self.trigram_index = pickle.load(f)
 
             # Check if cache is stale

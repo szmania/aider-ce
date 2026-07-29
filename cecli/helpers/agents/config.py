@@ -10,6 +10,8 @@ from typing import Any, Dict, Optional
 
 import yaml
 
+from cecli.decoding import safe_open
+
 
 @dataclass
 class SubAgentConfig:
@@ -49,7 +51,7 @@ def parse_subagent_file(file_path: str) -> Optional[SubAgentConfig]:
     """
 
     try:
-        with open(file_path, "r", encoding="utf-8") as f:
+        with safe_open(file_path, "r") as f:
             content = f.read()
     except (FileNotFoundError, IOError, OSError) as e:
         raise ValueError(f"Cannot read file '{file_path}': {e}")

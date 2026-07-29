@@ -3,9 +3,28 @@ import sys
 
 try:
     if sys.platform == "win32":
-        sys.stdout.reconfigure(encoding="utf-8")
-        sys.stderr.reconfigure(encoding="utf-8")
-except Exception:
+        if sys.stdout is not None:
+            try:
+                sys.stdout.reconfigure(encoding="utf-8")
+            except AttributeError:
+                pass
+
+        if sys.stderr is not None:
+            try:
+                sys.stderr.reconfigure(encoding="utf-8")
+            except AttributeError:
+                pass
+
+        if sys.stdin is not None:
+            try:
+                sys.stdin.reconfigure(encoding="utf-8")
+            except AttributeError:
+                pass
+except AttributeError:
+    # Happens if streams were overridden by a test framework or GUI (e.g., pythonw.exe)
+    pass
+except sys.UnsupportedOperation:
+    # Happens in certain edge-case piping scenarios
     pass
 
 try:
@@ -87,11 +106,13 @@ def convert_yaml_to_json_string(value):
 
 
 def check_config_files_for_yes(config_files):
+    from cecli.decoding import safe_open
+
     found = False
     for config_file in config_files:
         if Path(config_file).exists():
             try:
-                with open(config_file, "r") as f:
+                with safe_open(config_file, "r") as f:
                     for line in f:
                         if line.strip().startswith("yes:"):
                             print("Configuration error detected.")
@@ -546,6 +567,7 @@ async def main_async(
     from cecli.coders import Coder
     from cecli.coders.base_coder import UnknownEditFormat
     from cecli.commands import Commands, ReloadProgramSignal, SwitchCoderSignal
+    from cecli.decoding import DEFAULT_ENCODING, safe_open  # noqa
     from cecli.deprecated_args import handle_deprecated_model_args
     from cecli.format_settings import format_settings, scrub_sensitive_info
     from cecli.helpers import config_utils
@@ -608,7 +630,7 @@ async def main_async(
     _tmp_fd, _tmp_cfg = tempfile.mkstemp(suffix=".yml", prefix="cecli_merged_")
     os.close(_tmp_fd)
 
-    with open(_tmp_cfg, "w") as f:
+    with safe_open(_tmp_cfg, "w") as f:
         yaml.dump(merged_config, f)
 
     parser = get_parser([_tmp_cfg], git_root)
@@ -661,7 +683,7 @@ async def main_async(
         _tmp_fd, _tmp_cfg = tempfile.mkstemp(suffix=".yml", prefix="cecli_merged_")
         os.close(_tmp_fd)
 
-        with open(_tmp_cfg, "w") as f:
+        with safe_open(_tmp_cfg, "w") as f:
             yaml.dump(merged_config, f)
 
         parser = get_parser([_tmp_cfg], git_root)
@@ -673,6 +695,9 @@ async def main_async(
         args, unknown = parser.parse_known_args(argv)
 
     set_args_error_data(args)
+
+    # Override the module-level default encoding with the resolved config value
+    DEFAULT_ENCODING = args.encoding  # noqa
 
     # ── Normalize array fields ─────────────────────────────────────────
     # (previously done inside load_and_apply_cecli_conf_files)
@@ -1537,6 +1562,7 @@ async def main_async(
 def is_first_run_of_new_version(io, verbose=False):
     """Check if this is the first run of a new version/executable combination"""
     from cecli import __version__
+    from cecli.decoding import safe_open
     from cecli.helpers.file_searcher import handle_core_files
 
     installs_file = handle_core_files(Path.home() / ".cecli" / "installs.json")
@@ -1550,7 +1576,7 @@ def is_first_run_of_new_version(io, verbose=False):
         io.tool_output(f"Installs file: {installs_file}")
     try:
         if installs_file.exists():
-            with open(installs_file, "r") as f:
+            with safe_open(installs_file, "r") as f:
                 installs = json.load(f)
             if verbose:
                 io.tool_output("Installs file exists and loaded")
@@ -1562,7 +1588,7 @@ def is_first_run_of_new_version(io, verbose=False):
         if is_first_run:
             installs[str(key)] = True
             installs_file.parent.mkdir(parents=True, exist_ok=True)
-            with open(installs_file, "w") as f:
+            with safe_open(installs_file, "w") as f:
                 json.dump(installs, f, indent=4)
         return is_first_run
     except Exception as e:
@@ -1688,6 +1714,10 @@ async def task(message, setting=None, env=None, force_git_root=None, return_code
 
 async def graceful_exit(coder=None, exit_code=0):
     sys.settrace(None)
+
+    if getattr(coder, "error_code", None) is not None:
+        exit_code = coder.error_code
+
     if coder:
         if hasattr(coder, "_autosave_future"):
             await coder._autosave_future

@@ -34,6 +34,7 @@ from uuid import uuid4 as generate_unique_id
 import cecli.prompts.utils.system as prompts
 from cecli import __version__, models, urls, utils
 from cecli.commands import Commands, SwitchCoderSignal
+from cecli.decoding import safe_open
 from cecli.exceptions import LiteLLMExceptions
 from cecli.helpers import command_parser, coroutines, nested, responses
 from cecli.helpers.conversation import ConversationService, MessageTag
@@ -245,6 +246,7 @@ class Coder(metaclass=UsageMeta):
     model_kwargs = {}
     cost_multiplier = 1
     stop_on_empty = True
+    error_code = None
 
     # Task coordination state variables
     input_running = False
@@ -1429,7 +1431,7 @@ class Coder(metaclass=UsageMeta):
             if not mime_type:
                 continue
 
-            with open(fname, "rb") as image_file:
+            with safe_open(fname, "rb") as image_file:
                 encoded_string = base64.b64encode(image_file.read()).decode("utf-8")
             image_url = f"data:{mime_type};base64,{encoded_string}"
             rel_fname = self.get_rel_fname(fname)
@@ -1873,7 +1875,7 @@ class Coder(metaclass=UsageMeta):
         if not self.commands.is_command(user_message):
             ConversationService.get_chunks(self).flush_removals()
             self.last_user_message = user_message
-
+            self.error_code = None
             # Fire memorizer after each user request
             # if self.auto_memory and self.edit_format not in ["subagent"]:
             #    from cecli.helpers.memory.utils import invoke_memorizer
@@ -3648,6 +3650,7 @@ class Coder(metaclass=UsageMeta):
             self.calculate_and_show_tokens_and_cost(messages, completion)
 
         except litellm_ex.exceptions_tuple() as err:
+            self.error_code = 1
             ex_info = litellm_ex.get_ex_info(err)
             if ex_info.name == "ContextWindowExceededError":
                 # Still calculate costs for context window errors
@@ -3655,6 +3658,7 @@ class Coder(metaclass=UsageMeta):
                 self.calculate_and_show_tokens_and_cost(messages, completion)
             raise
         except (KeyboardInterrupt, asyncio.CancelledError) as kbi:
+            self.error_code = 130  # apparently standard?
             self.keyboard_interrupt()
             raise kbi
         finally:
@@ -3755,7 +3759,7 @@ class Coder(metaclass=UsageMeta):
                 completion, self.interrupt_event
             ):
                 if self.args.debug:
-                    with open(".cecli/logs/chunks.log", "a") as f:
+                    with safe_open(".cecli/logs/chunks.log", "a") as f:
                         print(chunk, file=f)
 
                 # Check if confirmation is in progress and wait if needed

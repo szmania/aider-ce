@@ -1,6 +1,7 @@
 import subprocess
 
 from cecli.commands.utils.base_command import BaseCommand
+from cecli.decoding import safe_open
 
 
 class WorkspaceCommand(BaseCommand):
@@ -26,7 +27,7 @@ class WorkspaceCommand(BaseCommand):
         config = {}
         if metadata_path.exists():
             try:
-                with open(metadata_path, "r") as f:
+                with safe_open(metadata_path, "r") as f:
                     config = json.load(f)
             except Exception:
                 pass

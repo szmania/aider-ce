@@ -4,6 +4,8 @@ import threading
 import time
 import traceback
 
+from cecli.decoding import safe_open
+
 # Set up logging to catch asyncio framework logs
 logging.basicConfig(level=logging.INFO)
 logging.getLogger("asyncio").setLevel(logging.DEBUG)
@@ -19,7 +21,7 @@ def dump_stacks_to_file(filename="hang_dump.log", interval=5, max_prints=10):
             # Determine mode: "w" to overwrite/clear on the 11th print, "a" to append
             mode = "w" if print_count >= max_prints else "a"
 
-            with open(filename, mode, encoding="utf-8") as f:
+            with safe_open(filename, mode) as f:
                 if mode == "w":
                     f.write(f"--- Log reset automatically after {max_prints} prints ---\n")
                     print_count = 0  # Reset the counter

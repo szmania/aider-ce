@@ -13,6 +13,7 @@ import yaml
 from PIL import Image
 
 from cecli import __version__
+from cecli.decoding import safe_open
 from cecli.dump import dump
 from cecli.exceptions import LiteLLMExceptions
 from cecli.helpers import coroutines, nested
@@ -383,7 +384,7 @@ class ModelOverrides:
         for fname in model_overrides_files:
             try:
                 if Path(fname).exists():
-                    with open(fname, "r") as f:
+                    with safe_open(fname, "r") as f:
                         content = yaml.safe_load(f)
                         if content:
                             for model_name, tags in content.items():
@@ -1530,7 +1531,7 @@ class Model(ModelSettings):
         Log conversation messages to a JSON file.
         """
         os.makedirs(".cecli/logs/messages", exist_ok=True)
-        with open(f".cecli/logs/messages/{name}-{time.time()}.log", "w") as f:
+        with safe_open(f".cecli/logs/messages/{name}-{time.time()}.log", "w") as f:
             json.dump(
                 messages, f, indent=4, ensure_ascii=False, default=lambda o: "<not serializable>"
             )
@@ -1542,7 +1543,7 @@ class Model(ModelSettings):
         os.makedirs(".cecli/logs/litellm", exist_ok=True)
         log_file_path = f".cecli/logs/litellm/request-{time.time()}.log"
 
-        with open(log_file_path, "a", encoding="utf-8") as f:
+        with safe_open(log_file_path, "a") as f:
             json.dump(
                 model_call_dict,
                 f,
@@ -1561,7 +1562,7 @@ def register_models(model_settings_fnames):
         if not Path(model_settings_fname).read_text().strip():
             continue
         try:
-            with open(model_settings_fname, "r") as model_settings_file:
+            with safe_open(model_settings_fname, "r") as model_settings_file:
                 model_settings_list = yaml.safe_load(model_settings_file)
             for model_settings_dict in model_settings_list:
                 model_settings = ModelSettings(**model_settings_dict)

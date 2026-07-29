@@ -4,6 +4,8 @@ from typing import Any, Dict, Optional
 
 import yaml
 
+from cecli.decoding import safe_open
+
 
 def resolve_workspace_config(config_arg: Optional[str] = None) -> Optional[Any]:
     """
@@ -39,7 +41,7 @@ def resolve_workspace_config(config_arg: Optional[str] = None) -> Optional[Any]:
             local_path = Path(local_name)
             if local_path.exists():
                 try:
-                    with open(local_path, "r") as f:
+                    with safe_open(local_path, "r") as f:
                         loaded = yaml.safe_load(f)
                         if loaded:
                             workspace_conf = (
@@ -56,7 +58,7 @@ def resolve_workspace_config(config_arg: Optional[str] = None) -> Optional[Any]:
             global_path = Path.home() / ".cecli" / global_name
             if global_path.exists():
                 try:
-                    with open(global_path, "r") as f:
+                    with safe_open(global_path, "r") as f:
                         loaded = yaml.safe_load(f)
                         if loaded:
                             workspace_conf = (

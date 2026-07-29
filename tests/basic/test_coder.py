@@ -528,7 +528,7 @@ Once I have these, I can show you precisely how to do the thing.
 
         # Call the run method again with a message
         await coder.run(with_message="hi")
-        assert len(coder.abs_fnames) == 1
+        assert len(coder.abs_fnames) == 2
 
     async def test_choose_fence(self):
         # Create a few temporary files

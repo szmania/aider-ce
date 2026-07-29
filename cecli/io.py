@@ -40,10 +40,11 @@ from rich.spinner import SPINNERS
 from rich.style import Style as RichStyle
 from rich.text import Text
 
-from cecli.commands import SwitchCoderSignal
+from cecli.decoding import safe_open
 from cecli.helpers import coroutines
 from cecli.helpers.threading import ThreadSafeEvent
 from cecli.report import update_error_prefix
+from cecli.signals import ReloadProgramSignal, SwitchCoderSignal
 
 from .dump import dump  # noqa: F401
 from .editor import pipe_editor
@@ -199,7 +200,7 @@ class AutoCompleter(Completer):
 
         for fname in process_fnames:
             try:
-                with open(fname, "r", encoding=self.encoding) as f:
+                with safe_open(fname, "r") as f:
                     content = f.read()
             except (FileNotFoundError, UnicodeDecodeError, IsADirectoryError):
                 continue
@@ -688,7 +689,7 @@ class InputOutput:
 
     def read_image(self, filename):
         try:
-            with open(str(filename), "rb") as image_file:
+            with safe_open(str(filename), "rb") as image_file:
                 encoded_string = base64.b64encode(image_file.read())
                 return encoded_string.decode("utf-8")
         except OSError as err:
@@ -709,7 +710,7 @@ class InputOutput:
             return self.read_image(filename)
 
         try:
-            with open(str(filename), "r", encoding=self.encoding) as f:
+            with safe_open(str(filename), "r") as f:
                 return f.read()
         except FileNotFoundError:
             if not silent:
@@ -731,7 +732,7 @@ class InputOutput:
 
     def _detect_newline(self, filename):
         try:
-            with open(filename, "rb") as f:
+            with safe_open(filename, "rb") as f:
                 chunk = f.read(1024)
                 if b"\r\n" in chunk:
                     return "\r\n"
@@ -760,7 +761,7 @@ class InputOutput:
         delay = initial_delay
         for attempt in range(max_retries):
             try:
-                with open(str(filename), "w", encoding=self.encoding, newline=newline) as f:
+                with safe_open(str(filename), "w", newline=newline) as f:
                     f.write(content)
                 return  # Successfully wrote the file
             except PermissionError as err:
@@ -1135,6 +1136,7 @@ class InputOutput:
             except (
                 asyncio.CancelledError,
                 EOFError,
+                ReloadProgramSignal,
                 SystemExit,
                 SwitchCoderSignal,
             ):
@@ -1224,7 +1226,7 @@ class InputOutput:
             editor = os.environ.get("EDITOR", "vi")
             subprocess.call([editor, tmpfile.name])
 
-        with open(tmpfile.name, "r", encoding=self.encoding) as f:
+        with safe_open(tmpfile.name, "r") as f:
             edited = f.read()
 
         os.unlink(tmpfile.name)
