@@ -745,6 +745,19 @@ class TUI(App):
 
         input_area.focus()
 
+    def copy_to_clipboard(self, text: str) -> None:
+        import pyperclip
+
+        try:
+            pyperclip.copy(text)
+            self._clipboard = text
+        except Exception:  # pragma: no cover - system clipboard errors
+            self.worker.coder.io.tool_error("Failed to copy to system clipboard.")
+            self.worker.coder.io.tool_output(
+                "You may need to install xclip, xsel, or wl-clipboard on Linux, or pbcopy on macOS."
+            )
+            super().copy_to_clipboard(text)
+
     def update_spinner(self, msg, agent_name: str | None = None):
         """Update spinner in footer."""
         footer = self.query_one(MainFooter)
