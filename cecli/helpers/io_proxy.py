@@ -6,6 +6,7 @@ every direct call site.
 """
 
 import asyncio
+import logging
 import queue as _queue
 import weakref
 from typing import TYPE_CHECKING, Any, Generic, TypeVar
@@ -15,6 +16,7 @@ from cecli.signals import ReloadProgramSignal, SwitchCoderSignal
 
 T = TypeVar("T")
 
+logger = logging.getLogger(__name__)
 
 class IOProxy(Generic[T]):
     """Facade wrapping an InputOutput instance with coder context.
@@ -218,6 +220,10 @@ class IOProxy(Generic[T]):
         state = self._per_coder.get(self._coder_uuid, {})
         task = state.get("output_task")
         if task:
+            e = task.exception()
+            if e:
+                logger.error(e, exc_info=True)
+
             try:
                 task.cancel()
                 await task
