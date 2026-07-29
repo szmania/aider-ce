@@ -96,7 +96,7 @@ class SelectableRichLog(RichLog):
         lines = []
         for i in range(lo, hi + 1):
             text = "".join(seg.text for seg in self.lines[i] if seg.text)
-            lines.append(text)
+            lines.append(text.rstrip())
 
         text = "\n".join(lines)
         if not copy:
