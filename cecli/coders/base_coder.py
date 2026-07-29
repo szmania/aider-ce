@@ -246,6 +246,7 @@ class Coder(metaclass=UsageMeta):
     model_kwargs = {}
     cost_multiplier = 1
     stop_on_empty = True
+    error_code = None
 
     # Task coordination state variables
     input_running = False
@@ -1874,7 +1875,7 @@ class Coder(metaclass=UsageMeta):
         if not self.commands.is_command(user_message):
             ConversationService.get_chunks(self).flush_removals()
             self.last_user_message = user_message
-
+            self.error_code = None
             # Fire memorizer after each user request
             # if self.auto_memory and self.edit_format not in ["subagent"]:
             #    from cecli.helpers.memory.utils import invoke_memorizer
@@ -3649,6 +3650,7 @@ class Coder(metaclass=UsageMeta):
             self.calculate_and_show_tokens_and_cost(messages, completion)
 
         except litellm_ex.exceptions_tuple() as err:
+            self.error_code = 1
             ex_info = litellm_ex.get_ex_info(err)
             if ex_info.name == "ContextWindowExceededError":
                 # Still calculate costs for context window errors
@@ -3656,6 +3658,7 @@ class Coder(metaclass=UsageMeta):
                 self.calculate_and_show_tokens_and_cost(messages, completion)
             raise
         except (KeyboardInterrupt, asyncio.CancelledError) as kbi:
+            self.error_code = 130  # apparently standard?
             self.keyboard_interrupt()
             raise kbi
         finally:

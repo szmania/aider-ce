@@ -1714,6 +1714,10 @@ async def task(message, setting=None, env=None, force_git_root=None, return_code
 
 async def graceful_exit(coder=None, exit_code=0):
     sys.settrace(None)
+
+    if getattr(coder, "error_code", None) is not None:
+        exit_code = coder.error_code
+
     if coder:
         if hasattr(coder, "_autosave_future"):
             await coder._autosave_future
