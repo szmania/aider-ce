@@ -464,8 +464,12 @@ class Coder(metaclass=UsageMeta):
         self.abs_root_path_cache = {}
 
         self.auto_copy_context = auto_copy_context
-        self.security_config = security_config or {}
         self.auto_accept_architect = auto_accept_architect
+
+        try:
+            self.security_config = json.loads(security_config)
+        except (json.JSONDecodeError, TypeError):
+            self.security_config = {}
 
         self.ignore_mentions = ignore_mentions
         if not self.ignore_mentions:

@@ -107,6 +107,8 @@ class CoderWorker:
                 await self._handle_switch_coder_signal(switch)
                 # Continue the loop with the new coder
             except Exception as e:
+                logger.error(e, exc_info=True)
+
                 self.output_queue.put(
                     {
                         "type": "error",

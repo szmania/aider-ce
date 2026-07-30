@@ -6,6 +6,7 @@ every direct call site.
 """
 
 import asyncio
+import logging
 import queue as _queue
 import weakref
 from typing import TYPE_CHECKING, Any, Generic, TypeVar
@@ -14,6 +15,8 @@ from cecli.report import update_error_prefix
 from cecli.signals import ReloadProgramSignal, SwitchCoderSignal
 
 T = TypeVar("T")
+
+logger = logging.getLogger(__name__)
 
 
 class IOProxy(Generic[T]):
@@ -234,6 +237,10 @@ class IOProxy(Generic[T]):
                 IndexError,
                 RuntimeError,
             ):
+                e = task.exception()
+                if e:
+                    logger.error(e, exc_info=True)
+
                 import traceback
 
                 traceback_str = traceback.format_exc()
