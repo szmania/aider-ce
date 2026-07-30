@@ -52,6 +52,7 @@ from .model import ModelCommand
 from .models import ModelsCommand
 from .multiline_mode import MultilineModeCommand
 from .paste import PasteCommand
+from .queue import QueueCommand
 from .quit import QuitCommand
 from .read_only import ReadOnlyCommand
 from .read_only_stub import ReadOnlyStubCommand
@@ -142,6 +143,7 @@ CommandRegistry.register(ModelCommand)
 CommandRegistry.register(ModelsCommand)
 CommandRegistry.register(MultilineModeCommand)
 CommandRegistry.register(PasteCommand)
+CommandRegistry.register(QueueCommand)
 CommandRegistry.register(QuitCommand)
 CommandRegistry.register(ReadOnlyCommand)
 CommandRegistry.register(ReadOnlyStubCommand)
@@ -228,6 +230,7 @@ __all__ = [
     "parse_quoted_filenames",
     "PasteCommand",
     "quote_filename",
+"QueueCommand",
     "QuitCommand",
     "ReadOnlyCommand",
     "ReadOnlyStubCommand",
