@@ -13,6 +13,7 @@ def add_reasoning_content(messages):
     for msg in messages:
         if msg.get("role") == "assistant" and "reasoning_content" not in msg:
             msg["reasoning_content"] = ""
+
         if msg.get("provider_specific_fields", None):
             msg["provider_specific_fields"].pop("reasoning_content", None)
 
@@ -23,6 +24,23 @@ def add_reasoning_content(messages):
                 msg["reasoning_items"] = msg["provider_specific_fields"].pop(
                     "reasoning_items", None
                 )
+                msg["reasoning_content"] = ""
+
+            if (
+                msg["provider_specific_fields"].get("reasoning_text", None) is not None
+                and msg.get("reasoning_text", None) is None
+            ):
+                msg["reasoning_text"] = msg["provider_specific_fields"].pop("reasoning_text", None)
+                msg["reasoning_content"] = ""
+
+            if (
+                msg["provider_specific_fields"].get("reasoning_opaque", None) is not None
+                and msg.get("reasoning_opaque", None) is None
+            ):
+                msg["reasoning_opaque"] = msg["provider_specific_fields"].pop(
+                    "reasoning_opaque", None
+                )
+                msg["reasoning_content"] = ""
 
     return messages
 

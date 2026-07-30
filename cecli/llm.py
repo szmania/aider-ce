@@ -109,6 +109,22 @@ class LazyLiteLLM:
             if kwargs.get("reasoning_content") is None and "reasoning_text" in kwargs:
                 kwargs["reasoning_content"] = kwargs.pop("reasoning_text", None)
 
+            if kwargs.get("reasoning_text", None) is not None:
+                if kwargs.get("provider_specific_fields") is None:
+                    kwargs["provider_specific_fields"] = {}
+
+                kwargs["provider_specific_fields"]["reasoning_text"] = kwargs.pop(
+                    "reasoning_text", None
+                )
+
+            if kwargs.get("reasoning_opaque", None) is not None:
+                if kwargs.get("provider_specific_fields") is None:
+                    kwargs["provider_specific_fields"] = {}
+
+                kwargs["provider_specific_fields"]["reasoning_opaque"] = kwargs.pop(
+                    "reasoning_opaque", None
+                )
+
             if kwargs.get("reasoning_items", None) is not None:
                 if kwargs.get("provider_specific_fields") is None:
                     kwargs["provider_specific_fields"] = {}
