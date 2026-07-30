@@ -1,6 +1,7 @@
 import json
 import re
 import sys
+import time
 import weakref
 from pathlib import Path
 
@@ -130,6 +131,78 @@ class Commands:
         self.cmd_running_event = ThreadSafeEvent()
         self.cmd_running_event.set()
         self.last_command_show_notification = True
+
+        # Prompt queue for CLI-33: in-memory FIFO queue for deferred prompt processing
+        self.prompt_queue = []
+        self._queue_counter = 0
+
+    # ── Queue Management Methods (CLI-33) ──────────────────────────────
+
+    def _enqueue_prompt(self, text: str) -> dict:
+        """Add a prompt to the queue and return the queued item.
+
+        Args:
+            text: The prompt text to enqueue.
+
+        Returns:
+            dict with keys: id (str), text (str), timestamp (float).
+
+        Raises:
+            ValueError: If text is empty, None, or exceeds 10000 characters.
+            RuntimeError: If the queue is at max capacity (100 items).
+        """
+        if not text or not text.strip():
+            raise ValueError("Cannot enqueue empty prompt")
+        if len(text) > 10000:
+            raise ValueError("Prompt exceeds maximum length of 10000 characters")
+        if len(self.prompt_queue) >= 100:
+            raise RuntimeError("Queue is full (max 100 items)")
+
+        self._queue_counter += 1
+        item = {
+            "id": str(self._queue_counter),
+            "text": text,
+            "timestamp": time.time(),
+        }
+        self.prompt_queue.append(item)
+        return item
+
+    def _dequeue_prompt(self) -> dict | None:
+        """Remove and return the first item from the queue (FIFO).
+
+        Returns:
+            The dequeued item dict, or None if the queue is empty.
+        """
+        if not self.prompt_queue:
+            return None
+        return self.prompt_queue.pop(0)
+
+    def _get_queue_length(self) -> int:
+        """Return the current number of items in the queue."""
+        return len(self.prompt_queue)
+
+    def _remove_from_queue(self, index: int) -> dict | None:
+        """Remove and return the item at the given index.
+
+        Args:
+            index: 0-based index of the item to remove.
+
+        Returns:
+            The removed item dict, or None if the index is out of bounds.
+        """
+        if index < 0 or index >= len(self.prompt_queue):
+            return None
+        return self.prompt_queue.pop(index)
+
+    def _clear_queue(self) -> list:
+        """Remove all items from the queue and return them.
+
+        Returns:
+            List of all items that were in the queue.
+        """
+        items = list(self.prompt_queue)
+        self.prompt_queue.clear()
+        return items
 
     def _load_custom_commands(self, custom_commands):
         """
