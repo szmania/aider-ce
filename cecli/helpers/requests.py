@@ -15,6 +15,15 @@ def add_reasoning_content(messages):
             msg["reasoning_content"] = ""
         if msg.get("provider_specific_fields", None):
             msg["provider_specific_fields"].pop("reasoning_content", None)
+
+            if (
+                msg["provider_specific_fields"].get("reasoning_items", None) is not None
+                and msg.get("reasoning_items", None) is None
+            ):
+                msg["reasoning_items"] = msg["provider_specific_fields"].pop(
+                    "reasoning_items", None
+                )
+
     return messages
 
 
