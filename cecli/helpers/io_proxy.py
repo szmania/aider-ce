@@ -221,10 +221,6 @@ class IOProxy(Generic[T]):
         state = self._per_coder.get(self._coder_uuid, {})
         task = state.get("output_task")
         if task:
-            e = task.exception()
-            if e:
-                logger.error(e, exc_info=True)
-
             try:
                 task.cancel()
                 await task
@@ -241,6 +237,10 @@ class IOProxy(Generic[T]):
                 IndexError,
                 RuntimeError,
             ):
+                e = task.exception()
+                if e:
+                    logger.error(e, exc_info=True)
+
                 import traceback
 
                 traceback_str = traceback.format_exc()
