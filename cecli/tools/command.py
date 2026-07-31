@@ -305,7 +305,6 @@ class Tool(BaseTool):
         """
         import asyncio
         import subprocess
-        import time
 
         from cecli.helpers.background_commands import CircularBuffer
 
@@ -381,24 +380,56 @@ class Tool(BaseTool):
             master_fd=master_fd,
         )
 
-        # Now monitor the process with timeout
-        start_time = time.time()
+        # Now monitor the process with an event-driven race instead of
+        # polling: wait for process completion, user interrupt, or timeout.
+        # Popen.wait() is cross-platform (waitpid on POSIX, WaitForSingleObject
+        # on Windows) and runs in a worker thread via asyncio.to_thread, so it
+        # blocks without consuming CPU.
+        interrupt_task = asyncio.create_task(coder.interrupt_event.wait())
+        wait_task = asyncio.create_task(asyncio.to_thread(process.wait))
+        timeout_task = asyncio.create_task(asyncio.sleep(timeout))
 
-        while True:
-            if coder.interrupt_event.is_set():
-                process.terminate()
+        try:
+            done, _ = await asyncio.wait(
+                {interrupt_task, wait_task, timeout_task},
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+
+            if interrupt_task in done:
+                # User interrupted: terminate the process (Windows uses
+                # TerminateProcess — a hard kill; POSIX sends SIGTERM). Same
+                # semantics as the previous polling loop.
                 try:
-                    process.wait(timeout=1)
-                except subprocess.TimeoutExpired:
-                    process.kill()
+                    process.terminate()
+                except ProcessLookupError:
+                    # Process already exited
+                    pass
+
+                try:
+                    # wait_task is already reaping the process; wait briefly
+                    # for it to complete instead of starting a second wait.
+                    await asyncio.wait_for(asyncio.shield(wait_task), timeout=1)
+                except asyncio.TimeoutError:
+                    try:
+                        process.kill()
+                    except ProcessLookupError:
+                        # Process already exited and was reaped by wait_task
+                        pass
+
+                    try:
+                        await wait_task
+                    except Exception:
+                        pass
+                except Exception:
+                    pass
+
                 BackgroundCommandManager.stop_background_command(command_key)
                 response.append_result("Command execution interrupted by user.")
                 return response
 
-            # Check if process has completed
-            exit_code = process.poll()
-            if exit_code is not None:
+            if wait_task in done:
                 # Process completed
+                exit_code = wait_task.result()
                 output = buffer.get_all(clear=True)
 
                 # Format output
@@ -450,27 +481,30 @@ class Tool(BaseTool):
                     )
                     return response
 
-            # Check if timeout has expired
-            elapsed = time.time() - start_time
-            if elapsed >= timeout:
-                # Timeout elapsed, process continues in background
-                coder.io.tool_output(
-                    f"\u23f1\ufe0f Command exceeded {timeout}s timeout, continuing in background...",
-                    type="tool-result",
-                )
+            # Timeout elapsed, process continues in background
+            coder.io.tool_output(
+                f"\u23f1\ufe0f Command exceeded {timeout}s timeout, continuing in background...",
+                type="tool-result",
+            )
 
-                # Get any output captured so far
-                current_output = buffer.get_all(clear=False)
+            # Get any output captured so far
+            current_output = buffer.get_all(clear=False)
 
-                response.append_result(
-                    f"Command exceeded {timeout}s timeout and is continuing in background.\n"
-                    f"Command key: {command_key}\n"
-                    f"Output captured so far:\n{current_output}\n"
-                )
-                return response
+            response.append_result(
+                f"Command exceeded {timeout}s timeout and is continuing in background.\n"
+                f"Command key: {command_key}\n"
+                f"Output captured so far:\n{current_output}\n"
+            )
+            return response
+        finally:
+            interrupt_task.cancel()
+            timeout_task.cancel()
 
-            # Wait a bit before checking again
-            await asyncio.sleep(1)
+            if wait_task.done() and not wait_task.cancelled():
+                # Retrieve any exception to avoid "task exception was never
+                # retrieved" warnings. On timeout the process continues in the
+                # background, so wait_task may legitimately still be pending.
+                wait_task.exception()
 
     @classmethod
     async def _execute_foreground(cls, coder, command_string):
