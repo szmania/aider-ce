@@ -942,11 +942,10 @@ class TUI(App):
             )
             # Route to per-coder queue when available
             if coder_uuid and coder_uuid in queues._per_coder_queues:
-                queues._per_coder_queues[coder_uuid].put(
-                    {"text": user_input, "coder_uuid": coder_uuid}
-                )
+                queues.push_coder_input(coder_uuid, {"text": user_input, "coder_uuid": coder_uuid})
             else:
                 self.input_queue.put({"text": user_input, "coder_uuid": coder_uuid})
+                queues.wake_input_waiters()
 
     def set_input_value(self, text) -> None:
         """Find the input widget and set focus to it."""
@@ -1365,11 +1364,12 @@ class TUI(App):
         coder_uuid = self._confirmation_coder_uuid
         # Route to per-coder queue when available
         if coder_uuid and coder_uuid in queues._per_coder_queues:
-            queues._per_coder_queues[coder_uuid].put(
-                {"confirmed": message.result, "coder_uuid": coder_uuid}
+            queues.push_coder_input(
+                coder_uuid, {"confirmed": message.result, "coder_uuid": coder_uuid}
             )
         else:
             self.input_queue.put({"confirmed": message.result, "coder_uuid": coder_uuid})
+            queues.wake_input_waiters()
         # Release the confirmation lock and process any pending confirmations
         self._confirmation_lock = False
         self._process_pending_confirmation()
