@@ -263,6 +263,7 @@ class Tool(BaseTool):
                 start_line_idx = -1
                 end_line_idx = -1
                 both_structured = False
+                both_special = False
 
                 if range_start is not None and range_end is not None:
                     # Step 1: Classify the search type
@@ -340,6 +341,7 @@ class Tool(BaseTool):
                             error_outputs.append(err)
                         continue
 
+                    both_special = rt["start_is_special"] and rt["end_is_special"]
                     both_structured = rt["both_structured"]
                     mixed_special_search = rt["mixed_special"]
 
@@ -377,7 +379,7 @@ class Tool(BaseTool):
                         coder, abs_path, start_idx=s_idx, end_idx=e_idx, line_numbers=True
                     )
 
-                    if abs_path not in coder.abs_fnames:
+                    if abs_path not in coder.abs_fnames and both_special:
                         # Track special marker usage for auto-editable detection
                         if token_count <= coder.large_file_token_threshold:
                             cls._special_marker_count[abs_path] = (
