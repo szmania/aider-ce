@@ -43,7 +43,7 @@ class Tool(BaseTool):
                 "{file_path, range_start, range_end} objects."
                 ""
                 "Markers for range_start / range_end:"
-                "  - exact text patterns (up to 5 lines; anchor on meaningful names like function signatures)"
+                "  - exact text patterns (preferred usage) (up to 5 lines; anchor on meaningful names like function signatures)"  # noqa
                 "  - '@000' / '000@' for the first / last line"
                 "  - '@L10' for an exact line number"
                 "  - hint suffixes to disambiguate repeated patterns: ' @L<num>' (nearest match), "
