@@ -151,7 +151,7 @@ class Tool(BaseTool):
         from cecli.helpers.conversation import ConversationService, MessageTag
 
         if not coder.edit_allowed:
-            ConversationService.get_manager(coder).add_message(
+            ConversationService.get_manager(coder).queue_message(
                 message_dict=dict(
                     role="user",
                     content=(
@@ -161,10 +161,6 @@ class Tool(BaseTool):
                 ),
                 tag=MessageTag.CUR,
                 hash_key=("edit_file", "reminder"),
-                promotion=ConversationService.get_manager(coder).DEFAULT_TAG_PROMOTION_VALUE,
-                mark_for_delete=0,
-                mark_for_demotion=1,
-                force=True,
             )
 
         # tool_name = "EditFile"

@@ -9,6 +9,7 @@ from functools import lru_cache
 from pathlib import Path
 
 import textual.strip
+import xxhash
 from rich.color import ColorSystem
 from rich.style import Style
 from textual import events
@@ -922,16 +923,16 @@ class TUI(App):
 
             # Default (primary coder, actively generating sub-agent,
             # or sub-agent not found in tracking): append to conversation
-            ConversationService.get_manager(foreground_coder).add_message(
+            ConversationService.get_manager(foreground_coder).queue_message(
                 message_dict=dict(
                     role="user", content=foreground_coder.wrap_user_input(user_input)
                 ),
                 tag=MessageTag.CUR,
-                hash_key=("user_message", user_input, str(time.monotonic_ns())),
-                promotion=ConversationService.get_manager(
-                    foreground_coder
-                ).DEFAULT_TAG_PROMOTION_VALUE,
-                mark_for_demotion=1,
+                hash_key=(
+                    "user_message",
+                    xxhash.xxh3_128_hexdigest(user_input.encode("utf-8", errors="replace")),
+                    str(time.monotonic_ns()),
+                ),
             )
         else:
             self.update_key_hints(generating=True)

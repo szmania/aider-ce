@@ -2446,6 +2446,8 @@ class Coder(metaclass=UsageMeta):
         # Add chat and edit file messages
         ConversationService.get_chunks(self).add_chat_files_messages()
 
+        ConversationService.get_manager(self).flush_queue()
+
         # Return formatted messages for LLM
         return ConversationService.get_manager(self).get_messages_dict()
 
@@ -2574,7 +2576,7 @@ class Coder(metaclass=UsageMeta):
             self.format_chat_chunks()
 
             # Always add user message to conversation manager
-            ConversationService.get_manager(self).add_message(
+            ConversationService.get_manager(self).queue_message(
                 message_dict=dict(role="user", content=inp),
                 tag=MessageTag.CUR,
                 hash_key=(
@@ -2582,8 +2584,6 @@ class Coder(metaclass=UsageMeta):
                     xxhash.xxh3_128_hexdigest(inp.encode("utf-8", errors="replace")),
                     str(time.monotonic_ns()),
                 ),
-                promotion=ConversationService.get_manager(self).DEFAULT_TAG_PROMOTION_VALUE,
-                mark_for_demotion=1,
             )
 
         ConversationService.get_manager(self).decrement_message_markers()
