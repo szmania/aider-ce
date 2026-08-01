@@ -424,6 +424,16 @@ class AgentService:
         except (KeyError, AttributeError, RuntimeError):
             logger.warning("Failed to destroy conversation instances", exc_info=True)
 
+        # Unregister the sub-agent's input queue from the global registry so it
+        # does not leak for the process lifetime (IOProxy registers one queue
+        # per coder, including every sub-agent).
+        from cecli.helpers import queues as _queues
+
+        try:
+            _queues.unregister_coder_queue(info.coder.uuid)
+        except (KeyError, AttributeError, RuntimeError):
+            logger.warning("Failed to unregister coder queue", exc_info=True)
+
         # Destroy hook resources for the sub-agent
         from cecli.hooks.service import HookService
 
