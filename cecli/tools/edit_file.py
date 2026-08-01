@@ -47,16 +47,20 @@ class Tool(BaseTool):
         "function": {
             "name": "EditFile",
             "description": (
-                "Edit text in one or more files using virtual identifiers. "
-                "You can perform multiple 'replace' or 'delete' operations in a single call. "
-                "CRITICAL RULES: "
-                "1. Start and end markers are INCLUSIVE. Both will be modified or deleted. "
-                f"2. To target unique lines (prefixed with '{UNIQUE_HASH_DELIMITER}'), use their exact literal text as the marker, excluding the prefix. "  # noqa
-                f"3. To target duplicate lines, you MUST include the exact hashed prefix (e.g., '{HASH_DELIMITER}“0车加{HASH_DELIMITER}'). "  # noqa
-                "4. Edits within the same file MUST NOT be adjacent or overlapping. "
-                "5. For empty files, you MUST use '@000' as the reference. "
-                "6. Identifiers track global occurrences. Adding, modifying, or deleting a line can instantly "
-                "change the prefixes of identical lines anywhere else in the file. Re-read to get fresh IDs after editing."  # noqa
+                "Modify text in one or more files by targeting lines with their virtual identifiers "
+                "(as returned by ReadFile). You can batch multiple operations across files in one call."
+                ""
+                "Operations:"
+                "  - 'replace' — swap the targeted range with new text"
+                "  - 'delete' — remove the targeted range"
+                ""
+                "Start and end markers are inclusive: both referenced lines are modified or removed. "
+                f"Reference unique lines (prefixed with '{UNIQUE_HASH_DELIMITER}') by their exact text, and "
+                f"duplicate lines by their hashed prefix (e.g., '{HASH_DELIMITER}WecX{HASH_DELIMITER}'); use "
+                "'@000' for empty files. Identifiers track content, so edits can re-prefix identical lines "
+                "elsewhere — re-read the file after editing for fresh identifiers. Multiple edits to one "
+                "file are applied bottom-to-top; overlapping or contained ranges are merged or rejected "
+                "automatically."
             ),
             "parameters": {
                 "type": "object",
@@ -73,45 +77,41 @@ class Tool(BaseTool):
                                 "file_path": {
                                     "type": "string",
                                     "description": (
-                                        "The absolute or relative path to the file being edited."
+                                        "The file to edit, absolute or relative to the project root."
                                     ),
                                 },
                                 "operation": {
                                     "type": "string",
                                     "enum": ["replace", "delete"],
                                     "description": (
-                                        "Choose 'replace' to swap the ID range with new text, "
-                                        "or 'delete' to remove the ID range entirely."
+                                        "The kind of edit: 'replace' swaps the targeted range with new text, "
+                                        "'delete' removes it entirely."
                                     ),
                                 },
                                 "text": {
                                     "type": "string",
                                     "description": (
-                                        "The exact replacement text. If operation is 'delete', "
-                                        'this MUST be an empty string (""). '
-                                        "NEVER include content IDs in this text."
+                                        "The replacement text for 'replace'. "
+                                        "For 'delete' leave this empty (\"\"). "
+                                        "Supplied as-is; do not include identifier prefixes."
                                     ),
                                 },
                                 "start_line": {
                                     "type": "string",
                                     "description": (
-                                        "The exact reference for the start of the edit. "
-                                        "For duplicate lines with a specific hash, "
-                                        "use the 4-character hash wrapped in tildes (e.g., '—WecX—'). "
-                                        "For unique lines marked with the generic '——' prefix, "
-                                        "provide the exact full text of the line. "
-                                        "For empty files, use '@000'."
+                                        "The first line of the edit: "
+                                        "its exact text if unique, its hashed prefix "
+                                        f"(e.g., '{HASH_DELIMITER}WecX{HASH_DELIMITER}') if duplicated, "
+                                        "or '@000' for empty files."
                                     ),
                                 },
                                 "end_line": {
                                     "type": "string",
                                     "description": (
-                                        "The exact reference for the end of the edit. "
-                                        "For duplicate lines with a specific hash, "
-                                        "use the 4-character hash wrapped in tildes (e.g., '—WecX—'). "
-                                        "For unique lines marked with the generic '——' prefix, "
-                                        "provide the exact full text of the line. "
-                                        "For empty files, use '@000'."
+                                        "The last line of the edit (inclusive): "
+                                        "its exact text if unique, its hashed "
+                                        f"prefix (e.g., '{HASH_DELIMITER}WecX{HASH_DELIMITER}') if duplicated, "
+                                        "or '000@' for the end of the file."
                                     ),
                                 },
                             },
@@ -126,7 +126,9 @@ class Tool(BaseTool):
                     },
                     "change_id": {
                         "type": "string",
-                        "description": "Optional tracking ID for this batch of edits.",
+                        "description": (
+                            "Optional tracking ID for this batch of edits; returned in the result metadata."
+                        ),
                     },
                 },
                 "required": ["edits"],

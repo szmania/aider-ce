@@ -38,24 +38,24 @@ class Tool(BaseTool):
         "function": {
             "name": "ReadFile",
             "description": (
-                "Get prefixed content between start and end markers. Accepts an array of `read` objects "
-                "(file_path, range_start, range_end). Range markers can be text patterns (up to 3 lines), "
-                "file boundaries (@000, 000@), or exact line numbers (@L10). "
-                "Contextual end markers (@C{num}, @P{num}, @N{num}) expand symmetrically, previously, or next "
-                "around a single unique range_start match."
-                " Use line hints (e.g., 'my_func @L150', '@A{{def foo}}', '@B{{return x}}') to disambiguate. "
-                "@A{{regex}} keeps only the closest match **after** the regex hit; "
-                "@B{{regex}} keeps only the closest match **before** the regex hit. "
+                "Read lines from one or more files. Each returned line carries a virtual identifier "
+                "you can pass straight to EditFile. Batch reads by passing an array of "
+                "{file_path, range_start, range_end} objects."
                 ""
-                "File lines are prefixed with virtual, deterministic identifiers generated on-the-fly: "
-                "Because identifiers track global occurrences, "
-                "adding or deleting a line can instantly change the prefix "
-                "of identical lines anywhere else in the file as well as content after the edit."
-                "Always re-read the file to get fresh IDs after making edits."
+                "Markers for range_start / range_end:"
+                "  - exact text patterns (up to 5 lines; anchor on meaningful names like function signatures)"
+                "  - '@000' / '000@' for the first / last line"
+                "  - '@L10' for an exact line number"
+                "  - hint suffixes to disambiguate repeated patterns: ' @L<num>' (nearest match), "
+                "    '@A{{regex}}' (closest match after the regex hit), '@B{{regex}}' (closest match before)"
+                "  - when range_start matches one location, range_end accepts '@C{num}' (context both sides), "
+                "    '@P{num}' (lines before the match), '@N{num}' (lines after the match)"
                 ""
-                "Avoid generic keywords; use meaningful identifiers like function names. Do not use empty strings. "
-                "Always use ReadFile instead of CLI tools. Ranges >200 lines return a structural preview. "
-                "Call sequentially with increasingly fine-grained searches to drill down into large files."
+                "Identifiers are deterministic per line content, so adding or removing lines can re-prefix "
+                "identical lines elsewhere in the file; re-read after editing to get fresh identifiers."
+                ""
+                "Large structured ranges (line-number or boundary reads) return a structural outline "
+                "instead of full contents; read in smaller targeted ranges for full detail."
             ),
             "parameters": {
                 "type": "object",
@@ -67,28 +67,26 @@ class Tool(BaseTool):
                             "properties": {
                                 "file_path": {
                                     "type": "string",
-                                    "description": "File path to search in.",
+                                    "description": (
+                                        "The file to read, absolute or relative to the project root."
+                                    ),
                                 },
                                 "range_start": {
                                     "type": "string",
                                     "description": (
-                                        "The text marking the beginning of the range."
-                                        " Use '@000' for the first line on empty files."
-                                        " Append ' @L<num>' (e.g., 'my_func @L1506') as a"
-                                        " proximity hint to help select among multiple matches."
+                                        "The start of the range: an exact text pattern (up to 5 lines), "
+                                        "'@000' for the first line, or '@L<num>' for an exact line number. "
+                                        "Append ' @L<num>' (e.g., 'my_func @L1506') to pick among multiple matches, "
+                                        "or '@A{{regex}}' / '@B{{regex}}' for closest match after/before the regex hit."
                                     ),
                                 },
                                 "range_end": {
                                     "type": "string",
                                     "description": (
-                                        "The text marking the end of the range."
-                                        " Use '000@' for the last line on empty files."
-                                        " When range_start uniquely matches one location, you"
-                                        " may use contextual markers: '@C{number}' (e.g., '@C5')"
-                                        " for lines on both sides of the match, '@P{number}'"
-                                        " for lines BEFORE the match (the match is the range"
-                                        " end), or '@N{number}' for lines AFTER the match"
-                                        " (the match is the range start)."
+                                        "The end of the range: an exact text pattern (up to 5 lines), '000@' for "
+                                        "the last line, or '@L<num>' for an exact line number. When range_start "
+                                        "matches one location, use '@C{num}' for context on both sides, "
+                                        "'@P{num}' for lines before the match, or '@N{num}' for lines after the match."
                                     ),
                                 },
                             },
