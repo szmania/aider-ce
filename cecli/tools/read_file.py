@@ -45,7 +45,6 @@ class Tool(BaseTool):
                 "Markers for range_start / range_end:"
                 "  - exact text patterns (preferred usage) (up to 5 lines; anchor on meaningful names like function signatures)"  # noqa
                 "  - '@000' / '000@' for the first / last line"
-                "  - '@L10' for an exact line number"
                 "  - hint suffixes to disambiguate repeated patterns: ' @L<num>' (nearest match), "
                 "    '@A{{regex}}' (closest match after the regex hit), '@B{{regex}}' (closest match before)"
                 "  - when range_start matches one location, range_end accepts '@C{num}' (context both sides), "
@@ -75,7 +74,7 @@ class Tool(BaseTool):
                                     "type": "string",
                                     "description": (
                                         "The start of the range: an exact text pattern (up to 5 lines), "
-                                        "'@000' for the first line, or '@L<num>' for an exact line number. "
+                                        "'@000' for the first line. "
                                         "Append ' @L<num>' (e.g., 'my_func @L1506') to pick among multiple matches, "
                                         "or '@A{{regex}}' / '@B{{regex}}' for closest match after/before the regex hit."
                                     ),
@@ -84,7 +83,7 @@ class Tool(BaseTool):
                                     "type": "string",
                                     "description": (
                                         "The end of the range: an exact text pattern (up to 5 lines), '000@' for "
-                                        "the last line, or '@L<num>' for an exact line number. When range_start "
+                                        "the last line. When range_start "
                                         "matches one location, use '@C{num}' for context on both sides, "
                                         "'@P{num}' for lines before the match, or '@N{num}' for lines after the match."
                                     ),
