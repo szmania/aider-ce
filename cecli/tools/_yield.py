@@ -182,7 +182,12 @@ class Tool(BaseTool):
             summary = kwargs.get("summary", None)
 
             # Fire memorizer with yield summary (skip if already a memorizer)
-            if not waited_for_sub_agents and getattr(coder, "auto_memory", False) and summary:
+            if (
+                not waited_for_sub_agents
+                and getattr(coder, "auto_memory", False)
+                and summary
+                and coder.turn_count >= 5
+            ):
                 agent_service = AgentService.get_instance(coder)
                 if agent_service.get_agent_name(coder) != "memorizer":
                     from cecli.helpers.memory.utils import invoke_memorizer
