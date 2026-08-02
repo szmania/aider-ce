@@ -320,6 +320,7 @@ class Coder(metaclass=UsageMeta):
                 mcp_manager=from_coder.mcp_manager,
                 registered_tools=copy.deepcopy(from_coder.registered_tools),
                 registered_servers=copy.deepcopy(from_coder.registered_servers),
+                auto_memory=from_coder.auto_memory,
                 uuid=from_coder.uuid,
                 parent_uuid=from_coder.parent_uuid,
                 repo=from_coder.repo,
