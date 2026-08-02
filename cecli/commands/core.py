@@ -1,3 +1,4 @@
+import asyncio
 import json
 import re
 import sys
@@ -135,6 +136,11 @@ class Commands:
         # Prompt queue for CLI-33: in-memory FIFO queue for deferred prompt processing
         self.prompt_queue = []
         self._queue_counter = 0
+        self._queue_lock = asyncio.Lock()
+        self._processing_queue = False
+
+        # Commands that should NOT trigger auto-processing of the queue
+        self._MANAGEMENT_COMMANDS = {"queue", "list-queue", "remove-queue"}
 
     # ── Queue Management Methods (CLI-33) ──────────────────────────────
 
@@ -203,6 +209,40 @@ class Commands:
         items = list(self.prompt_queue)
         self.prompt_queue.clear()
         return items
+
+    async def _process_queued_prompts(self):
+        """Process all prompts currently in the queue sequentially.
+
+        This method is called from the finally block of execute() after
+        cmd_running_event is set, ensuring the system is idle before
+        processing queued prompts. Management commands (queue, list-queue,
+        remove-queue) are excluded from triggering this method.
+
+        Uses _processing_queue flag to prevent re-entrant processing
+        (e.g., if a queued prompt itself queues another prompt).
+        """
+        self._processing_queue = True
+        try:
+            while self.prompt_queue:
+                item = self._dequeue_prompt()
+                if not item:
+                    break
+                if self.io:
+                    self.io.tool_output(f"Processing queued prompt (id: {item['id']})...")
+                try:
+                    await self.run(item["text"])
+                except SwitchCoderSignal:
+                    raise
+                except ReloadProgramSignal:
+                    raise
+                except Exception as e:
+                    if self.io:
+                        self.io.tool_error(
+                            f"Error processing queued prompt (id: {item['id']}): {e}"
+                        )
+                    continue
+        finally:
+            self._processing_queue = False
 
     def _load_custom_commands(self, custom_commands):
         """
@@ -327,6 +367,13 @@ class Commands:
             self.cmd_running_event.set()
             if self.coder.tui and self.coder.tui():
                 self.coder.tui().refresh()
+            # Queue processing integration: auto-process queued prompts when system is idle
+            if (
+                self.prompt_queue
+                and cmd_name not in self._MANAGEMENT_COMMANDS
+                and not self._processing_queue
+            ):
+                await self._process_queued_prompts()
 
     def matching_commands(self, inp):
         words = inp.strip().split()

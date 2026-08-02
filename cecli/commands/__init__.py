@@ -37,6 +37,7 @@ from .hot_reload import HotReloadCommand
 from .include_skill import IncludeSkillCommand
 from .lint import LintCommand
 from .list_mcp import ListMcpCommand
+from .list_queue import ListQueueCommand
 from .list_sessions import ListSessionsCommand
 from .list_skills import ListSkillsCommand
 from .load import LoadCommand
@@ -60,6 +61,7 @@ from .reap_agent import ReapAgentCommand
 from .reasoning_effort import ReasoningEffortCommand
 from .remove_hook import RemoveHookCommand
 from .remove_mcp import RemoveMcpCommand
+from .remove_queue import RemoveQueueCommand
 from .remove_skill import RemoveSkillCommand
 from .report import ReportCommand
 from .reset import ResetCommand
@@ -128,6 +130,7 @@ CommandRegistry.register(SwitchAgentCommand)
 CommandRegistry.register(IncludeSkillCommand)
 CommandRegistry.register(LintCommand)
 CommandRegistry.register(ListMcpCommand)
+CommandRegistry.register(ListQueueCommand)
 CommandRegistry.register(ListSessionsCommand)
 CommandRegistry.register(ListSkillsCommand)
 CommandRegistry.register(LoadCommand)
@@ -150,6 +153,7 @@ CommandRegistry.register(ReadOnlyStubCommand)
 CommandRegistry.register(ReasoningEffortCommand)
 CommandRegistry.register(RemoveHookCommand)
 CommandRegistry.register(RemoveMcpCommand)
+CommandRegistry.register(RemoveQueueCommand)
 CommandRegistry.register(RemoveSkillCommand)
 CommandRegistry.register(ReportCommand)
 CommandRegistry.register(ResetCommand)
@@ -230,7 +234,7 @@ __all__ = [
     "parse_quoted_filenames",
     "PasteCommand",
     "quote_filename",
-"QueueCommand",
+    "QueueCommand",
     "QuitCommand",
     "ReadOnlyCommand",
     "ReadOnlyStubCommand",
@@ -238,6 +242,7 @@ __all__ = [
     "ReloadProgramSignal",
     "RemoveHookCommand",
     "RemoveMcpCommand",
+    "RemoveQueueCommand",
     "RemoveSkillCommand",
     "ReportCommand",
     "ResetCommand",
