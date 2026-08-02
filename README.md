@@ -5,8 +5,8 @@
 
 ### Links
 
-[Documentation](https://cecli.dev/docs/) 🞄
-[Discord Chat](https://discord.gg/AX9ZEA7nJn) 🞄
+[Documentation](https://cecli.dev/docs/)
+[Discord Chat](https://discord.gg/AX9ZEA7nJn)
 [Issue Queue](https://github.com/cecli-dev/cecli/issues)
 
 
@@ -52,52 +52,65 @@ uv tool install --native-tls --python python3.12 cecli-dev
 
 Use the tool installation so cecli doesn't interfere with your development environment
 
-## Prompt Queueing Feature
+## Prompt Queue Management
 
-The cecli application now includes a prompt queueing feature that allows users to manage multiple prompts in a first-in-first-out (FIFO) queue with a configurable maximum size.
+The `cecli` CLI includes a prompt queueing feature (`CLI-33`) that allows users to manage multiple prompts in a first-in-first-out (FIFO) in-memory queue. The queue is tied to the user's CLI session and does not persist across restarts.
 
-### How It Works
+### Queue Lifecycle
 
-When the prompt queue is enabled, incoming prompts are added to a queue instead of being processed immediately. The queue has a default maximum size of 5 prompts. When the queue is full and a new prompt is added, the oldest prompt is automatically removed to make space for the new one.
+1. **Enqueue**: `/queue <prompt>` adds a prompt to the queue.
+2. **List**: `/list-queue` displays all queued prompts with index numbers and timestamps.
+3. **Remove**: `/remove-queue [index|*]` removes a specific item by index, clears the entire queue with `*`, or provides interactive selection when called with no arguments.
+4. **Auto-Process**: After the current command completes and the system is idle (`cmd_running_event` is set), queued prompts are processed sequentially in FIFO order.
 
-### Configuration
+### Commands
 
-The maximum queue size can be configured using the `max_queue_size` parameter in your cecli configuration:
+- `/queue <prompt text>` — Adds a prompt to the queue. Confirms with the queue position.
+- `/list-queue` — Displays a numbered list of queued prompts (`[index] text (timestamp)`). Shows "Queue is empty" when appropriate.
+- `/remove-queue <index>` — Removes the prompt at the given 0-based index.
+- `/remove-queue *` — Clears the entire queue.
+- `/remove-queue` (no args) — Enters interactive selection mode.
+
+### Queue Limits
+
+- **Max Queue Size**: 100 items (hard limit). New prompts are rejected with a warning when the queue is full.
+- **Max Prompt Length**: 10,000 characters per queued item. Prompts exceeding this limit are rejected.
+- **In-Memory Only**: The queue is stored on the `Commands` instance (`cecli/commands/core.py`) and is lost when the CLI session restarts.
+
+### Queue Processing Integration
+
+Queue processing is triggered in the `finally` block of `Commands.execute()` after `cmd_running_event.set()`. Management commands (`queue`, `list-queue`, `remove-queue`) are excluded from triggering auto-processing to prevent unexpected behavior. A `_processing_queue` boolean flag prevents infinite recursion if a queued prompt itself queues another item.
+
+### Example Workflow
 
 ```bash
-cecli --max_queue_size 10
+# Queue multiple prompts
+/queue "refactor database layer"
+/queue "add unit tests for user service"
+
+# View queued prompts
+/list-queue
+# Output: [1] refactor database layer (2026-08-01 10:30:00)
+#         [2] add unit tests for user service (2026-08-01 10:30:05)
+
+# Remove a specific queued prompt
+/remove-queue 1
+
+# Clear the entire queue
+/remove-queue *
+
+# Queued prompts process automatically after the current command completes
 ```
 
-Or in your `.cecli.conf.yml` file:
+### Management Command Guard
 
-```yaml
-max_queue_size: 10
-```
+The management commands (`/queue`, `/list-queue`, `/remove-queue`) must not trigger auto-processing of queued items. Their execution is isolated so that the current prompt continues uninterrupted. When any of these commands is entered while another prompt is being processed, they execute immediately without clearing `cmd_running_event` or steering the ongoing command.
 
-### Usage
+### Thread Safety
 
-1. **Queue Management**: Prompts are automatically queued when the queue is enabled
-2. **View Queue**: The TUI interface displays the current queue of prompts
-3. **Remove from Queue**: Use the `/queue-remove` command to remove specific prompts from the queue
+The queue uses a single-threaded async event loop. List operations on `prompt_queue` are naturally safe within the async loop. An `asyncio.Lock` (`_queue_lock`) protects all read and write operations to ensure atomic updates.
 
-### /queue-remove Command
-
-The `/queue-remove` command allows you to remove specific prompts from the queue:
-
-```bash
-/queue-remove 3
-```
-
-This command removes the prompt at index 3 from the queue (0-based indexing). Tab completion is available for prompt IDs.
-
-### Benefits
-
-- Prevents overwhelming the system with too many concurrent prompts
-- Allows users to review and manage their prompt queue
-- Provides better control over prompt processing order
-- Automatically handles overflow by removing oldest prompts
-
-The prompt queueing feature enhances the user experience by providing better control over prompt processing and preventing system overload.
+The prompt queueing feature enhances the user experience by providing robust prompt management capabilities, increasing efficiency, and preventing interruptions during ongoing tasks.
 
 The documentation above contains the full set of allowed configuration options
 but I highly recommend using an `.cecli.conf.yml` file. A good place to get started is:
