@@ -336,7 +336,8 @@ class Commands:
             return
 
         self.last_command_show_notification = command_class.show_completion_notification
-        self.cmd_running_event.clear()
+        if cmd_name not in self._MANAGEMENT_COMMANDS:
+            self.cmd_running_event.clear()
 
         try:
             kwargs.update(
@@ -386,6 +387,12 @@ class Commands:
         return matching_commands, first_word, rest_inp
 
     async def run(self, inp, coder=None, **kwargs):
+        if inp.startswith("/"):
+            words = inp.strip().split()
+            cmd_name = words[0][1:]
+            rest_inp = inp[len(words[0]) :].strip()
+            return await self.execute(cmd_name, rest_inp, coder=coder, **kwargs)
+
         if inp.startswith("!!!"):
             return await self.execute(
                 "run", inp[3:], coder=coder, background=True, suppress_add=True
