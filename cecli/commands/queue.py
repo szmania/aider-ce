@@ -26,16 +26,16 @@ class QueueCommand(BaseCommand):
         # Sad path: coder.commands is None
         if not coder.commands:
             return format_command_result(
-                io, cls.NORM_NAME,
-                error="Command system not available. Cannot queue prompts."
+                io, cls.NORM_NAME, error="Command system not available. Cannot queue prompts."
             )
 
         # Sad path: no args (empty prompt text)
         if not args or not args.strip():
             return format_command_result(
-                io, cls.NORM_NAME,
+                io,
+                cls.NORM_NAME,
                 "Usage: /queue <prompt text>\n"
-                "Add a prompt to the queue for processing after current tasks complete."
+                "Add a prompt to the queue for processing after current tasks complete.",
             )
 
         prompt_text = args.strip()
@@ -43,18 +43,17 @@ class QueueCommand(BaseCommand):
         # Sad path: prompt exceeds 10000 characters
         if len(prompt_text) > 10000:
             return format_command_result(
-                io, cls.NORM_NAME,
+                io,
+                cls.NORM_NAME,
                 error=f"Prompt exceeds maximum length of 10000 characters "
-                       f"(got {len(prompt_text)})."
+                f"(got {len(prompt_text)}).",
             )
 
         # Happy path: enqueue the prompt
         try:
             item = coder.commands._enqueue_prompt(prompt_text)
             position = len(coder.commands.prompt_queue)
-            io.tool_output(
-                f"Prompt queued at position {position} (id: {item['id']})"
-            )
+            io.tool_output(f"Prompt queued at position {position} (id: {item['id']})")
             return f"Successfully executed {cls.NORM_NAME}."
         except ValueError as e:
             return format_command_result(io, cls.NORM_NAME, error=str(e))
