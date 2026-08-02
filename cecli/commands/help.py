@@ -17,6 +17,8 @@ class HelpCommand(BaseCommand):
             await cls._basic_help(io, coder)
             return format_command_result(io, "help", "Displayed basic help")
 
+        from uuid import uuid4 as generate_unique_id
+
         from cecli.coders.base_coder import Coder
         from cecli.help import Help, install_help_extra
 
@@ -34,15 +36,18 @@ class HelpCommand(BaseCommand):
                 from cecli.commands import Commands
 
                 commands_instance = Commands(io, coder)
-            commands_instance.help = Help()
+            commands_instance.help = Help(coder=coder)
 
         help_instance = commands_instance.help
 
         # Use the editor_model from the main_model if it exists, otherwise use the main_model itself
         editor_model = coder.main_model.editor_model or coder.main_model
 
+        original_coder = coder
+
         kwargs = dict()
         kwargs["io"] = io
+        kwargs["uuid"] = str(generate_unique_id())
         kwargs["from_coder"] = coder
         kwargs["edit_format"] = "help"
         kwargs["summarize_from_coder"] = False
@@ -76,7 +81,7 @@ class HelpCommand(BaseCommand):
         raise SwitchCoderSignal(
             edit_format=coder.edit_format,
             summarize_from_coder=False,
-            from_coder=help_coder,
+            from_coder=original_coder,
             map_tokens=map_tokens,
             map_mul_no_files=map_mul_no_files,
             show_announcements=False,

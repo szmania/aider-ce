@@ -66,7 +66,7 @@ def fname_to_url(filepath):
     return f"https://cecli.dev/{url_path}"
 
 
-def get_index():
+def get_index(coder=None):
     from llama_index.core import (
         Document,
         StorageContext,
@@ -84,29 +84,45 @@ def get_index():
     except (OSError, json.JSONDecodeError):
         shutil.rmtree(dname)
     if index is None:
-        parser = MarkdownNodeParser()
-        nodes = []
-        for fname in get_package_files():
-            fname = Path(fname)
-            if any(fname.match(pat) for pat in exclude_website_pats):
-                continue
-            doc = Document(
-                text=importlib_resources.files("cecli.website")
-                .joinpath(fname)
-                .read_text(encoding="utf-8"),
-                metadata=dict(
-                    filename=fname.name, extension=fname.suffix, url=fname_to_url(str(fname))
-                ),
-            )
-            nodes += parser.get_nodes_from_documents([doc])
-        index = VectorStoreIndex(nodes, show_progress=True)
-        dname.parent.mkdir(parents=True, exist_ok=True)
-        index.storage_context.persist(dname)
+        io = getattr(coder, "io", None) if coder is not None else None
+        in_tui = io is not None and _in_tui(coder)
+
+        # Inside the Textual TUI, stdout/stderr are redirected to streams whose
+        # fileno() == -1, so tqdm's lazily-created multiprocessing.RLock crashes
+        # with "bad value(s) in fds_to_keep". Use coder.io spinner states instead
+        # of tqdm there; keep the tqdm progress bar everywhere else.
+        if in_tui:
+            io.start_spinner("Parsing help docs...")
+        try:
+            parser = MarkdownNodeParser()
+            nodes = []
+            for fname in get_package_files():
+                fname = Path(fname)
+                if any(fname.match(pat) for pat in exclude_website_pats):
+                    continue
+                doc = Document(
+                    text=importlib_resources.files("cecli.website")
+                    .joinpath(fname)
+                    .read_text(encoding="utf-8"),
+                    metadata=dict(
+                        filename=fname.name, extension=fname.suffix, url=fname_to_url(str(fname))
+                    ),
+                )
+                nodes += parser.get_nodes_from_documents([doc])
+
+            if in_tui:
+                io.update_spinner("Embedding help docs...")
+            index = VectorStoreIndex(nodes, show_progress=not in_tui)
+            dname.parent.mkdir(parents=True, exist_ok=True)
+            index.storage_context.persist(dname)
+        finally:
+            if in_tui:
+                io.stop_spinner()
     return index
 
 
 class Help:
-    def __init__(self):
+    def __init__(self, coder=None):
         from huggingface_hub.utils import disable_progress_bars
         from llama_index.core import Settings
         from llama_index.embeddings.huggingface import HuggingFaceEmbedding
@@ -116,7 +132,7 @@ class Help:
         logging.set_verbosity_error()
 
         Settings.embed_model = HuggingFaceEmbedding(model_name="BAAI/bge-small-en-v1.5")
-        index = get_index()
+        index = get_index(coder=coder)
         self.retriever = index.as_retriever(similarity_top_k=20)
 
     def ask(self, question):
@@ -130,3 +146,25 @@ class Help:
             context += node.text
             context += "\n</doc>\n\n"
         return context
+
+
+def _in_tui(coder):
+    """Return True if coder is attached to a live TUI app.
+
+    The TUI stores itself on coders as a weakref (``coder.tui = weakref.ref(app)``),
+    so we dereference it (``tui()``) to confirm the app is alive — mirroring the
+    ``if coder.tui and coder.tui():`` idiom used across the codebase.
+    """
+    try:
+        import weakref
+
+        tui_ref = getattr(coder, "tui", None)
+        if tui_ref is None:
+            return False
+
+        if isinstance(tui_ref, weakref.ref):
+            return tui_ref() is not None
+
+        return bool(tui_ref)
+    except Exception:
+        return False
