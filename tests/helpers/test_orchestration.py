@@ -802,7 +802,7 @@ def test_agent_region_basic(tmp_path):
         "basic.py",
         coder,
         [
-            {"name": "foo", "start": "def foo", "end": "return 42"},
+            {"name": "foo", "start": "def foo():", "end": "    return 42"},
         ],
     )
 
@@ -898,9 +898,9 @@ def main():
     regions = proxy.resolve_regions(
         "test_regions.py",
         [
-            {"name": "helper_one", "start": "def helper_one", "end": 'return "one"'},
-            {"name": "helper_two", "start": "def helper_two", "end": 'return "two"'},
-            {"name": "main", "start": "def main", "end": "return result"},
+            {"name": "helper_one", "start": "def helper_one():", "end": '    return "one"'},
+            {"name": "helper_two", "start": "def helper_two():", "end": '    return "two"'},
+            {"name": "main", "start": "def main():", "end": "    return result"},
         ],
     )
 
@@ -994,7 +994,7 @@ def farewell(name):
     proxy = AgentProxy(coder)
     regions = proxy.resolve_regions(
         "fallback_test.py",
-        [{"name": "greet", "start": "def greet", "end": 'return f"hello {name}"'}],
+        [{"name": "greet", "start": "def greet(name):", "end": '    return f"hello {name}"'}],
     )
 
     # Get the content ID for the start of "greet"
@@ -1101,7 +1101,7 @@ def baz():
         "hint_test.py",
         coder,
         [
-            {"name": "bar", "start": "def bar", "end": "return @L6"},
+            {"name": "bar", "start": "def bar():", "end": "    return y @L6"},
         ],
     )
 
@@ -1179,7 +1179,7 @@ def baz():
         "explicit_hint.py",
         coder,
         [
-            {"name": "bar", "start": "def bar", "end": "return", "end_line_hint": 6},
+            {"name": "bar", "start": "def bar():", "end": "    return y", "end_line_hint": 6},
         ],
     )
 
@@ -1223,14 +1223,14 @@ def baz():
         [
             {
                 "name": "bar",
-                "start": "def bar",
-                "end": "return @L3",
+                "start": "def bar():",
+                "end": "    return y @L3",
                 "end_line_hint": 6,
             },
         ],
     )
 
-    # Explicit hint (6→line 5) should win over @L3 (→line 2)
+    # Explicit hint (6, 1-based) disambiguates; pattern must be the full exact line
     assert regions.get_end_line("bar") == 5
 
 

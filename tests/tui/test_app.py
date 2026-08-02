@@ -14,6 +14,9 @@ def tui_instance(monkeypatch):
     tui = TUI(coder_worker=None, output_queue=None, input_queue=None, args=None)
     tui._mouse_hold_timer = None
     tui._currently_generating = False
+    tui._confirmation_lock = False
+    tui._confirmations_pending = []
+    tui._sub_agent_containers = {}
     return tui
 
 
@@ -21,7 +24,7 @@ def test_on_mouse_move_windows(tui_instance):
     """
     Test that on_mouse_move stops the event on Windows.
     """
-    with patch("platform.system", return_value="Windows"):
+    with patch("cecli.tui.app.IS_WINDOWS", True):
         mock_event = MagicMock(spec=events.MouseMove)
         tui_instance.on_mouse_move(mock_event)
         mock_event.stop.assert_called_once()
@@ -101,11 +104,11 @@ def test_handle_output_message_spinner_with_agent_name(tui_instance, monkeypatch
     tui_instance.handle_output_message(msg)
     mock_footer.start_spinner.assert_called_once_with("Thinking...", agent_name="researcher")
 
-    # Test: primary agent spinner should have agent_name=None
+    # Test: primary agent spinner should have agent_name="primary"
     mock_footer.reset_mock()
     msg["coder_uuid"] = "primary_uuid"
     tui_instance.handle_output_message(msg)
-    mock_footer.start_spinner.assert_called_once_with("Thinking...", agent_name=None)
+    mock_footer.start_spinner.assert_called_once_with("Thinking...", agent_name="primary")
 
 
 def test_handle_output_message_confirmation_with_agent_name(tui_instance, monkeypatch):
@@ -264,6 +267,7 @@ def test_show_error_uses_query_one(tui_instance):
         agent_name="test_agent",
     )
     # Test: error message for unknown agent should have agent_name=None
+    mock_status_bar.show_notification.reset_mock()
     msg = {
         "type": "error",
         "message": "Something went wrong!",
