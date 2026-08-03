@@ -482,8 +482,9 @@ class TextualInputOutput(InputOutput):
             }
         )
 
-        # Wait for input from TUI (blocking in async context)
-        # We need to poll the queue since it's not async
+        # Wait for input from TUI. The per-coder and shared queues are
+        # thread-safe payloads; wait_for_input() blocks natively until a push
+        # wakes us, so no polling is required.
         while True:
             if hasattr(self, "file_watcher") and self.file_watcher:
                 if not self.file_watcher.is_running:
@@ -494,36 +495,38 @@ class TextualInputOutput(InputOutput):
                     cmd = self.file_watcher.process_changes()
                     return cmd
 
-            try:
-                # Non-blocking get with timeout
-                import queue
+            import queue
 
-                # Check all per-coder queues first (non-blocking)
-                for _uuid, _q in list(queues._per_coder_queues.items()):
-                    try:
-                        result = _q.get_nowait()
-                        if "text" in result:
-                            user_input = result["text"]
-                            target_uuid = result.get("coder_uuid", _uuid)
-                            self.user_input(user_input)
-                            return user_input, target_uuid
-                    except queue.Empty:
-                        continue
-
-                # Fall back to shared queue (blocking with timeout)
-                result = self.input_queue.get(timeout=0.1)
+            # Check all per-coder queues first (non-blocking)
+            for _uuid, _q in list(queues._per_coder_queues.items()):
+                try:
+                    result = _q.get_nowait()
+                except queue.Empty:
+                    continue
 
                 if "text" in result:
                     user_input = result["text"]
-                    target_uuid = result.get("coder_uuid")
-
-                    # Log the input (same as parent)
+                    target_uuid = result.get("coder_uuid", _uuid)
                     self.user_input(user_input)
-
                     return user_input, target_uuid
+
+            # Fall back to shared queue (non-blocking)
+            try:
+                result = self.input_queue.get_nowait()
             except queue.Empty:
-                # No input yet, yield control
-                await asyncio.sleep(0.1)
+                result = None
+
+            if result is not None and "text" in result:
+                user_input = result["text"]
+                target_uuid = result.get("coder_uuid")
+
+                # Log the input (same as parent)
+                self.user_input(user_input)
+
+                return user_input, target_uuid
+
+            # Nothing available yet — block until the next push
+            await queues.wait_for_input()
 
     async def confirm_ask(
         self,
@@ -617,42 +620,42 @@ class TextualInputOutput(InputOutput):
                     }
                 )
 
-            # Wait for response from TUI
+            # Wait for response from TUI. Sweep the per-coder queues
+            # (non-blocking), then block natively until the next push.
             while True:
-                try:
-                    import queue
+                import queue
 
-                    # Check all per-coder queues first (non-blocking)
-                    for _uuid, _q in list(queues._per_coder_queues.items()):
-                        try:
-                            result = _q.get_nowait()
-                            if "confirmed" in result:
-                                response = result["confirmed"]
+                for _uuid, _q in list(queues._per_coder_queues.items()):
+                    try:
+                        result = _q.get_nowait()
+                    except queue.Empty:
+                        continue
 
-                                # Handle special responses
-                                if response == "never":
-                                    self.never_prompts.add(question_id)
-                                    return False
-                                elif response == "tweak":
-                                    return "tweak"
-                                elif response == "all":
-                                    if group:
-                                        group.preference = "all"
-                                    if group_response:
-                                        self.group_responses[group_response] = True
-                                    return True
-                                elif response == "skip":
-                                    if group:
-                                        group.preference = "skip"
-                                    if group_response:
-                                        self.group_responses[group_response] = False
-                                    return False
-                                else:
-                                    return bool(response)
-                        except queue.Empty:
-                            continue
-                except queue.Empty:
-                    await asyncio.sleep(0.1)
+                    if "confirmed" in result:
+                        response = result["confirmed"]
+
+                        # Handle special responses
+                        if response == "never":
+                            self.never_prompts.add(question_id)
+                            return False
+                        elif response == "tweak":
+                            return "tweak"
+                        elif response == "all":
+                            if group:
+                                group.preference = "all"
+                            if group_response:
+                                self.group_responses[group_response] = True
+                            return True
+                        elif response == "skip":
+                            if group:
+                                group.preference = "skip"
+                            if group_response:
+                                self.group_responses[group_response] = False
+                            return False
+                        else:
+                            return bool(response)
+
+                await queues.wait_for_input()
         except asyncio.CancelledError:
             return False
 

@@ -320,7 +320,7 @@ def run_install(cmd):
             text=True,
             bufsize=1,
             universal_newlines=True,
-            encoding=sys.stdout.encoding,
+            encoding=getattr(sys.stdout, "encoding", None) or "utf-8",
             errors="replace",
         )
         spinner = Spinner("Installing...")

@@ -34,6 +34,7 @@ class TestFinishedTool:
         mock_coder.uuid = "sub-uuid"
         mock_coder.parent_uuid = "parent-uuid"
         mock_coder.files_edited_by_tools = set()
+        mock_coder.turn_count = 0
 
         mock_info = MagicMock()
         mock_info.coder.uuid = "sub-uuid"
@@ -90,6 +91,7 @@ class TestFinishedTool:
         mock_coder.uuid = "sub-uuid"
         mock_coder.parent_uuid = "nonexistent-parent"
         mock_coder.files_edited_by_tools = set()
+        mock_coder.turn_count = 0
 
         with (
             patch.object(AgentService, "_instances", {}),
@@ -106,6 +108,7 @@ class TestFinishedTool:
         mock_coder.uuid = "test-uuid"
         mock_coder.parent_uuid = ""
         mock_coder.files_edited_by_tools = set()
+        mock_coder.turn_count = 0
 
         result = await Tool.execute(mock_coder, summary="completed successfully")
         assert "Summary: completed successfully" in str(result)

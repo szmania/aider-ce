@@ -9,7 +9,9 @@ You'll need a [Gemini API key](https://aistudio.google.com/app/u/2/apikey).
 
 First, install cecli:
 
-{% include install.md %}
+```bash
+uv tool install cecli-dev
+```
 
 Then configure your API keys:
 
@@ -19,7 +21,6 @@ setx   GEMINI_API_KEY <key> # Windows, restart shell after setx
 ```
 
 Start working with cecli and Gemini on your codebase:
-
 
 ```bash
 # Change directory into your codebase

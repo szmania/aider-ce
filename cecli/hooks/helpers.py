@@ -57,6 +57,10 @@ class HookHelpers:
         from cecli.helpers.conversation.service import ConversationService
 
         manager = ConversationService.get_manager(coder)
+        # NOTE: intentionally no flush_queue() here. Hooks (esp. post_tool) run
+        # mid-turn while tool responses are pending, and tool responses must
+        # follow the assistant message exactly; flushing here would insert
+        # queued messages between them.
         messages = manager.get_messages_dict(tag=tag, reload=reload)
 
         if last_n is not None and last_n > 0:

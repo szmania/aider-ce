@@ -1,3 +1,4 @@
+import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -222,6 +223,31 @@ class TestMcpServerManager:
         assert manager._connected_servers == set()
         assert "server1" not in manager._server_tools
         assert "server2" not in manager._server_tools
+
+    @pytest.mark.asyncio
+    async def test_disconnect_all_cancelled_during_shutdown(self, mock_io):
+        server1 = MagicMock(spec=McpServer)
+        server1.name = "server1"
+        started = asyncio.Event()
+
+        async def blocking_disconnect():
+            started.set()
+            await asyncio.Event().wait()
+
+        server1.disconnect = blocking_disconnect
+
+        manager = McpServerManager(servers=[server1], io=mock_io, verbose=True)
+        manager._connected_servers.add(server1)
+        manager._server_tools = {"server1": []}
+
+        # Simulate the task running disconnect_all being cancelled mid-gather
+        # (e.g. by an anyio cancel scope during program shutdown).
+        task = asyncio.create_task(manager.disconnect_all())
+        await started.wait()
+        task.cancel()
+
+        # Should complete without raising CancelledError.
+        assert await task is None
 
     @pytest.mark.asyncio
     async def test_add_server_success(self, mock_server, mock_io):

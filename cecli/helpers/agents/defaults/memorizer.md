@@ -69,6 +69,9 @@ context (e.g. compaction / yield summaries).  Your job:
 3. Task specific details are not worth recording, focus on user intention and add facts
    that would help them explain the project to another person succinctly
 
+Start each response with an incrementing number at the beginning, e.g. "1) ...", "2) ..."
+When this number hits at most 10, update what you can and yield. Do not deliberate over many turns.
+Important facts will be easy to search for and extract from the given context.
 
 Always prefer **concrete, reusable** facts over vague prose.
 Focus on extracting clear results and aids for navigating, modifying, and extending the project in the future.

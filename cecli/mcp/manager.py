@@ -118,6 +118,11 @@ class McpServerManager:
                     del self._server_tools[server.name]
                 self._log_verbose(f"Disconnected from MCP server: {server.name}")
                 return (server, True)
+            except asyncio.CancelledError:
+                # Cancellation is expected during shutdown - anyio cancel scopes
+                # used by MCP transports don't play well with asyncio teardown.
+                self._log_verbose(f"Disconnect of MCP server {server.name} was cancelled")
+                return (server, False)
             except Exception:
                 self._log_warning(f"Error disconnected from MCP server: {server.name}")
                 return (server, False)
@@ -125,7 +130,14 @@ class McpServerManager:
         # Create a copy to avoid modifying during iteration
         servers_to_disconnect = list(self._connected_servers)
         tasks = [disconnect_server(server) for server in servers_to_disconnect]
-        results = await asyncio.gather(*tasks)
+
+        try:
+            results = await asyncio.gather(*tasks)
+        except asyncio.CancelledError:
+            # The whole disconnect was cancelled (e.g. during program shutdown).
+            # Treat this as a graceful shutdown instead of crashing the exit path.
+            self._log_verbose("MCP disconnect interrupted by shutdown cancellation")
+            return
 
         for server, success in results:
             if success:

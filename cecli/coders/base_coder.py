@@ -19,6 +19,8 @@ import weakref
 from collections import defaultdict
 from datetime import date, datetime
 
+import xxhash
+
 # Optional dependency: used to convert locale codes (eg ``en_US``)
 # into human-readable language names (eg ``English``).
 try:
@@ -40,6 +42,7 @@ from cecli.helpers import command_parser, coroutines, nested, responses
 from cecli.helpers.conversation import ConversationService, MessageTag
 from cecli.helpers.file_system import FileSystemService
 from cecli.helpers.io_proxy import IOProxy
+from cecli.helpers.memory_control import trim_memory
 from cecli.helpers.observations.service import ObservationService
 from cecli.helpers.profiler import TokenProfiler
 from cecli.helpers.threading import ThreadSafeEvent
@@ -317,6 +320,7 @@ class Coder(metaclass=UsageMeta):
                 mcp_manager=from_coder.mcp_manager,
                 registered_tools=copy.deepcopy(from_coder.registered_tools),
                 registered_servers=copy.deepcopy(from_coder.registered_servers),
+                auto_memory=from_coder.auto_memory,
                 uuid=from_coder.uuid,
                 parent_uuid=from_coder.parent_uuid,
                 repo=from_coder.repo,
@@ -1797,6 +1801,8 @@ class Coder(metaclass=UsageMeta):
             self.run_one_completed = True
             self.compact_context_completed = True
             self.io.stop_spinner()
+            # Trim memory in the background so it doesn't stall the event loop
+            coroutines.fire_and_forget(asyncio.to_thread(trim_memory))
 
     def copy_context(self):
         if self.auto_copy_context:
@@ -1880,6 +1886,8 @@ class Coder(metaclass=UsageMeta):
             ConversationService.get_chunks(self).flush_removals()
             self.last_user_message = user_message
             self.error_code = None
+            # Trim memory in the background so it doesn't delay the response
+            coroutines.fire_and_forget(asyncio.to_thread(trim_memory))
             # Fire memorizer after each user request
             # if self.auto_memory and self.edit_format not in ["subagent"]:
             #    from cecli.helpers.memory.utils import invoke_memorizer
@@ -2439,6 +2447,8 @@ class Coder(metaclass=UsageMeta):
         # Add chat and edit file messages
         ConversationService.get_chunks(self).add_chat_files_messages()
 
+        ConversationService.get_manager(self).flush_queue()
+
         # Return formatted messages for LLM
         return ConversationService.get_manager(self).get_messages_dict()
 
@@ -2567,12 +2577,14 @@ class Coder(metaclass=UsageMeta):
             self.format_chat_chunks()
 
             # Always add user message to conversation manager
-            ConversationService.get_manager(self).add_message(
+            ConversationService.get_manager(self).queue_message(
                 message_dict=dict(role="user", content=inp),
                 tag=MessageTag.CUR,
-                hash_key=("user_message", inp, str(time.monotonic_ns())),
-                promotion=ConversationService.get_manager(self).DEFAULT_TAG_PROMOTION_VALUE,
-                mark_for_demotion=1,
+                hash_key=(
+                    "user_message",
+                    xxhash.xxh3_128_hexdigest(inp.encode("utf-8", errors="replace")),
+                    str(time.monotonic_ns()),
+                ),
             )
 
         ConversationService.get_manager(self).decrement_message_markers()
@@ -2765,6 +2777,7 @@ class Coder(metaclass=UsageMeta):
 
             await self.show_exhausted_error()
             self.num_exhausted_context_windows += 1
+            self._release_response_buffers()
             return
         if self.partial_response_function_call:
             args = self.parse_partial_args()
@@ -2798,6 +2811,9 @@ class Coder(metaclass=UsageMeta):
                 mark_for_demotion=1,
             )
 
+            # The reply was interrupted mid-stream; drop the partial chunk buffers
+            # rather than holding them until the next send().
+            self._release_response_buffers()
             return
 
         edited = await self.apply_updates()
@@ -2882,6 +2898,11 @@ class Coder(metaclass=UsageMeta):
                 if ok:
                     self.reflected_message = test_errors
                     return
+
+        # Turn complete: drop the per-turn LLM stream buffers.  They are reset at
+        # the start of the next send(), so holding on to them while idle only
+        # wastes memory (chunks can be large for long streaming responses).
+        self._release_response_buffers()
 
     def _extract_and_prepare_tool_calls(self, tool_call_response):
         """
@@ -3401,6 +3422,16 @@ class Coder(metaclass=UsageMeta):
         """Cleanup when the Coder object is destroyed."""
         self.ok_to_warm_cache = False
 
+    def _release_response_buffers(self):
+        """Drop per-turn LLM stream data now that the turn has completed.
+
+        `partial_response_content` is intentionally kept: subclasses and callers
+        (get_edits, reply_completed, run_stream, ...) read it after the turn.
+        """
+        self.partial_response_chunks = []
+        self.partial_response_consolidated = None
+        self.partial_response_reasoning_content = ""
+
     async def add_assistant_reply_to_cur_messages(self):
         """
         Add the assistant's reply to `cur_messages`.
@@ -3447,10 +3478,17 @@ class Coder(metaclass=UsageMeta):
                 self.io.tool_warning("Execution stopped by end message hook")
                 return
 
+            if self.edit_format in ("agent", "subagent"):
+                msg.pop("function_call", None)
+
             ConversationService.get_manager(self).add_message(
                 message_dict=msg,
                 tag=MessageTag.CUR,
-                hash_key=("assistant_message", str(msg), str(time.monotonic_ns())),
+                hash_key=(
+                    "assistant_message",
+                    xxhash.xxh3_128_hexdigest(str(msg).encode("utf-8", errors="replace")),
+                    str(time.monotonic_ns()),
+                ),
                 # promotion=ConversationService.get_manager(self).DEFAULT_TAG_PROMOTION_VALUE,
                 # mark_for_demotion=1,
             )

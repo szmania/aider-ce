@@ -144,7 +144,7 @@ Arguments: {}
 ### Agent Configuration
 Agent Mode can be configured using the `--agent-config` command line argument, which accepts a JSON string for fine-grained control over tool availability and behavior.
 
-Agent Mode can also be configured directly in your configuration file. See the [Complete Configuration Example](#complete-configuration-example) below for a full reference.
+Agent Mode can also be configured directly in your configuration file. See the [Complete Configuration Example](#agent-mode-how-agent-mode-works-agent-configuration-complete-configuration-example) below for a full reference.
 
 #### Configuration Options
 
@@ -168,12 +168,11 @@ Agent Mode can also be configured directly in your configuration file. See the [
 
 - **`orchestration`**: A nested configuration object for the Orchestrate tool's Python sandbox.
   When absent or empty, the sandbox runs with default restrictions. See [Orchestration
-  Configuration](#orchestration-configuration) below for details.
+  Configuration](#agent-mode-how-agent-mode-works-agent-configuration-orchestration-configuration) below for details.
 
 #### Orchestration Configuration
 
-The `Orchestrate` tool runs user code in a secure Python sandbox with the following
-restrictions:
+The `Orchestrate` tool runs user code in a secure Python sandbox with the following restrictions:
 - **No imports** — only pre-imported modules (`re`, `math`, `itertools`, `collections`,
   `datetime`, `traceback`, `json`, `pathlib`) are available
 - **No private/dunder access** — attributes starting with `_` are blocked

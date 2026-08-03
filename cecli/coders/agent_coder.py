@@ -12,6 +12,8 @@ from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
 
+import xxhash
+
 from cecli.args import AGENT_CONFIG_LIST_FIELDS
 from cecli.change_tracker import ChangeTracker
 from cecli.helpers import nested, responses
@@ -631,6 +633,8 @@ class AgentCoder(Coder):
         ConversationService.get_chunks(self).add_readonly_files_messages()
         ConversationService.get_chunks(self).add_chat_files_messages()
 
+        ConversationService.get_manager(self).flush_queue()
+
         # Add post-message context blocks (priority 250 - between CUR and REMINDER)
         ConversationService.get_chunks(self).add_post_message_context_blocks()
 
@@ -920,20 +924,20 @@ class AgentCoder(Coder):
                     "# Fix the linting errors below, and then continue with your task.",
                     1,
                 )
+                lint_hash = xxhash.xxh3_128_hexdigest(lint_errors.encode("utf-8", errors="replace"))
                 ConversationService.get_manager(self).add_message(
                     message_dict=dict(role="user", content=lint_errors),
                     tag=MessageTag.LINT,
-                    hash_key=("lint_errors", "agent", lint_errors),
+                    hash_key=("lint_errors", "agent", lint_hash),
                 )
-                ConversationService.get_manager(self).add_message(
+                ConversationService.get_manager(self).queue_message(
                     message_dict=dict(
                         role="user", content="Please address the latest linting errors."
                     ),
                     tag=MessageTag.LINT,
-                    hash_key=("lint_errors", "agent", lint_errors, "cta"),
+                    hash_key=("lint_errors", "agent", lint_hash, "cta"),
                     promotion=ConversationService.get_manager(self).DEFAULT_TAG_PROMOTION_VALUE,
                     mark_for_demotion=1,
-                    mark_for_delete=0,
                 )
             else:
                 if has_errors:
@@ -1351,7 +1355,7 @@ class AgentCoder(Coder):
             )
 
         if repetition_warning:
-            ConversationService.get_manager(self).add_message(
+            ConversationService.get_manager(self).queue_message(
                 message_dict=dict(role="user", content=repetition_warning),
                 tag=MessageTag.CUR,
                 hash_key=("repetition", "agent"),

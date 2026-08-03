@@ -45,3 +45,6 @@ __pycache__/
 
 # Ignore Folders
 cecli/website/_site/*
+cecli/website/.sass-cache/*
+cecli/website/.docmd-*/*
+cecli/website/node_modules/*
