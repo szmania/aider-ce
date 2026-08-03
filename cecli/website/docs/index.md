@@ -4,7 +4,7 @@ title: Documentation
 
 # Documentation
 
-It's a terminal agent! LLMs yap enough and I won't belabor the point, but still, try it out!
+It's a terminal agent! LLMs yap enough and I won't belabor the point.
 
 ## Getting Started
 
