@@ -52,7 +52,7 @@ cecli --auto-memory
 cecli --no-auto-memory
 ```
 
-You can also set this in your [configuration file](/config/options.html):
+You can also set this in your [configuration file](options.html):
 
 ```yaml
 # .cecli.yml or other config file
@@ -163,11 +163,11 @@ sqlite3 .cecli/memory.v1/cache.db "SELECT * FROM Facts;"
 rm -rf .cecli/memory.v1/
 ```
 
-cecli will automatically recreate the database with an empty schema on the next invocation.
+Cecli will automatically recreate the database with an empty schema on the next invocation.
 
 ---
 
 ## Related
 
-- [Sub-Agents](/docs/config/subagents.html) — Learn more about the sub-agent system that powers the memorizer
-- [Options Reference](/docs/config/options.html) — All available CLI flags including `--auto-memory`
+- [Sub-Agents](subagents.html) — Learn more about the sub-agent system that powers the memorizer
+- [Options Reference](options.html) — All available CLI flags including `--auto-memory`

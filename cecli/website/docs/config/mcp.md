@@ -10,9 +10,7 @@ Model Context Protocol (MCP) servers extend cecli's capabilities by providing ad
 
 ## Configuring MCP Servers
 
-cecli supports configuring MCP servers using the MCP Server Configuration schema. Please
-see the [Model Context Protocol documentation](https://modelcontextprotocol.io/introduction)
-for more information.
+Cecli supports configuring MCP servers using the MCP Server Configuration schema. Please see the [Model Context Protocol documentation](https://modelcontextprotocol.io/introduction) for more information.
 
 ### Keepalive Mechanism
 
@@ -34,7 +32,7 @@ mcp-servers:
 
 You have two ways of sharing your MCP server configuration with cecli.
 
-{: .note }
+
 
 > Today, CECLI/Cecli supports connecting to MCP servers using stdio, http, and sse transports.
 
@@ -77,9 +75,7 @@ mcp-servers-file: /path/to/mcp.json
 
 These options are configurable in any of cecli's config file formats.
 
-Also, you are able to say if you would like an mcp enabled/disabled in the config itself via `"enabled"` key
-By default MCP servers are enabled, so you MUST explicitly disable them in the config if you dont wish
-for them to be included when cecli starts up
+Also, you are able to say if you would like an mcp enabled/disabled in the config itself via `"enabled"` key By default MCP servers are enabled, so you MUST explicitly disable them in the config if you dont wish for them to be included when cecli starts up
 
 ### Flags
 
@@ -149,8 +145,7 @@ Here are some commonly used MCP servers that can enhance cecli's capabilities:
 
 ### Chrome DevTools
 
-Chrome DevTools MCP provides browser automation and debugging capabilities through Chrome's DevTools Protocol, enabling web page interaction, network monitoring, and performance analysis. It connects to a running Chrome instance and offers tools for web development testing and automation. Note: the configuration below requires you to start chrome with remote debugging enabled before
-starting the coding agent.
+Chrome DevTools MCP provides browser automation and debugging capabilities through Chrome's DevTools Protocol, enabling web page interaction, network monitoring, and performance analysis. It connects to a running Chrome instance and offers tools for web development testing and automation. Note: the configuration below requires you to start chrome with remote debugging enabled before starting the coding agent.
 
 ```yaml
 mcp-servers:

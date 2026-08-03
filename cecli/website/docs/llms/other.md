@@ -5,15 +5,9 @@ nav_order: 800
 
 # Other LLMs
 
-cecli uses the [litellm](https://docs.litellm.ai/docs/providers) package
-to connect to hundreds of other models.
-You can use `cecli --model <model-name>` to use any supported model.
+Cecli uses the [litellm](https://docs.litellm.ai/docs/providers) package to connect to hundreds of other models. You can use `cecli --model <model-name>` to use any supported model.
 
-To explore the list of supported models you can run `cecli --list-models <model-name>`
-with a partial model name.
-If the supplied name is not an exact match for a known model, cecli will
-return a list of possible matching models.
-For example:
+To explore the list of supported models you can run `cecli --list-models <model-name>` with a partial model name. If the supplied name is not an exact match for a known model, cecli will return a list of possible matching models. For example:
 
 ```
 $ cecli --list-models turbo
@@ -27,34 +21,16 @@ Models which match "turbo":
 - ...
 ```
 
-See the [model warnings](warnings.html)
-section for information on warnings which will occur
-when working with models that cecli is not familiar with.
+See the [model warnings](warnings.html) section for information on warnings which will occur when working with models that cecli is not familiar with.
 
 ## LiteLLM
 
-cecli uses the LiteLLM package to connect to LLM providers.
-The [LiteLLM provider docs](https://docs.litellm.ai/docs/providers)
-contain more detail on all the supported providers,
-their models and any required environment variables.
-
+Cecli uses the LiteLLM package to connect to LLM providers. The [LiteLLM provider docs](https://docs.litellm.ai/docs/providers) contain more detail on all the supported providers, their models and any required environment variables.
 
 ## Other API key variables
 
-Here are the API key environment variables that are supported
-by litellm. See their docs for more info.
+Here are the API key environment variables that are supported by litellm. See their docs for more info.
 
-<!--[[[cog
-from subprocess import run
-lines = run(
-    "egrep -ho '[A-Z_]+_API_KEY' ../litellm/litellm/*py | sort -u",
-    shell=True,
-    capture_output=True,
-    text=True,
-    ).stdout
-lines = ['- ' + line for line in lines.splitlines(keepends=True)]
-cog.out(''.join(lines))
-]]]-->
 - ALEPH_ALPHA_API_KEY
 - ALEPHALPHA_API_KEY
 - ANTHROPIC_API_KEY
@@ -114,4 +90,3 @@ cog.out(''.join(lines))
 - WX_API_KEY
 - XAI_API_KEY
 - XINFERENCE_API_KEY
-<!--[[[end]]]-->
