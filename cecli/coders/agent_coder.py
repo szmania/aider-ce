@@ -89,7 +89,6 @@ class AgentCoder(Coder):
         self.file_read_cache = set()
         self.tool_call_count = 0
         self.turn_count = 0
-        self.max_reflections = 15
         self.use_enhanced_context = True
         self._last_edited_file = None
         self._cur_message_divider = None
