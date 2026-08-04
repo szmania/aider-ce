@@ -20,7 +20,11 @@
         {
           "title": "Configuration",
           "path": "/config/"
-        },        
+        },
+        {
+          "title": "API Keys",
+          "path": "/config/api-keys/"
+        },
         {
           "title": "Usage",
           "path": "/usage/"
@@ -34,8 +38,20 @@
     {
       "title": "Configuration",
       "icon": "settings",
-      "path": "/config/",
+      "collapsible": true,
       "children": [
+        {
+          "title": "Config - YAML (Preferred)",
+          "path": "/config/conf/"
+        },
+        {
+          "title": "Config - .env",
+          "path": "/config/dotenv/"
+        },
+        {
+          "title": "Config - CLI",
+          "path": "/config/options/"
+        },
         {
           "title": "Agent Mode",
           "path": "/config/agent-mode/"
@@ -43,27 +59,11 @@
         {
           "title": "Agent Memory",
           "path": "/config/persistent-memory/"
-        },        
-        {
-          "title": "API Keys",
-          "path": "/config/api-keys/"
         },
         {
           "title": "Agent Client Protocol (ACP)",
           "path": "/config/api/"
         },
-        {
-          "title": "Config - File",
-          "path": "/config/conf/"
-        },
-        {
-          "title": "Config - Env. Vars",
-          "path": "/config/dotenv/"
-        },
-        {
-          "title": "Config - CLI Options",
-          "path": "/config/options/"
-        },             
         {
           "title": "Custom Commands",
           "path": "/config/custom-commands/"
@@ -73,7 +73,7 @@
           "path": "/config/custom-system-prompts/"
         },
         {
-          "title": "Editor configuration",
+          "title": "Editor Configuration",
           "path": "/config/editor/"
         },
         {
@@ -91,15 +91,15 @@
         {
           "title": "Model Configuration Files",
           "path": "/config/adv-model-settings/"
-        },            
+        },
         {
           "title": "Model Providers",
           "path": "/config/model-providers/"
-        },  
+        },
         {
           "title": "Model Aliases",
           "path": "/config/model-aliases/"
-        },          
+        },
         {
           "title": "Reasoning models",
           "path": "/config/reasoning/"
@@ -113,9 +113,9 @@
           "path": "/config/security/"
         },
         {
-          "title": "Skills System",
+          "title": "Skills",
           "path": "/config/skills/"
-        },      
+        },
         {
           "title": "Sub-Agents",
           "path": "/config/subagents/"
@@ -202,7 +202,7 @@
         {
           "title": "Other LLMs",
           "path": "/llms/other/"
-        }      
+        }
       ]
     },
     {
@@ -217,21 +217,21 @@
         {
           "title": "Session Management",
           "path": "/usage/sessions/"
-        },            
+        },
         {
           "title": "Convention Files",
           "path": "/usage/conventions/"
-        },      
+        },
         {
-          "title": "Images & web pages",
+          "title": "Images & Web Pages",
           "path": "/usage/images-urls/"
         },
         {
-          "title": "Linting and testing",
+          "title": "Linting and Testing",
           "path": "/usage/lint-test/"
         },
         {
-          "title": "Chat modes",
+          "title": "Chat Modes",
           "path": "/usage/modes/"
         },
         {
@@ -241,7 +241,7 @@
         {
           "title": "Copy/Paste Mode",
           "path": "/usage/copypaste/"
-        },        
+        },
         {
           "title": "Voice Mode",
           "path": "/usage/voice/"
@@ -253,7 +253,7 @@
         {
           "title": "Tips",
           "path": "/usage/tips/"
-        }        
+        }
       ]
     },
     {
@@ -280,7 +280,7 @@
         {
           "title": "Edit Formats",
           "path": "/more/edit-formats/"
-        }      
+        }
       ]
     },
     {

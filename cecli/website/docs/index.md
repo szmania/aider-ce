@@ -26,8 +26,6 @@ cecli --model openai/gpt-5.5-terra --api-key openai=<key>
 cecli --model deepseek/deepseek-v4-flash --api-key deepseek=<key>
 ```
 
-Want more details? [Installation Guide](install.html) · [Usage Guide](usage.html)
-
 ## More Information
 
 ### Documentation

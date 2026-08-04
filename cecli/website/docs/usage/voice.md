@@ -4,7 +4,7 @@ nav_order: 100
 description: Speak with cecli about your code!
 ---
 
-# Voice-to-code with cecli
+# Voice Mode
 
 Speak with cecli about your code! Request new features, test cases or bug fixes using your voice and let cecli do the work of editing the files in your local git repo. As with all of cecli's capabilities, you can use voice-to-code with an existing repo or to start a new project.
 

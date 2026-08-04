@@ -4,7 +4,7 @@ nav_order: 100
 description: How to configure a custom editor for cecli's /editor command
 ---
 
-# Editor configuration
+# Editor Configuration
 
 Cecli allows you to configure your preferred text editor for use with the `/editor` command. The editor must be capable of running in "blocking mode", meaning the command line will wait until you close the editor before proceeding.
 

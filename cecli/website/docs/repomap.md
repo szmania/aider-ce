@@ -5,7 +5,7 @@ nav_order: 300
 description: cecli uses a map of your git repository to provide code context to LLMs.
 ---
 
-# Repository map
+# Repository Map
 
 Cecli uses a **concise map of your whole git repository** that includes the most important classes and functions along with their types and call signatures. This helps cecli understand the code it's editing and how it relates to the other parts of the codebase. The repo map also helps cecli write new code that respects and utilizes existing libraries, modules and abstractions found elsewhere in the codebase.
 

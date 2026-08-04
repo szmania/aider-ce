@@ -4,6 +4,8 @@ nav_order: 110
 description: How to configure reasoning model settings from secondary providers.
 ---
 
+# Reasoning Models
+
 ## Basic usage
 
 Cecli is configured to work with most popular reasoning models out of the box. You can use them like this:
