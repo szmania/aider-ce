@@ -90,10 +90,23 @@ def wake_input_waiters() -> None:
 
     Safe to call from any thread; the wake is marshaled onto the input loop
     via call_soon_threadsafe. No-op if no consumer has bound a loop yet.
+
+    If the bound loop was closed (e.g. a hot reload tore down the previous
+    coder worker loop), the stale binding is dropped so the next
+    wait_for_input() rebinds to the current loop instead of raising
+    "Event loop is closed".
     """
+    global _input_loop, _input_wake
+
     loop = _input_loop
     if loop is None or _input_wake is None:
         return
+
+    if loop.is_closed():
+        _input_loop = None
+        _input_wake = None
+        return
+
     loop.call_soon_threadsafe(_input_wake.set)
 
 
@@ -102,9 +115,19 @@ async def wait_for_input() -> None:
 
     Must be called from the input loop (the coder worker loop). Consumers
     sweep the payload queues first, then block here until wake_input_waiters()
-    fires. Initializes the wake state from the running loop on first use.
+    fires. Initializes the wake state from the running loop on first use and
+    rebinds whenever the previous loop was closed or is no longer the
+    running loop (which happens across a hot reload).
     """
-    if _input_loop is None or _input_wake is None:
-        set_input_loop(asyncio.get_running_loop())
+    loop = asyncio.get_running_loop()
+
+    if (
+        _input_loop is None
+        or _input_wake is None
+        or _input_loop.is_closed()
+        or _input_loop is not loop
+    ):
+        set_input_loop(loop)
+
     _input_wake.clear()
     await _input_wake.wait()

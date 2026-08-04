@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import queue
 
 from cecli.helpers import queues
@@ -110,3 +112,67 @@ class TestPushCoderInput:
         queues.push_coder_input("coder-1", "second")
         assert q.get_nowait() == "first"
         assert q.get_nowait() == "second"
+
+
+class TestInputLoopLifecycle:
+    """Tests for the input wake-state lifecycle across hot reloads."""
+
+    def setup_method(self):
+        """Reset the global input-loop state before each test."""
+        queues._per_coder_queues.clear()
+        queues._input_loop = None
+        queues._input_wake = None
+
+    def teardown_method(self):
+        """Reset the global input-loop state after each test."""
+        queues._per_coder_queues.clear()
+        queues._input_loop = None
+        queues._input_wake = None
+
+    def test_wake_with_closed_loop_drops_stale_binding(self):
+        """Waking after the bound loop closed must not raise, and resets state."""
+        old_loop = asyncio.new_event_loop()
+        old_loop.close()
+
+        queues.set_input_loop(old_loop)
+
+        queues.wake_input_waiters()  # Must not raise RuntimeError
+
+        assert queues._input_loop is None
+        assert queues._input_wake is None
+
+    def test_push_after_closed_loop_delivers_but_does_not_crash(self):
+        """Pushing input after a reload (closed loop) delivers and drops stale state."""
+        q = queue.Queue()
+        queues.register_coder_queue("coder-1", q)
+
+        old_loop = asyncio.new_event_loop()
+        old_loop.close()
+        queues.set_input_loop(old_loop)
+
+        result = queues.push_coder_input("coder-1", "hello")
+
+        assert result is True
+        assert q.get_nowait() == "hello"
+        assert queues._input_loop is None
+        assert queues._input_wake is None
+
+    def test_wait_for_input_rebinds_after_closed_loop(self):
+        """wait_for_input rebinds to the running loop after a hot reload."""
+
+        async def run():
+            old_loop = asyncio.new_event_loop()
+            old_loop.close()
+            queues.set_input_loop(old_loop)
+
+            task = asyncio.create_task(queues.wait_for_input())
+            await asyncio.sleep(0)
+
+            assert queues._input_loop is not None
+            assert not queues._input_loop.is_closed()
+
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
+
+        asyncio.run(run())
