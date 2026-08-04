@@ -368,7 +368,7 @@ class TUI(App):
         "medium_spring_green",
     ]
 
-    E = f"[bold {BANNER_COLORS[6]}]░░░[/bold {BANNER_COLORS[6]}]"
+    E = f"[bold {BANNER_COLORS[6]}]▓▓▓[/bold {BANNER_COLORS[6]}]"
     # ASCII banner for startup
     BANNER = f"""
 [bold {BANNER_COLORS[0]}]                       ▒▒╗▒▒╗[/bold {BANNER_COLORS[0]}]
