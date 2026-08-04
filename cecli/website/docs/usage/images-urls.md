@@ -4,7 +4,7 @@ nav_order: 700
 description: Add images and web pages to the cecli coding chat.
 ---
 
-# Images & web pages
+# Images & Web Pages
 
 You can add images and URLs to the cecli chat.
 

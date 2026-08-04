@@ -4,7 +4,7 @@ nav_order: 490
 description: cecli uses various "edit formats" to let LLMs edit source files.
 ---
 
-# Edit formats
+# Edit Formats
 
 Cecli uses various "edit formats" to let LLMs edit source files. Different models work better or worse with different edit formats. cecli is configured to use the optimal format for most popular, common models. You can always force use of a specific edit format with the `--edit-format` switch.
 

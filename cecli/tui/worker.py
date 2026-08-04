@@ -49,6 +49,14 @@ class CoderWorker:
         asyncio.set_event_loop(self.loop)
         self.loop.set_exception_handler(self.worker_loop_exception_handler)
 
+        # Bind the global input wake-up state to this worker loop so
+        # producers (TUI, WebSocket, ACP) wake consumers on the correct
+        # loop. A fresh binding is required after a hot reload, where the
+        # previous worker loop was closed.
+        from cecli.helpers import queues
+
+        queues.set_input_loop(self.loop)
+
         try:
             self.loop.run_until_complete(self._async_run())
         except BaseException:

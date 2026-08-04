@@ -4,7 +4,7 @@ nav_order: 15
 description: How to configure cecli with a YAML config file.
 ---
 
-# YAML config file
+# YAML Config File
 
 Most of cecli's options can be set in an `.cecli.conf.yml` file. cecli will look for a this file in these locations:
 

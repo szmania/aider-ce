@@ -382,6 +382,20 @@ def resolve_content_to_hashline_ids(
                     key=lambda idx: abs(idx - start_hint_line),
                 )
                 resolved_start = _resolve_to_hash_id(lines, resolved_start_idx, hp)
+            else:
+                # Fallback: the value may be line content whose whitespace was
+                # normalized (e.g. stripped indentation). Resolve it against a
+                # single unique line — mirroring apply_hashline_operations — so
+                # the preview resolves exactly like the actual edit.
+                unique_resolved = _try_resolve_as_unique_line(hp, first_line)
+                if unique_resolved is not None:
+                    resolved_start = unique_resolved
+                    try:
+                        candidates = hp.resolve_to_lines(normalize_hashline(unique_resolved))
+                        if candidates:
+                            resolved_start_idx = candidates[0]
+                    except (ContentHashError, ValueError):
+                        pass
     elif start_value is not None and _looks_like_content_id(start_value):
         # Already a content ID - try to resolve it to find the line position
         # for proximity matching with end_value
@@ -432,6 +446,14 @@ def resolve_content_to_hashline_ids(
                     key=lambda idx: abs(idx - resolved_start_idx),
                 )
                 resolved_end = _resolve_to_hash_id(lines, closest_idx, hp)
+            else:
+                # Fallback: the value may be line content whose whitespace was
+                # normalized (e.g. stripped indentation). Resolve it against a
+                # single unique line — mirroring apply_hashline_operations — so
+                # the preview resolves exactly like the actual edit.
+                unique_resolved = _try_resolve_as_unique_line(hp, first_line)
+                if unique_resolved is not None:
+                    resolved_end = unique_resolved
     elif end_value is not None and _looks_like_content_id(end_value):
         # Already a content ID - try to resolve it
         try:

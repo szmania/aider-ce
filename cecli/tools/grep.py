@@ -328,6 +328,8 @@ class Tool(BaseTool):
         Returns a JSON string with structured results including per-file groupings,
         match counts, and summary metadata.
         """
+        import json
+
         if not isinstance(searches, list):
             response = ToolResponse(cls.NORM_NAME, result_type=cls.RESULT_TYPE)
             response.append_error("'searches' parameter must be an array.")
@@ -552,6 +554,53 @@ class Tool(BaseTool):
                 op_result["error"] = f"Error executing search: {str(e)}"
 
             all_operation_results.append(op_result)
+
+        # Cap the output size to 50k characters for the LLM
+        # Heuristic: Prioritize shallowness (short paths) and fewer matches
+        # Removal order: Longest paths first, then most matches first.
+        MAX_TOTAL_SIZE = 50000
+        if len(json.dumps(all_operation_results)) > MAX_TOTAL_SIZE:
+            # Flatten files with their metadata for sorting
+            all_files_to_rank = []
+            for op_idx, op in enumerate(all_operation_results):
+                for file_idx, f_data in enumerate(op.get("files", [])):
+                    all_files_to_rank.append(
+                        {
+                            "op_idx": op_idx,
+                            "file_idx": file_idx,
+                            "path_len": len(f_data.get("file", "")),
+                            "match_count": f_data.get("match_count", 0),
+                        }
+                    )
+
+            # Sort for REMOVAL (worst first): Longest path, then most matches
+            all_files_to_rank.sort(key=lambda x: (x["path_len"], x["match_count"]), reverse=True)
+
+            # Progressively remove files until under limit
+            removed_set = set()
+            trimmed_results = all_operation_results
+            for rank_info in all_files_to_rank:
+                removed_set.add((rank_info["op_idx"], rank_info["file_idx"]))
+
+                # Reconstruct to check size
+                trimmed_results = []
+                for o_idx, op in enumerate(all_operation_results):
+                    new_op = op.copy()
+                    original_files = op.get("files", [])
+                    new_op["files"] = [
+                        f
+                        for f_idx, f in enumerate(original_files)
+                        if (o_idx, f_idx) not in removed_set
+                    ]
+                    if len(new_op["files"]) < len(original_files):
+                        new_op["has_more_files"] = True
+                    trimmed_results.append(new_op)
+
+                if len(json.dumps(trimmed_results)) <= MAX_TOTAL_SIZE:
+                    all_operation_results = trimmed_results
+                    break
+            else:
+                all_operation_results = trimmed_results
 
         # TUI summary
         if coder.tui and coder.tui():

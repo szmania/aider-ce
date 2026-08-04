@@ -1,12 +1,11 @@
 ---
-title: Copy/paste with web chat
-#highlight_image: /assets/browser.jpg
+title: Copy/Paste Mode
 parent: Usage
 nav_order: 850
 description: cecli works with LLM web chat UIs
 ---
 
-## Working with an LLM web chat
+## Copy/Paste Mode
 
 [Cecli can connect to most LLMs via API](../llms.html) and works best that way. But there are times when you may want to work with an LLM via its web chat interface:
 

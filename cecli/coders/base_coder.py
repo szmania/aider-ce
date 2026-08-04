@@ -1886,6 +1886,7 @@ class Coder(metaclass=UsageMeta):
             ConversationService.get_chunks(self).flush_removals()
             self.last_user_message = user_message
             self.error_code = None
+            self.num_tool_calls = 0
             # Trim memory in the background so it doesn't delay the response
             coroutines.fire_and_forget(asyncio.to_thread(trim_memory))
             # Fire memorizer after each user request

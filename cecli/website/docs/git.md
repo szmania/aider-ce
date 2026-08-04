@@ -4,7 +4,7 @@ nav_order: 100
 description: cecli is tightly integrated with git.
 ---
 
-# Git integration
+# Git Integration
 
 Cecli works best with code that is part of a git repo. cecli is tightly integrated with git, which makes it easy to:
 

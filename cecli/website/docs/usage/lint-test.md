@@ -4,7 +4,7 @@ nav_order: 900
 description: Automatically fix linting and testing errors.
 ---
 
-# Linting and testing
+# Linting and Testing
 
 Cecli can automatically lint and test your code every time it makes changes. This helps identify and repair any problems introduced by the AI edits.
 

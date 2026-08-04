@@ -21,10 +21,7 @@ layout: none
     <nav class="nav">
         <div class="nav-pill">
             <a href="/" class="nav-logo" aria-label="cecli home">
-                <svg class="nav-logo-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M4 17l6-5-6-5"/>
-                    <line x1="12" y1="19" x2="20" y2="19"/>
-                </svg>
+                <img class="nav-logo-mark" src="/assets/cecli-temp-logo-favicon.svg" alt="" width="24" height="24">
                 <span>cecli</span>
             </a>
             <div class="nav-links">
@@ -89,60 +86,60 @@ layout: none
         <section class="features" id="features">
             <div class="container">
                 <h2 class="section-title">Features</h2>
-                <p class="section-desc">A few things cecli handles — the details live in the docs.</p>
+                <p class="section-desc">Built for autonomous, context-aware software work.</p>
                 <div class="feature-grid">
-                    <a href="/docs/llms/" class="feature-card">
-                        <i class="mdi mdi-brain feature-icon"></i>
-                        <h3 class="feature-title">Cloud &amp; local LLMs</h3>
-                        <p>Works with almost any LLM, including local models.</p>
+                    <a href="/docs/config/agent-mode/" class="feature-card">
+                        <i class="mdi mdi-robot-outline feature-icon"></i>
+                        <h3 class="feature-title">Autonomous agent mode</h3>
+                        <p>Plans and executes multi-step work with explicit tools and controls.</p>
                         <span class="feature-link">Docs →</span>
                     </a>
                     <a href="/docs/repomap/" class="feature-card">
                         <i class="mdi mdi-map-outline feature-icon"></i>
-                        <h3 class="feature-title">Maps your codebase</h3>
-                        <p>Understands larger projects.</p>
+                        <h3 class="feature-title">Repository maps</h3>
+                        <p>Builds a concise map of your codebase to navigate larger projects.</p>
                         <span class="feature-link">Docs →</span>
                     </a>
-                    <a href="/docs/languages/" class="feature-card">
-                        <i class="mdi mdi-code-tags feature-icon"></i>
-                        <h3 class="feature-title">100+ languages</h3>
-                        <p>Python, JS, Rust, Go, and more.</p>
+                    <a href="/docs/usage/" class="feature-card">
+                        <i class="mdi mdi-magnify-scan feature-icon"></i>
+                        <h3 class="feature-title">Context discovery</h3>
+                        <p>Finds the relevant code and files instead of making you curate context.</p>
                         <span class="feature-link">Docs →</span>
                     </a>
-                    <a href="/docs/git/" class="feature-card">
-                        <i class="mdi mdi-source-branch feature-icon"></i>
-                        <h3 class="feature-title">Git integration</h3>
-                        <p>Sensible commits you can diff and undo.</p>
+                    <a href="/docs/config/subagents/" class="feature-card">
+                        <span><i class="mdi mdi-robot-outline feature-icon"></i><i class="mdi mdi-robot-outline feature-icon"></i></span>
+                        <h3 class="feature-title">Subagents</h3>
+                        <p>Delegate focused investigations and tasks without losing the main thread.</p>
                         <span class="feature-link">Docs →</span>
                     </a>
-                    <a href="/docs/usage/watch/" class="feature-card">
-                        <i class="mdi mdi-monitor feature-icon"></i>
-                        <h3 class="feature-title">In your IDE</h3>
-                        <p>Ask for changes from your editor.</p>
+                    <a href="/docs/config/hooks/" class="feature-card">
+                        <i class="mdi mdi-hook feature-icon"></i>
+                        <h3 class="feature-title">Extensible hooks</h3>
+                        <p>Run custom logic before and after agent actions to fit your workflow.</p>
                         <span class="feature-link">Docs →</span>
                     </a>
-                    <a href="/docs/usage/images-urls/" class="feature-card">
-                        <i class="mdi mdi-image-multiple feature-icon"></i>
-                        <h3 class="feature-title">Images &amp; web pages</h3>
-                        <p>Add visual context to the chat.</p>
+                    <a href="/docs/config/persistent-memory/" class="feature-card">
+                        <i class="mdi mdi-brain feature-icon"></i>
+                        <h3 class="feature-title">Persistent memory</h3>
+                        <p>Preserves useful project decisions and context across longer-running work.</p>
                         <span class="feature-link">Docs →</span>
                     </a>
-                    <a href="/docs/usage/voice/" class="feature-card">
-                        <i class="mdi mdi-microphone feature-icon"></i>
-                        <h3 class="feature-title">Voice-to-code</h3>
-                        <p>Speak, and cecli implements.</p>
+                    <a href="/docs/config/skills/" class="feature-card">
+                        <i class="mdi mdi-puzzle-outline feature-icon"></i>
+                        <h3 class="feature-title">Custom skills</h3>
+                        <p>Give the agent reusable, domain-specific capabilities when it needs them.</p>
+                        <span class="feature-link">Docs →</span>
+                    </a>
+                    <a href="/docs/config/tui/" class="feature-card">
+                        <i class="mdi mdi-console-line feature-icon"></i>
+                        <h3 class="feature-title">Full terminal UI</h3>
+                        <p>Work in a purpose-built interface with conversation, prompts, and tools.</p>
                         <span class="feature-link">Docs →</span>
                     </a>
                     <a href="/docs/usage/lint-test/" class="feature-card">
                         <i class="mdi mdi-check-all feature-icon"></i>
-                        <h3 class="feature-title">Linting &amp; testing</h3>
-                        <p>Lint and test every change.</p>
-                        <span class="feature-link">Docs →</span>
-                    </a>
-                    <a href="/docs/usage/copypaste/" class="feature-card">
-                        <i class="mdi mdi-content-copy feature-icon"></i>
-                        <h3 class="feature-title">Copy/paste to web chat</h3>
-                        <p>Works with web chat interfaces too.</p>
+                        <h3 class="feature-title">Validate every change</h3>
+                        <p>Run linters and tests, then feed the results back into the agent loop.</p>
                         <span class="feature-link">Docs →</span>
                     </a>
                 </div>
@@ -151,7 +148,6 @@ layout: none
 
         <section class="more" id="more-info">
             <div class="container">
-                <h2 class="section-title">More in the docs</h2>
                 <div class="more-links">
                     <a href="/docs/install/">Installation</a>
                     <a href="/docs/usage/">Usage</a>

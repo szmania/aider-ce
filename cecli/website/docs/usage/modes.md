@@ -4,7 +4,7 @@ nav_order: 60
 description: Using the code, architect, ask, help and agent modes.
 ---
 
-# Chat modes
+# Chat Modes
 
 Cecli has a few different chat modes:
 

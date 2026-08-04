@@ -3,7 +3,7 @@ parent: More info
 nav_order: 200
 description: cecli supports pretty much all popular coding languages.
 ---
-# Supported languages
+# Supported Languages
 
 Cecli should work well with most popular coding languages. This is because top LLMs are fluent in most mainstream languages, and familiar with popular libraries, packages and frameworks.
 

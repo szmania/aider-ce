@@ -88,11 +88,13 @@ a {
     color: var(--text);
 }
 
-.nav-logo-icon {
-    width: 17px;
-    height: 17px;
-    color: var(--accent);
+.nav-logo-mark {
+    display: block;
+    width: 24px;
+    height: 24px;
+    flex: 0 0 24px;
 }
+
 
 .nav-links {
     display: flex;
@@ -489,6 +491,7 @@ a {
 .footer {
     padding: 24px 0 28px;
     border-top: 1px solid var(--border);
+    background: #fff;
 }
 
 .footer-inner {

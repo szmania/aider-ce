@@ -4,7 +4,7 @@ nav_order: 10
 description: Details about all of cecli's settings.
 ---
 
-# Options reference
+# CLI Options Reference
 
 You can use `cecli --help` to see all the available options, or review them below.
 

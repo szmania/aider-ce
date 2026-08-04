@@ -365,16 +365,18 @@ class TUI(App):
         "cyan2",
         "cyan1",
         "bright_white",
+        "medium_spring_green",
     ]
 
+    E = f"[bold {BANNER_COLORS[6]}]▓▓▓[/bold {BANNER_COLORS[6]}]"
     # ASCII banner for startup
     BANNER = f"""
-[bold {BANNER_COLORS[0]}]   ▒▒▒▒▒▒╗▒▒▒▒▒▒▒╗ ▒▒▒▒▒▒╗▒▒╗     ▒▒╗[/bold {BANNER_COLORS[0]}]
-[bold {BANNER_COLORS[1]}]  ▒▒╔════╝▒▒╔════╝▒▒╔════╝▒▒║     ▒▒║[/bold {BANNER_COLORS[1]}]
-[bold {BANNER_COLORS[2]}]  ▒▒║     ▒▒▒▒▒╗  ▒▒║     ▒▒║     ▒▒║[/bold {BANNER_COLORS[2]}]
-[bold {BANNER_COLORS[3]}]  ▒▒║     ▒▒╔══╝  ▒▒║     ▒▒║     ▒▒║[/bold {BANNER_COLORS[3]}]
-[bold {BANNER_COLORS[4]}]  ╚▒▒▒▒▒▒╗▒▒▒▒▒▒▒╗╚▒▒▒▒▒▒╗▒▒▒▒▒▒▒╗▒▒║[/bold {BANNER_COLORS[4]}]
-[bold {BANNER_COLORS[5]}]   ╚═════╝╚══════╝ ╚═════╝╚══════╝╚═╝ v{__version__}[/bold {BANNER_COLORS[5]}]
+[bold {BANNER_COLORS[0]}]                       ▒▒╗▒▒╗[/bold {BANNER_COLORS[0]}]
+[bold {BANNER_COLORS[1]}]   ▒▒▒▒▒╗ ▒▒▒▒▒╗ ▒▒▒▒▒╗▒▒║╚═╝[/bold {BANNER_COLORS[1]}]
+[bold {BANNER_COLORS[2]}]  ▒▒╔═══╝▒▒{E}▒║▒▒╔═══╝▒▒║▒▒╗[/bold {BANNER_COLORS[2]}]
+[bold {BANNER_COLORS[3]}]  ▒▒║    ▒▒╔═══╝▒▒║    ▒▒║▒▒║[/bold {BANNER_COLORS[3]}]
+[bold {BANNER_COLORS[4]}]  ╚▒▒▒▒▒╗╚▒▒▒▒▒╗╚▒▒▒▒▒╗▒▒║▒▒║[/bold {BANNER_COLORS[4]}]
+[bold {BANNER_COLORS[5]}]   ╚════╝ ╚════╝ ╚════╝╚═╝╚═╝ v{__version__}[/bold {BANNER_COLORS[5]}]
 
 """
 

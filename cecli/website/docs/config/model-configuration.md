@@ -4,6 +4,8 @@ nav_order: 900
 description: Configure model overrides, alias-based suffixes, and structured override groups.
 ---
 
+# Model Configuration
+
 ## Model Configuration & Overrides
 
 Cecli allows you to customize and override LLM configurations to fine-tune their behavior, API parameters, and metadata. You can organize these overrides into three logical configuration groups, and apply them either as **defaults** (by model name) or via **suffixes** (e.g., `gpt-5:high`).
