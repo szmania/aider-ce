@@ -58,11 +58,22 @@ def fname_to_url(filepath):
     if relevant_parts and relevant_parts[0].lower() == "_includes":
         return ""
     url_path = "/".join(relevant_parts)
+
+    # docmd renders each .md source to <path>/index.html, so the published
+    # URLs are directory-style (e.g. /docs/usage/) rather than .html files.
+    is_doc = False
     if url_path.lower().endswith(index.lower()):
         url_path = url_path[: -len(index)]
+        is_doc = True
     elif url_path.lower().endswith(md.lower()):
-        url_path = url_path[: -len(md)] + ".html"
+        url_path = url_path[: -len(md)]
+        is_doc = True
+
     url_path = url_path.strip("/")
+    if not url_path:
+        return "https://cecli.dev/"
+    if is_doc:
+        return f"https://cecli.dev/{url_path}/"
     return f"https://cecli.dev/{url_path}"
 
 
