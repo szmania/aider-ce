@@ -53,10 +53,11 @@ class TextualInputOutput(InputOutput):
             ("Removing", "file_op"),
         ]
 
-        # Tool call buffering for styled panel rendering
-        self._tool_call_buffer = []
-        self._in_tool_call = False
-        self._expect_tool_result = False
+        # Tool call buffering for styled panel rendering — per-coder tracking
+        # Dicts keyed by coder_uuid to support simultaneous multi-coder streaming
+        self._tool_call_buffers: dict[str, list] = {}
+        self._in_tool_call: dict[str, bool] = {}
+        self._expect_tool_result: dict[str, bool] = {}
 
     def rule(self):
         pass
@@ -283,44 +284,45 @@ class TextualInputOutput(InputOutput):
     def _reroute_output(self, text, msg_type, **kwargs):
         # Handle tool call buffering for styled panel rendering
         coder_uuid = kwargs.get("coder_uuid", None)
+        key = coder_uuid if coder_uuid else "default"
 
         if msg_type == "Tool Call":
             # Start buffering a new tool call
-            self._in_tool_call = True
-            self._tool_call_buffer = [text]
+            self._in_tool_call[key] = True
+            self._tool_call_buffers[key] = [text]
             # Log to history
             self.append_chat_history(text, linebreak=True, blockquote=True)
             return True
         elif msg_type == "tool-footer":
             # End of tool call - flush buffer as styled panel
-            if self._in_tool_call and self._tool_call_buffer:
+            if self._in_tool_call.get(key, False) and self._tool_call_buffers.get(key):
                 msg = {
                     "type": "tool_call",
-                    "lines": self._tool_call_buffer,
+                    "lines": self._tool_call_buffers[key],
                 }
                 if coder_uuid:
                     msg["coder_uuid"] = coder_uuid
                 self.output_queue.put(msg)
                 server_signals.send_tool_call(
-                    self, lines=self._tool_call_buffer, coder_uuid=coder_uuid
+                    self, lines=self._tool_call_buffers[key], coder_uuid=coder_uuid
                 )
                 # Expect a tool result next
-                self._expect_tool_result = True
-            self._in_tool_call = False
-            self._tool_call_buffer = []
+                self._expect_tool_result[key] = True
+            self._in_tool_call[key] = False
+            self._tool_call_buffers[key] = []
             return True
-        elif self._in_tool_call:
+        elif self._in_tool_call.get(key, False):
             # Add to tool call buffer
             if text.strip():
-                self._tool_call_buffer.append(text)
+                self._tool_call_buffers[key].append(text)
                 # Log to history
                 self.append_chat_history(text, linebreak=True, blockquote=True)
             return True
 
         # Check if this is a tool result (comes right after tool call)
-        if self._expect_tool_result and text.strip():
+        if self._expect_tool_result.get(key, False) and text.strip():
             if msg_type != "tool-result":
-                self._expect_tool_result = False
+                self._expect_tool_result[key] = False
             msg = {
                 "type": "tool_result",
                 "text": text,

@@ -3440,11 +3440,17 @@ class Coder(metaclass=UsageMeta):
         to be `None` when `tool_calls` are present.
         """
         msg = dict(role="assistant")
-        response = (
-            self.partial_response_chunks[0]
-            if not self.stream
-            else litellm.stream_chunk_builder(self.partial_response_chunks)
-        )
+
+        # Prefer the response already produced by consolidate_chunks(): it carries
+        # the provider-specific fields (e.g. reasoning_items) that we preserved
+        # across all chunks, which a fresh litellm.stream_chunk_builder() pass
+        # alone would drop or truncate.
+        if self.partial_response_consolidated:
+            response = self.partial_response_consolidated[0]
+        elif not self.stream:
+            response = self.partial_response_chunks[0]
+        else:
+            response = litellm.stream_chunk_builder(self.partial_response_chunks)
 
         try:
             # Use response_dict as a regular dictionary
@@ -3963,63 +3969,51 @@ class Coder(metaclass=UsageMeta):
                 if getattr(last_chunk, "usage", None):
                     response.usage = last_chunk.usage
 
-        # Collect provider-specific fields from chunks to preserve them
-        # We need to track both by ID (primary) and index (fallback) since
-        # early chunks might not have IDs established yet
-        provider_specific_fields_by_id = {}
-        provider_specific_fields_by_index = {}
-
+        # Collect message-level provider-specific fields (e.g. `reasoning_items`
+        # for reasoning models) from ALL chunks.  litellm's stream_chunk_builder()
+        # merges these with last-wins semantics for list fields, silently dropping
+        # every reasoning item except the final one.  Reasoning models depend on the
+        # full ordered item list being present in the assistant message so that
+        # exact-prefix prompt caching keeps working across turns, so we collect the
+        # fields ourselves and concatenate list-valued entries.
+        message_provider_specific_fields = {}
         for chunk in self.partial_response_chunks:
             try:
-                if chunk.choices and chunk.choices[0].delta and chunk.choices[0].delta.tool_calls:
-                    for tool_call in chunk.choices[0].delta.tool_calls:
-                        if (
-                            hasattr(tool_call, "provider_specific_fields")
-                            and tool_call.provider_specific_fields
-                        ):
-                            # Ensure provider_specific_fields is a dictionary
-                            psf = tool_call.provider_specific_fields
-                            if not isinstance(psf, dict):
-                                continue
-
-                            # Try to use ID first
-                            if hasattr(tool_call, "id") and tool_call.id:
-                                tool_id = tool_call.id
-                                if tool_id not in provider_specific_fields_by_id:
-                                    provider_specific_fields_by_id[tool_id] = {}
-                                # Merge provider-specific fields for this tool ID
-                                provider_specific_fields_by_id[tool_id].update(psf)
-                            # Also track by index as fallback
-                            elif hasattr(tool_call, "index"):
-                                tool_index = tool_call.index
-                                if tool_index not in provider_specific_fields_by_index:
-                                    provider_specific_fields_by_index[tool_index] = {}
-                                provider_specific_fields_by_index[tool_index].update(psf)
+                if chunk.choices and chunk.choices[0].delta:
+                    psf = getattr(chunk.choices[0].delta, "provider_specific_fields", None)
+                    if psf and isinstance(psf, dict):
+                        for key, value in psf.items():
+                            if isinstance(value, list):
+                                message_provider_specific_fields.setdefault(key, []).extend(value)
+                            elif value is not None:
+                                message_provider_specific_fields[key] = value
             except (AttributeError, IndexError):
                 continue
 
+        if message_provider_specific_fields:
+            message_psf = getattr(response.choices[0].message, "provider_specific_fields", None)
+            if not isinstance(message_psf, dict):
+                message_psf = {}
+            message_psf.update(message_provider_specific_fields)
+            response.choices[0].message.provider_specific_fields = message_psf
+
         try:
-            if response.choices[0].message.tool_calls:
-                for i, tool_call in enumerate(response.choices[0].message.tool_calls):
-                    # Add provider-specific fields if we collected any for this tool
-                    tool_id = tool_call.id
+            message_tool_calls = response.choices[0].message.tool_calls
+            if message_tool_calls and len(message_tool_calls):
+                if self.stream:
+                    built_tool_calls = self._build_tool_calls_from_chunks()
+                    if built_tool_calls:
+                        response.choices[0].message.tool_calls = built_tool_calls
+                        self.partial_response_tool_calls = built_tool_calls
+                    else:
+                        # Fall back to litellm's merged list, keeping every call
+                        self.partial_response_tool_calls = list(message_tool_calls)
+                else:
+                    # Non-streaming: the single response chunk already carries the
+                    # full tool_calls list
+                    self.partial_response_tool_calls = list(message_tool_calls)
 
-                    # Try ID first
-                    if tool_id in provider_specific_fields_by_id:
-                        # Add provider-specific fields directly to the tool call object
-                        tool_call.provider_specific_fields = provider_specific_fields_by_id[tool_id]
-                    # Fall back to index
-                    elif i in provider_specific_fields_by_index:
-                        # Add provider-specific fields directly to the tool call object
-                        tool_call.provider_specific_fields = provider_specific_fields_by_index[i]
-
-                    # Only append to partial_response_tool_calls if it's empty
-                    if len(self.partial_response_tool_calls) == 0:
-                        self.partial_response_tool_calls.append(tool_call)
-
-                self.partial_response_function_call = (
-                    response.choices[0].message.tool_calls[0].function
-                )
+                self.partial_response_function_call = self.partial_response_tool_calls[0].function
         except AttributeError as e:
             func_err = e
 
@@ -4074,6 +4068,85 @@ class Coder(metaclass=UsageMeta):
 
         self.partial_response_consolidated = (response, func_err, content_err)
         return response, func_err, content_err
+
+    def _build_tool_calls_from_chunks(self):
+        """Rebuild tool calls from the raw streaming chunks, keyed by delta index.
+
+        Streaming deltas for parallel tool calls arrive interleaved and may start
+        at any index (not necessarily 0).  Indexing into a dict by the delta's
+        tool-call ``index`` before converting it back to a list ensures every
+        parallel call is preserved, correctly ordered, and keeps its
+        provider-specific fields (e.g. thought signatures) attached.
+        """
+        from litellm.types.utils import ChatCompletionMessageToolCall, Function
+
+        tool_calls_dict = {}
+
+        for chunk in self.partial_response_chunks:
+            try:
+                if not (chunk.choices and chunk.choices[0].delta):
+                    continue
+
+                delta = chunk.choices[0].delta
+                for tool_call in delta.tool_calls or []:
+                    if tool_call is None:
+                        continue
+
+                    if nested.getter(tool_call, "function") is None:
+                        continue
+
+                    index = nested.getter(tool_call, "index")
+                    if index is None:
+                        index = len(tool_calls_dict)
+
+                    entry = tool_calls_dict.setdefault(
+                        index,
+                        {
+                            "id": None,
+                            "name": None,
+                            "type": "function",
+                            "arguments": [],
+                            "provider_specific_fields": {},
+                        },
+                    )
+
+                    entry["id"] = nested.getter(tool_call, "id") or entry["id"]
+                    entry["type"] = nested.getter(tool_call, "type") or entry["type"]
+                    entry["name"] = nested.getter(tool_call, "function.name") or entry["name"]
+
+                    arguments = nested.getter(tool_call, "function.arguments")
+                    if arguments:
+                        entry["arguments"].append(arguments)
+
+                    psf = nested.getter(tool_call, "provider_specific_fields")
+                    if not psf:
+                        psf = nested.getter(tool_call, "function.provider_specific_fields")
+                    if psf and isinstance(psf, dict):
+                        entry["provider_specific_fields"].update(psf)
+            except (AttributeError, IndexError):
+                continue
+
+        tool_calls = []
+        for index in sorted(tool_calls_dict.keys()):
+            data = tool_calls_dict[index]
+            if not (data["id"] and data["name"]):
+                continue
+
+            function = Function(
+                arguments="".join(data["arguments"]) or "{}",
+                name=data["name"],
+            )
+            params = {
+                "id": data["id"],
+                "function": function,
+                "type": data["type"] or "function",
+            }
+            if data["provider_specific_fields"]:
+                params["provider_specific_fields"] = data["provider_specific_fields"]
+
+            tool_calls.append(ChatCompletionMessageToolCall(**params))
+
+        return tool_calls
 
     def stream_wrapper(self, content, final):
         if not hasattr(self, "_streaming_buffer_length"):

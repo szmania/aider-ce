@@ -51,6 +51,9 @@ class IOProxy(Generic[T]):
         super().__setattr__("_coder", weakref.ref(coder))
         # Per-coder task storage: {coder_uuid: {attr_name: asyncio.Task}}
         super().__setattr__("_per_coder", {coder_uuid: {}})
+        # Last tool `type` emitted via tool_output — lives on the proxy,
+        # never on the shared target (like coder_uuid)
+        super().__setattr__("_last_type", None)
 
         # Register a per-coder input queue (TUI mode only)
         # Allows the TUI to push input directly to this coder's queue,
@@ -76,6 +79,7 @@ class IOProxy(Generic[T]):
         """Forward tool_output with coder_uuid injected."""
         if "coder_uuid" not in kwargs:
             kwargs["coder_uuid"] = self._coder_uuid
+        self._last_type = kwargs.get("type")
         return self._target.tool_output(*messages, **kwargs)
 
     def tool_error(self, message: str = "", strip: bool = True, **kwargs: Any) -> Any:
@@ -265,7 +269,7 @@ class IOProxy(Generic[T]):
 
     def __setattr__(self, name: str, value: Any) -> None:
         # Proxy-internal attributes — store on proxy instance only
-        if name in ("_target", "_coder_uuid", "_coder", "_per_coder"):
+        if name in ("_target", "_coder_uuid", "_coder", "_per_coder", "_last_type"):
             super().__setattr__(name, value)
         # Per-coder task attributes — isolate per-coder so coders don't
         # compete for the same promise on the shared InputOutput instance
