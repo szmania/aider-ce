@@ -851,12 +851,12 @@ class Coder(metaclass=UsageMeta):
         settings_items.append(f"{self.edit_format} (edit format)")
 
         # Thinking tokens
-        thinking_tokens = main_model.get_thinking_tokens()
+        thinking_tokens = self.get_active_model().get_thinking_tokens()
         if thinking_tokens:
             settings_items.append(f"{thinking_tokens} think tokens")
 
         # Reasoning effort
-        reasoning_effort = main_model.get_reasoning_effort()
+        reasoning_effort = self.get_active_model().get_reasoning_effort()
         if reasoning_effort:
             settings_items.append(f"reasoning {reasoning_effort}")
 
