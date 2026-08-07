@@ -4248,15 +4248,12 @@ class Coder(metaclass=UsageMeta):
 
         self.message_tokens_received += completion_tokens
 
-        # Build the new streamlined format
-        tokens_parts = [format_tokens(prompt_tokens)]
-
-        if cache_hit_tokens:
-            tokens_parts.append(f"{format_tokens(cache_hit_tokens)}")
-        if cache_write_tokens:
-            tokens_parts.append(f"{format_tokens(cache_write_tokens)}")
-
-        tokens_str = "/".join(tokens_parts)
+        # Build tokens string as "{prompt} CH {hit_rate:.1f}% ↑ {completion} ↓"
+        if prompt_tokens > 0:
+            hit_rate = round(cache_hit_tokens / prompt_tokens * 100, 1) if cache_hit_tokens else 0.0
+        else:
+            hit_rate = 0.0
+        tokens_str = f"{format_tokens(prompt_tokens)} ◇ {hit_rate:.1f}%"
 
         tokens_report = f"{tokens_str} ↑ {format_tokens(completion_tokens)} ↓"
 
@@ -4271,12 +4268,17 @@ class Coder(metaclass=UsageMeta):
             + self.message_tokens_received
         )
         total_combined_cached = self.total_cached_tokens + self.message_cached_tokens
+        total_input_tokens = self.total_tokens_sent + self.message_tokens_sent
+        if total_input_tokens > 0:
+            total_hit_rate = (
+                round(total_combined_cached / total_input_tokens * 100, 1)
+                if total_combined_cached
+                else 0.0
+            )
+        else:
+            total_hit_rate = 0.0
 
-        total_stats = f"{format_tokens(total_combined_tokens)}"
-        if total_combined_cached:
-            total_stats += f"/{format_tokens(total_combined_cached)}"
-
-        total_stats += " ↑↓"
+        total_stats = f"{format_tokens(total_combined_tokens)} ◇ {total_hit_rate:.1f}% ↑↓"
 
         if not self.get_active_model().info.get("input_cost_per_token"):
             self.usage_report = tokens_report + " " + total_stats
