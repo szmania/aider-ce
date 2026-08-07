@@ -27,7 +27,6 @@ from cecli.helpers.similarity import (
 )
 from cecli.helpers.skills import SkillsManager
 from cecli.hooks import HookIntegration
-from cecli.llm import litellm
 from cecli.mcp import LocalServer, McpServerManager
 from cecli.tools.utils.base_tool import BaseTool
 from cecli.tools.utils.registry import ToolRegistry
@@ -364,16 +363,12 @@ class AgentCoder(Coder):
             }
             try:
                 session = await server.connect()
-                call_result = await litellm.experimental_mcp_client.call_openai_tool(
-                    session=session, openai_tool=tool_call_dict
-                )
+                call_result = await self.call_mcp_tool_from_session(session, tool_call_dict)
             except Exception as e:
                 if server.is_session_expired_error(e):
                     try:
                         session = await server.reconnect()
-                        call_result = await litellm.experimental_mcp_client.call_openai_tool(
-                            session=session, openai_tool=tool_call_dict
-                        )
+                        call_result = await self.call_mcp_tool_from_session(session, tool_call_dict)
                     except Exception as retry_exc:
                         self.io.tool_warning(
                             f"Executing {tool_name} on {server.name} failed after reconnect:\n"

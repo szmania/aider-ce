@@ -3110,19 +3110,14 @@ class Coder(metaclass=UsageMeta):
 
                         async def do_tool_call():
                             nonlocal session
-                            from litellm import experimental_mcp_client
 
                             try:
-                                return await experimental_mcp_client.call_openai_tool(
-                                    session=session,
-                                    openai_tool=new_tool_call,
-                                )
+                                return await self.call_mcp_tool_from_session(session, new_tool_call)
                             except Exception as e:
                                 if server.is_session_expired_error(e):
                                     session = await server.reconnect()
-                                    return await experimental_mcp_client.call_openai_tool(
-                                        session=session,
-                                        openai_tool=new_tool_call,
+                                    return await self.call_mcp_tool_from_session(
+                                        session, new_tool_call
                                     )
                                 raise
 
@@ -3208,6 +3203,34 @@ class Coder(metaclass=UsageMeta):
                 )
 
         return tool_responses
+
+    async def call_mcp_tool_from_session(self, session, tool_call):
+        """Call an MCP tool from an OpenAI-style tool call using the native SDK.
+
+        Accepts either a dict (``{"function": {"name": ..., "arguments": ...}}``)
+        or a tool-call object (e.g. litellm's ChatCompletionMessageToolCall) and
+        invokes the MCP session directly, avoiding litellm's lazily-imported
+        ``experimental_mcp_client`` submodule.
+        """
+        if isinstance(tool_call, dict):
+            function = tool_call.get("function", {})
+            name = function.get("name")
+            arguments = function.get("arguments", {})
+        else:
+            function = getattr(tool_call, "function", None)
+            name = getattr(function, "name", None)
+            arguments = getattr(function, "arguments", {})
+
+        if isinstance(arguments, str):
+            try:
+                arguments = json.loads(arguments)
+            except json.JSONDecodeError:
+                arguments = {}
+
+        if not isinstance(arguments, dict):
+            arguments = {}
+
+        return await session.call_tool(name=name, arguments=arguments)
 
     async def process_tool_calls(self, tool_call_response):
         """Simplified main entry point."""
