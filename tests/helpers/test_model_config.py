@@ -137,6 +137,35 @@ def test_json_file_and_string_sources(tmp_path):
     assert config["llm"]["litellm_provider"] == "raw"
 
 
+def test_overlong_raw_json_string_source():
+    """Raw JSON strings longer than the OS path limit are scanned as JSON.
+
+    Regression for CI failures on Python <= 3.12 where ``Path.exists()``
+    raised OSError [Errno 36] ENAMETOOLONG when probing an over-long string
+    instead of returning False, crashing ``Model(...)`` setup.
+    """
+    raw = json.dumps({"model": _record(litellm_provider="overlong"), "padding": "x" * 5000})
+
+    assert len(raw) > 4096
+
+    config = get_default_config("model", [raw])
+
+    assert config["llm"]["litellm_provider"] == "overlong"
+
+
+def test_model_init_with_overlong_raw_metadata(monkeypatch):
+    """Model init tolerates an over-long raw metadata string from get_metadata_sources."""
+    from cecli.models import Model, model_info_manager
+
+    big = json.dumps({"model": _record(litellm_provider="overlong"), "padding": "x" * 5000})
+    monkeypatch.setattr(model_info_manager, "get_metadata_sources", lambda: [big])
+    monkeypatch.setattr(model_info_manager, "get_model_info", lambda model: {})
+
+    model = Model("model")
+
+    assert model.info["litellm_provider"] == "overlong"
+
+
 def test_single_dict_source():
     config = get_default_config("model", {"model": _record(litellm_provider="openai")})
 

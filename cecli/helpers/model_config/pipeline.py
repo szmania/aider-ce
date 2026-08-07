@@ -185,7 +185,7 @@ def _normalize_source(source):
     if isinstance(source, (str, Path)):
         path = Path(source)
 
-        if path.exists():
+        if _path_exists(path):
             try:
                 if path.name == RESOURCE_FILE:
                     return {"kind": "raw", "text": _bundled_metadata_raw()}
@@ -199,6 +199,22 @@ def _normalize_source(source):
         return {"kind": "raw", "text": source}
 
     return {"kind": "dict", "data": {}}
+
+
+def _path_exists(path):
+    """Like ``Path.exists()`` but tolerant of paths that are too long to stat.
+
+    Raw JSON metadata strings can be far longer than the OS path limit; on
+    Python <= 3.12 ``Path.exists()`` re-raises ``OSError`` [Errno 36]
+    ENAMETOOLONG for them instead of returning ``False`` (newer Pythons
+    delegate to ``os.path.exists()`` and return ``False``). Treat either
+    outcome as "not a file path" so the caller falls back to a raw source.
+    """
+    try:
+        return path.exists()
+
+    except OSError:
+        return False
 
 
 def _find_record(sources, model_name, provider, route):
