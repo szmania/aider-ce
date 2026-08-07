@@ -724,7 +724,12 @@ class InputOutput:
             if not silent:
                 self.tool_error(f"{filename}: unable to read: {err}")
             return
-        except UnicodeError as e:
+        except (UnicodeError, ValueError) as e:
+            # ValueError is raised by decoding.safe_open / smart_read when
+            # charset_normalizer cannot determine an encoding (e.g. binary
+            # files like .git/objects/pack/*.rev). Treat it like a decode
+            # error so callers such as /add can skip the file gracefully
+            # instead of crashing the session.
             if not silent:
                 self.tool_error(f"{filename}: {e}")
                 self.tool_error("Use --encoding to set the unicode encoding.")
