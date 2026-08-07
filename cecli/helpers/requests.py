@@ -42,6 +42,9 @@ def add_reasoning_content(messages):
                 )
                 msg.pop("reasoning_content", None)
 
+            if msg.get("reasoning_content", None) == "":
+                msg.pop("reasoning_content", None)
+
     return messages
 
 
