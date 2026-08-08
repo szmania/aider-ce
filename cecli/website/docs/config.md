@@ -34,7 +34,7 @@ Using an `.env` file:
 CECLI_TUI=true
 ```
 
-## Default `~/.cecli/` Locations
+## Default File Locations
 
 Cecli also checks several default locations inside `~/.cecli/` for configuration, environment variables, and agent resources. These are always included with lower precedence than project-level equivalents, so a setting in a project `.cecli.conf.yml` or `.env` file will override the `~/.cecli/` default.
 

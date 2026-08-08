@@ -569,6 +569,7 @@ a {
     }
 
     .nav-pill {
+        justify-content: center;
         border-radius: 18px;
         flex-wrap: wrap;
     }
@@ -577,6 +578,7 @@ a {
         order: 3;
         width: 100%;
         justify-content: center;
+        margin: 0;
         padding: 4px 0 2px;
     }
 

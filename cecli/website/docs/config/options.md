@@ -61,9 +61,6 @@ usage: cecli [-h] [--model] [--openai-api-key] [--anthropic-api-key]
              [--watch-files | --no-watch-files] [--lint]
              [--lint-cmd] [--auto-lint | --no-auto-lint]
              [--test-cmd] [--auto-test | --no-auto-test] [--test]
-             [--analytics | --no-analytics] [--analytics-log]
-             [--analytics-disable] [--analytics-posthog-host]
-             [--analytics-posthog-project-api-key]
              [--just-check-update]
              [--check-update | --no-check-update]
              [--show-release-notes | --no-show-release-notes]
@@ -412,25 +409,6 @@ Enable/disable automatic testing after changes (default: False) Default: False E
 
 ### `--test`
 Run tests, fix problems found and then exit Default: False Environment variable: `CECLI_TEST`
-
-## Analytics:
-
-### `--analytics`
-Enable/disable analytics for current session (default: random) Environment variable: `CECLI_ANALYTICS` Aliases:
-  - `--analytics`
-  - `--no-analytics`
-
-### `--analytics-log ANALYTICS_LOG_FILE`
-Specify a file to log analytics events Environment variable: `CECLI_ANALYTICS_LOG`
-
-### `--analytics-disable`
-Permanently disable analytics Default: False Environment variable: `CECLI_ANALYTICS_DISABLE`
-
-### `--analytics-posthog-host ANALYTICS_POSTHOG_HOST`
-Send analytics to custom PostHog instance Environment variable: `CECLI_ANALYTICS_POSTHOG_HOST`
-
-### `--analytics-posthog-project-api-key ANALYTICS_POSTHOG_PROJECT_API_KEY`
-Send analytics to custom PostHog project Environment variable: `CECLI_ANALYTICS_POSTHOG_PROJECT_API_KEY`
 
 ## Upgrading:
 

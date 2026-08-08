@@ -23,14 +23,14 @@ You can also specify the `--config <filename>` parameter, which will only load t
 
 Lists of values can be specified either as a bulleted list:
 
-## Deep merge behavior for `.cecli.conf.yml`
+## Merge Precedence
 
 There are two types of YAML config files with different merge behaviors:
 
 | Config File | Merge Behavior | Array Fields |
 |-------------|----------------|--------------|
 | `.cecli/conf.yml` | Shallow merge (later values replace earlier) | All fields |
-| `.cecli.conf.yml` | Deep merge (arrays are concatenated with deduplication) | Array fields only |
+| `.cecli.conf.yml` | Deep merge (and arrays are concatenated with deduplication) | Array fields only |
 
 ### How deep merge works
 

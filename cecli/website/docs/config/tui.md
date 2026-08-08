@@ -112,7 +112,7 @@ All key bindings use Textual's key syntax:
 
 Warning: key bindings may not work if they conflict with the textual library defaults at:
 
-https://textual.textualize.io/widgets/text_area/#bindings
+[Textual Documentation](https://textual.textualize.io/widgets/text_area/#bindings)
 
 ## Benefits
 
