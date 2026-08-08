@@ -1,11 +1,11 @@
-```
-                       ▒▒╗▒▒╗
-   ▒▒▒▒▒╗ ▒▒▒▒▒╗ ▒▒▒▒▒╗▒▒║╚═╝
-  ▒▒╔═══╝▒▒▓▓▓▒║▒▒╔═══╝▒▒║▒▒╗
-  ▒▒║    ▒▒╔═══╝▒▒║    ▒▒║▒▒║
-  ╚▒▒▒▒▒╗╚▒▒▒▒▒╗╚▒▒▒▒▒╗▒▒║▒▒║
-   ╚════╝ ╚════╝ ╚════╝╚═╝╚═╝ (probably pronounced like "Cecily")
-```
+<table align="center" bgcolor="#0d1117" cellpadding="20" cellspacing="0">
+  <tr>
+    <td align="center">
+      <img src="cecli/website/assets/cecli-temp-logo.svg" alt="cecli logo" height="120">
+    </td>
+  </tr>
+</table>
+
 
 `cecli` is yet another cli agent crafted for extensibility and customization. For folks who like seeing under the hood, welcome to the fold. Made for nerds, geeks, and the extremely curious.
 
