@@ -22,7 +22,6 @@ layout: none
         <div class="nav-pill">
             <a href="/" class="nav-logo" aria-label="cecli home">
                 <img class="nav-logo-mark" src="/assets/cecli-temp-logo-favicon.svg" alt="" width="24" height="24">
-                <span>cecli</span>
             </a>
             <div class="nav-links">
                 <a href="/docs/">Documentation</a>
@@ -43,16 +42,22 @@ layout: none
                     Read the docs
                     <span class="announcement-arrow">→</span>
                 </a>
-                <h1>An ode to the CLI</h1>
+<h1 class="ascii-heading"><span class="ascii-art">
+                     ▒▒╗▒▒╗
+ ▒▒▒▒▒╗ ▒▒▒▒▒╗ ▒▒▒▒▒╗▒▒║╚═╝
+▒▒╔═══╝▒▒▓▓▓▒║▒▒╔═══╝▒▒║▒▒╗
+▒▒║    ▒▒╔═══╝▒▒║    ▒▒║▒▒║
+╚▒▒▒▒▒╗╚▒▒▒▒▒╗╚▒▒▒▒▒╗▒▒║▒▒║
+ ╚════╝ ╚════╝ ╚════╝╚═╝╚═╝</span><small class="hero-tagline">For Nerds, Geeks, and the Extremely Curious</small></h1>
                 <p class="hero-sub">
-                    There are many terminal agents, but there's also this one, so try it out ✌️
+                    There are many terminal agents, but there's also this one✌️
                 </p>
                 <div class="hero-actions">
                     <a href="/docs/install/" class="btn btn-primary">Get Started</a>
                     <div class="command-pill"><span class="prompt">$</span> uv pip install cecli-dev</div>
                 </div>
                 <div class="stats">
-                    <div class="stat"><strong>20+</strong><span>Model Providers</span></div>
+                    <div class="stat"><strong>100+</strong><span>Supported Models</span></div>
                     <div class="stat"><strong>&gt;90%</strong><span>Cache Hit Rate</span></div>
                     <div class="stat"><strong>3.10–3.14</strong><span>Python support</span></div>
                     <div class="stat"><strong>100%</strong><span>Open source</span></div>
@@ -94,10 +99,10 @@ layout: none
                         <p>Plans and executes multi-step work with explicit tools and controls.</p>
                         <span class="feature-link">Docs →</span>
                     </a>
-                    <a href="/docs/repomap/" class="feature-card">
-                        <i class="mdi mdi-map-outline feature-icon"></i>
-                        <h3 class="feature-title">Repository maps</h3>
-                        <p>Builds a concise map of your codebase to navigate larger projects.</p>
+                    <a href="/docs/config/hooks/" class="feature-card">
+                        <i class="mdi mdi-hook feature-icon"></i>
+                        <h3 class="feature-title">Extensible hooks</h3>
+                        <p>Run custom logic before and after agent actions to fit your workflow.</p>
                         <span class="feature-link">Docs →</span>
                     </a>
                     <a href="/docs/usage/" class="feature-card">
@@ -112,34 +117,34 @@ layout: none
                         <p>Delegate focused investigations and tasks without losing the main thread.</p>
                         <span class="feature-link">Docs →</span>
                     </a>
-                    <a href="/docs/config/hooks/" class="feature-card">
-                        <i class="mdi mdi-hook feature-icon"></i>
-                        <h3 class="feature-title">Extensible hooks</h3>
-                        <p>Run custom logic before and after agent actions to fit your workflow.</p>
-                        <span class="feature-link">Docs →</span>
-                    </a>
                     <a href="/docs/config/persistent-memory/" class="feature-card">
                         <i class="mdi mdi-brain feature-icon"></i>
                         <h3 class="feature-title">Persistent memory</h3>
                         <p>Preserves useful project decisions and context across longer-running work.</p>
                         <span class="feature-link">Docs →</span>
                     </a>
+                    <a href="/docs/repomap/" class="feature-card">
+                        <i class="mdi mdi-map-outline feature-icon"></i>
+                        <h3 class="feature-title">Repository maps</h3>
+                        <p>Builds a concise map of your codebase to navigate larger projects.</p>
+                        <span class="feature-link">Docs →</span>
+                    </a>                    
                     <a href="/docs/config/skills/" class="feature-card">
                         <i class="mdi mdi-puzzle-outline feature-icon"></i>
                         <h3 class="feature-title">Custom skills</h3>
                         <p>Give the agent reusable, domain-specific capabilities when it needs them.</p>
                         <span class="feature-link">Docs →</span>
                     </a>
-                    <a href="/docs/config/tui/" class="feature-card">
-                        <i class="mdi mdi-console-line feature-icon"></i>
-                        <h3 class="feature-title">Full terminal UI</h3>
-                        <p>Work in a purpose-built interface with conversation, prompts, and tools.</p>
-                        <span class="feature-link">Docs →</span>
-                    </a>
                     <a href="/docs/usage/lint-test/" class="feature-card">
                         <i class="mdi mdi-check-all feature-icon"></i>
-                        <h3 class="feature-title">Validate every change</h3>
+                        <h3 class="feature-title">Change validation</h3>
                         <p>Run linters and tests, then feed the results back into the agent loop.</p>
+                        <span class="feature-link">Docs →</span>
+                    </a>                    
+                    <a href="/docs/config/tui/" class="feature-card">
+                        <i class="mdi mdi-console-line feature-icon"></i>
+                        <h3 class="feature-title">Expressive TUI</h3>
+                        <p>Peer into the mind of the agent and fully monitor the situation.</p>
                         <span class="feature-link">Docs →</span>
                     </a>
                 </div>

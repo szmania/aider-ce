@@ -243,6 +243,38 @@ a {
     font-weight: 600;
 }
 
+/* Heading */
+.ascii-heading {
+    max-width: none;
+    margin: 28px auto 0;
+    font-size: 1.5rem !important;
+    font-weight: 600;
+    line-height: 1.1;
+    text-align: center;
+    line-height: normal !important;
+}
+
+.ascii-art {
+    display: inline-block;
+    font-family: monospace;
+    white-space: pre;
+    text-align: left;
+    vertical-align: bottom;
+}
+
+.hero-tagline {
+    display: inline-block;
+    margin-left: 2px;
+    font-family: var(--font-sans);
+    font-size: 12px;
+    line-height: 1.4;
+    color: var(--text-tertiary);
+    text-align: left;
+    vertical-align: bottom;
+    white-space: nowrap;
+}
+
+
 /* Stats */
 .stats {
     position: relative;
@@ -264,9 +296,11 @@ a {
     pointer-events: none;
 }
 
+/*
 .stats::before {
     background: linear-gradient(115deg, transparent 44%, rgba(148, 163, 184, 0.12) 44%, rgba(148, 163, 184, 0.12) 56%, transparent 56%);
 }
+*/
 
 .stats::after {
     background: linear-gradient(65deg, transparent 44%, rgba(148, 163, 184, 0.12) 44%, rgba(148, 163, 184, 0.12) 56%, transparent 56%);
@@ -552,6 +586,10 @@ a {
 
     .hero h1 {
         font-size: 2.2rem;
+    }
+
+    .hero-tagline {
+        display: none;
     }
 
     .stats {

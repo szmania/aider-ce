@@ -1,6 +1,12 @@
-## Why `cecli`?
+                       ▒▒╗▒▒╗
+   ▒▒▒▒▒╗ ▒▒▒▒▒╗ ▒▒▒▒▒╗▒▒║╚═╝
+  ▒▒╔═══╝▒▒▓▓▓▒║▒▒╔═══╝▒▒║▒▒╗
+  ▒▒║    ▒▒╔═══╝▒▒║    ▒▒║▒▒║
+  ╚▒▒▒▒▒╗╚▒▒▒▒▒╗╚▒▒▒▒▒╗▒▒║▒▒║
+   ╚════╝ ╚════╝ ╚════╝╚═╝╚═╝ (probably pronounced like "Cecily")
 
-`cecli` (probably pronounced like "Cecily") is yet another cli agent crafted for extensibility and customization. Originally a fork of the [Aider](https://cecli.dev/) AI pair programming tool, we aim to make agentic coding as maximally effective as it can be based on the incredible capabilities of large language models.
+
+`cecli` is yet another cli agent crafted for extensibility and customization. For folks who like seeing under the hood, welcome to the fold. Made for nerds, geeks, and the extremely curious.
 
 
 ### Links
