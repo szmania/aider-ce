@@ -13,16 +13,17 @@ uv pip install cecli-dev
 
 # Change directory into your codebase
 cd /to/your/project
-# Claude 4.5 Sonnet
+
+# Claude 5 Sonnet
 cecli --model claude-sonnet-5 --api-key anthropic=<key>
 
-# Gemini 3
+# Gemini 3.5 Flash
 cecli --model gemini/gemini-3.5-flash-preview --api-key gemini=<key>
 
-# GPT-5.2
-cecli --model openai/gpt-5.5-terra --api-key openai=<key>
+# GPT-5.6 Luna
+cecli --model openai/gpt-5.6-luna --api-key openai=<key>
 
-# DeepSeek Chat
+# DeepSeek V4 Flash
 cecli --model deepseek/deepseek-v4-flash --api-key deepseek=<key>
 ```
 
