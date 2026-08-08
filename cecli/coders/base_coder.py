@@ -851,12 +851,12 @@ class Coder(metaclass=UsageMeta):
         settings_items.append(f"{self.edit_format} (edit format)")
 
         # Thinking tokens
-        thinking_tokens = main_model.get_thinking_tokens()
+        thinking_tokens = self.get_active_model().get_thinking_tokens()
         if thinking_tokens:
             settings_items.append(f"{thinking_tokens} think tokens")
 
         # Reasoning effort
-        reasoning_effort = main_model.get_reasoning_effort()
+        reasoning_effort = self.get_active_model().get_reasoning_effort()
         if reasoning_effort:
             settings_items.append(f"reasoning {reasoning_effort}")
 
@@ -3110,19 +3110,14 @@ class Coder(metaclass=UsageMeta):
 
                         async def do_tool_call():
                             nonlocal session
-                            from litellm import experimental_mcp_client
 
                             try:
-                                return await experimental_mcp_client.call_openai_tool(
-                                    session=session,
-                                    openai_tool=new_tool_call,
-                                )
+                                return await self.call_mcp_tool_from_session(session, new_tool_call)
                             except Exception as e:
                                 if server.is_session_expired_error(e):
                                     session = await server.reconnect()
-                                    return await experimental_mcp_client.call_openai_tool(
-                                        session=session,
-                                        openai_tool=new_tool_call,
+                                    return await self.call_mcp_tool_from_session(
+                                        session, new_tool_call
                                     )
                                 raise
 
@@ -3208,6 +3203,34 @@ class Coder(metaclass=UsageMeta):
                 )
 
         return tool_responses
+
+    async def call_mcp_tool_from_session(self, session, tool_call):
+        """Call an MCP tool from an OpenAI-style tool call using the native SDK.
+
+        Accepts either a dict (``{"function": {"name": ..., "arguments": ...}}``)
+        or a tool-call object (e.g. litellm's ChatCompletionMessageToolCall) and
+        invokes the MCP session directly, avoiding litellm's lazily-imported
+        ``experimental_mcp_client`` submodule.
+        """
+        if isinstance(tool_call, dict):
+            function = tool_call.get("function", {})
+            name = function.get("name")
+            arguments = function.get("arguments", {})
+        else:
+            function = getattr(tool_call, "function", None)
+            name = getattr(function, "name", None)
+            arguments = getattr(function, "arguments", {})
+
+        if isinstance(arguments, str):
+            try:
+                arguments = json.loads(arguments)
+            except json.JSONDecodeError:
+                arguments = {}
+
+        if not isinstance(arguments, dict):
+            arguments = {}
+
+        return await session.call_tool(name=name, arguments=arguments)
 
     async def process_tool_calls(self, tool_call_response):
         """Simplified main entry point."""
@@ -3440,11 +3463,17 @@ class Coder(metaclass=UsageMeta):
         to be `None` when `tool_calls` are present.
         """
         msg = dict(role="assistant")
-        response = (
-            self.partial_response_chunks[0]
-            if not self.stream
-            else litellm.stream_chunk_builder(self.partial_response_chunks)
-        )
+
+        # Prefer the response already produced by consolidate_chunks(): it carries
+        # the provider-specific fields (e.g. reasoning_items) that we preserved
+        # across all chunks, which a fresh litellm.stream_chunk_builder() pass
+        # alone would drop or truncate.
+        if self.partial_response_consolidated:
+            response = self.partial_response_consolidated[0]
+        elif not self.stream:
+            response = self.partial_response_chunks[0]
+        else:
+            response = litellm.stream_chunk_builder(self.partial_response_chunks)
 
         try:
             # Use response_dict as a regular dictionary
@@ -3963,63 +3992,51 @@ class Coder(metaclass=UsageMeta):
                 if getattr(last_chunk, "usage", None):
                     response.usage = last_chunk.usage
 
-        # Collect provider-specific fields from chunks to preserve them
-        # We need to track both by ID (primary) and index (fallback) since
-        # early chunks might not have IDs established yet
-        provider_specific_fields_by_id = {}
-        provider_specific_fields_by_index = {}
-
+        # Collect message-level provider-specific fields (e.g. `reasoning_items`
+        # for reasoning models) from ALL chunks.  litellm's stream_chunk_builder()
+        # merges these with last-wins semantics for list fields, silently dropping
+        # every reasoning item except the final one.  Reasoning models depend on the
+        # full ordered item list being present in the assistant message so that
+        # exact-prefix prompt caching keeps working across turns, so we collect the
+        # fields ourselves and concatenate list-valued entries.
+        message_provider_specific_fields = {}
         for chunk in self.partial_response_chunks:
             try:
-                if chunk.choices and chunk.choices[0].delta and chunk.choices[0].delta.tool_calls:
-                    for tool_call in chunk.choices[0].delta.tool_calls:
-                        if (
-                            hasattr(tool_call, "provider_specific_fields")
-                            and tool_call.provider_specific_fields
-                        ):
-                            # Ensure provider_specific_fields is a dictionary
-                            psf = tool_call.provider_specific_fields
-                            if not isinstance(psf, dict):
-                                continue
-
-                            # Try to use ID first
-                            if hasattr(tool_call, "id") and tool_call.id:
-                                tool_id = tool_call.id
-                                if tool_id not in provider_specific_fields_by_id:
-                                    provider_specific_fields_by_id[tool_id] = {}
-                                # Merge provider-specific fields for this tool ID
-                                provider_specific_fields_by_id[tool_id].update(psf)
-                            # Also track by index as fallback
-                            elif hasattr(tool_call, "index"):
-                                tool_index = tool_call.index
-                                if tool_index not in provider_specific_fields_by_index:
-                                    provider_specific_fields_by_index[tool_index] = {}
-                                provider_specific_fields_by_index[tool_index].update(psf)
+                if chunk.choices and chunk.choices[0].delta:
+                    psf = getattr(chunk.choices[0].delta, "provider_specific_fields", None)
+                    if psf and isinstance(psf, dict):
+                        for key, value in psf.items():
+                            if isinstance(value, list):
+                                message_provider_specific_fields.setdefault(key, []).extend(value)
+                            elif value is not None:
+                                message_provider_specific_fields[key] = value
             except (AttributeError, IndexError):
                 continue
 
+        if message_provider_specific_fields:
+            message_psf = getattr(response.choices[0].message, "provider_specific_fields", None)
+            if not isinstance(message_psf, dict):
+                message_psf = {}
+            message_psf.update(message_provider_specific_fields)
+            response.choices[0].message.provider_specific_fields = message_psf
+
         try:
-            if response.choices[0].message.tool_calls:
-                for i, tool_call in enumerate(response.choices[0].message.tool_calls):
-                    # Add provider-specific fields if we collected any for this tool
-                    tool_id = tool_call.id
+            message_tool_calls = response.choices[0].message.tool_calls
+            if message_tool_calls and len(message_tool_calls):
+                if self.stream:
+                    built_tool_calls = self._build_tool_calls_from_chunks()
+                    if built_tool_calls:
+                        response.choices[0].message.tool_calls = built_tool_calls
+                        self.partial_response_tool_calls = built_tool_calls
+                    else:
+                        # Fall back to litellm's merged list, keeping every call
+                        self.partial_response_tool_calls = list(message_tool_calls)
+                else:
+                    # Non-streaming: the single response chunk already carries the
+                    # full tool_calls list
+                    self.partial_response_tool_calls = list(message_tool_calls)
 
-                    # Try ID first
-                    if tool_id in provider_specific_fields_by_id:
-                        # Add provider-specific fields directly to the tool call object
-                        tool_call.provider_specific_fields = provider_specific_fields_by_id[tool_id]
-                    # Fall back to index
-                    elif i in provider_specific_fields_by_index:
-                        # Add provider-specific fields directly to the tool call object
-                        tool_call.provider_specific_fields = provider_specific_fields_by_index[i]
-
-                    # Only append to partial_response_tool_calls if it's empty
-                    if len(self.partial_response_tool_calls) == 0:
-                        self.partial_response_tool_calls.append(tool_call)
-
-                self.partial_response_function_call = (
-                    response.choices[0].message.tool_calls[0].function
-                )
+                self.partial_response_function_call = self.partial_response_tool_calls[0].function
         except AttributeError as e:
             func_err = e
 
@@ -4074,6 +4091,85 @@ class Coder(metaclass=UsageMeta):
 
         self.partial_response_consolidated = (response, func_err, content_err)
         return response, func_err, content_err
+
+    def _build_tool_calls_from_chunks(self):
+        """Rebuild tool calls from the raw streaming chunks, keyed by delta index.
+
+        Streaming deltas for parallel tool calls arrive interleaved and may start
+        at any index (not necessarily 0).  Indexing into a dict by the delta's
+        tool-call ``index`` before converting it back to a list ensures every
+        parallel call is preserved, correctly ordered, and keeps its
+        provider-specific fields (e.g. thought signatures) attached.
+        """
+        from litellm.types.utils import ChatCompletionMessageToolCall, Function
+
+        tool_calls_dict = {}
+
+        for chunk in self.partial_response_chunks:
+            try:
+                if not (chunk.choices and chunk.choices[0].delta):
+                    continue
+
+                delta = chunk.choices[0].delta
+                for tool_call in delta.tool_calls or []:
+                    if tool_call is None:
+                        continue
+
+                    if nested.getter(tool_call, "function") is None:
+                        continue
+
+                    index = nested.getter(tool_call, "index")
+                    if index is None:
+                        index = len(tool_calls_dict)
+
+                    entry = tool_calls_dict.setdefault(
+                        index,
+                        {
+                            "id": None,
+                            "name": None,
+                            "type": "function",
+                            "arguments": [],
+                            "provider_specific_fields": {},
+                        },
+                    )
+
+                    entry["id"] = nested.getter(tool_call, "id") or entry["id"]
+                    entry["type"] = nested.getter(tool_call, "type") or entry["type"]
+                    entry["name"] = nested.getter(tool_call, "function.name") or entry["name"]
+
+                    arguments = nested.getter(tool_call, "function.arguments")
+                    if arguments:
+                        entry["arguments"].append(arguments)
+
+                    psf = nested.getter(tool_call, "provider_specific_fields")
+                    if not psf:
+                        psf = nested.getter(tool_call, "function.provider_specific_fields")
+                    if psf and isinstance(psf, dict):
+                        entry["provider_specific_fields"].update(psf)
+            except (AttributeError, IndexError):
+                continue
+
+        tool_calls = []
+        for index in sorted(tool_calls_dict.keys()):
+            data = tool_calls_dict[index]
+            if not (data["id"] and data["name"]):
+                continue
+
+            function = Function(
+                arguments="".join(data["arguments"]) or "{}",
+                name=data["name"],
+            )
+            params = {
+                "id": data["id"],
+                "function": function,
+                "type": data["type"] or "function",
+            }
+            if data["provider_specific_fields"]:
+                params["provider_specific_fields"] = data["provider_specific_fields"]
+
+            tool_calls.append(ChatCompletionMessageToolCall(**params))
+
+        return tool_calls
 
     def stream_wrapper(self, content, final):
         if not hasattr(self, "_streaming_buffer_length"):
@@ -4175,15 +4271,12 @@ class Coder(metaclass=UsageMeta):
 
         self.message_tokens_received += completion_tokens
 
-        # Build the new streamlined format
-        tokens_parts = [format_tokens(prompt_tokens)]
-
-        if cache_hit_tokens:
-            tokens_parts.append(f"{format_tokens(cache_hit_tokens)}")
-        if cache_write_tokens:
-            tokens_parts.append(f"{format_tokens(cache_write_tokens)}")
-
-        tokens_str = "/".join(tokens_parts)
+        # Build tokens string as "{prompt} CH {hit_rate:.1f}% ↑ {completion} ↓"
+        if prompt_tokens > 0:
+            hit_rate = round(cache_hit_tokens / prompt_tokens * 100, 1) if cache_hit_tokens else 0.0
+        else:
+            hit_rate = 0.0
+        tokens_str = f"{format_tokens(prompt_tokens)} ◇ {hit_rate:.1f}%"
 
         tokens_report = f"{tokens_str} ↑ {format_tokens(completion_tokens)} ↓"
 
@@ -4198,12 +4291,17 @@ class Coder(metaclass=UsageMeta):
             + self.message_tokens_received
         )
         total_combined_cached = self.total_cached_tokens + self.message_cached_tokens
+        total_input_tokens = self.total_tokens_sent + self.message_tokens_sent
+        if total_input_tokens > 0:
+            total_hit_rate = (
+                round(total_combined_cached / total_input_tokens * 100, 1)
+                if total_combined_cached
+                else 0.0
+            )
+        else:
+            total_hit_rate = 0.0
 
-        total_stats = f"{format_tokens(total_combined_tokens)}"
-        if total_combined_cached:
-            total_stats += f"/{format_tokens(total_combined_cached)}"
-
-        total_stats += " ↑↓"
+        total_stats = f"{format_tokens(total_combined_tokens)} ◇ {total_hit_rate:.1f}% ↑↓"
 
         if not self.get_active_model().info.get("input_cost_per_token"):
             self.usage_report = tokens_report + " " + total_stats

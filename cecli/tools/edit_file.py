@@ -547,6 +547,24 @@ class Tool(BaseTool):
                             original_content = coder.io.read_text(abs_path)
 
                             if original_content is not None:
+                                # Mirror execute()'s preprocessing so the preview
+                                # resolves the same inputs execute accepts (@L{num}
+                                # line references and ReadFile virtual prefixes).
+                                hp = HashPos(original_content)
+                                source_lines = (
+                                    original_content.splitlines()
+                                    if original_content and original_content.strip()
+                                    else []
+                                )
+                                start_line = cls._resolve_at_l_num(
+                                    start_line, hp, source_lines, file_path_key
+                                )
+                                end_line = cls._resolve_at_l_num(
+                                    end_line, hp, source_lines, file_path_key
+                                )
+                                start_line = cls._strip_readfile_prefix(start_line)
+                                end_line = cls._strip_readfile_prefix(end_line)
+
                                 start_line, end_line = resolve_content_to_hashline_ids(
                                     original_content, start_line, end_line
                                 )

@@ -82,7 +82,9 @@ def test_expand_concatenated_json_merges_instead_of_splitting(monkeypatch):
 
 def test_grep_format_output_empty_searches_does_not_crash_tool_footer():
     coder = SimpleNamespace(
-        io=SimpleNamespace(tool_error=Mock(), tool_output=Mock(), tool_warning=Mock()),
+        io=SimpleNamespace(
+            tool_error=Mock(), tool_output=Mock(), tool_warning=Mock(), _last_type=False
+        ),
         verbose=False,
         pretty=False,
         tui=lambda: None,

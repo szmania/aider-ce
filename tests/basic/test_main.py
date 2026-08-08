@@ -772,7 +772,9 @@ def test_accepts_settings_warnings(
         warning_shown == should_warn
     ), f"Expected warning={should_warn} for {setting_name} but got {warning_shown}"
     if should_call:
-        mock_method.assert_called_once_with(setting_value)
+        # The CLI value must reach the setter; the setters are also invoked at
+        # init time with pipeline defaults, so use assert_any_call.
+        mock_method.assert_any_call(setting_value)
     else:
         mock_method.assert_not_called()
 
@@ -1090,7 +1092,12 @@ def test_thinking_tokens_option(dummy_io, git_temp_dir):
         **dummy_io,
         return_coder=True,
     )
-    assert coder.main_model.extra_params.get("thinking", {}).get("budget_tokens") == 1000
+    # Anthropic consumes the top-level ``thinking`` kwarg; other providers may
+    # keep it in extra_body.
+    thinking = coder.main_model.extra_params.get("thinking") or coder.main_model.extra_params.get(
+        "extra_body", {}
+    ).get("thinking")
+    assert thinking.get("budget_tokens") == 1000
 
 
 def test_list_models_includes_metadata_models(dummy_io, git_temp_dir, mocker, capsys):

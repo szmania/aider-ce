@@ -256,7 +256,7 @@ class HttpBasedMcpServer(McpServer):
             client_metadata=client_metadata,
             storage=FileBasedTokenStorage(self.name),
             redirect_handler=handle_redirect,
-            callback_handler=get_auth_code,
+            callback_handler=_get_oauth_callback_handler(get_auth_code),
         )
 
         return oauth_provider
@@ -285,10 +285,14 @@ class HttpBasedMcpServer(McpServer):
         try:
             url = self.config.get("url")
             headers = self.config.get("headers", {})
-            oauth_provider = await self._create_oauth_provider()
 
+            oauth_provider = None
+            if not headers:
+                oauth_provider = await self._create_oauth_provider()
+
+            http_client_cls = _get_http_client_module().AsyncClient
             http_client = await self.exit_stack.enter_async_context(
-                httpx.AsyncClient(
+                http_client_cls(
                     auth=oauth_provider,
                     follow_redirects=True,
                     headers=headers,
@@ -301,7 +305,7 @@ class HttpBasedMcpServer(McpServer):
                 self._create_transport(url, http_client=http_client)
             )
 
-            read, write, _ = transport
+            read, write = _unpack_transport(transport)
 
             session = await self.exit_stack.enter_async_context(ClientSession(read, write))
             await session.initialize()
@@ -374,7 +378,7 @@ class HttpBasedMcpServer(McpServer):
                         self._state = ConnectionState.CONNECTED
                         self._failed_pings = 0
                     else:
-                        raise httpx.HTTPStatusError(
+                        raise _get_http_client_module().HTTPStatusError(
                             f"Unexpected status {response.status_code}",
                             request=response.request,
                             response=response,
@@ -518,3 +522,61 @@ class LocalServer(McpServer):
     async def disconnect(self):
         """Disconnect from the MCP server and clean up resources."""
         self.session = None
+
+
+def _get_mcp_major_version() -> int:
+    """Return the installed mcp SDK major version (1, 2, ...).
+
+    Falls back to 1 if the version cannot be determined.
+    """
+    try:
+        from importlib.metadata import version
+
+        return int(version("mcp").split(".")[0])
+    except Exception:
+        return 1
+
+
+def _get_http_client_module():
+    """Return the HTTP client module used by the installed mcp SDK.
+
+    mcp SDK 2.x migrated from httpx to httpx2; earlier versions use httpx.
+    """
+    if _get_mcp_major_version() >= 2:
+        import httpx2
+
+        return httpx2
+
+    return httpx
+
+
+def _get_oauth_callback_handler(get_auth_code):
+    """Return an OAuth callback handler compatible with the installed mcp SDK.
+
+    mcp SDK 1.x expects a callback returning an (auth_code, state) tuple;
+    SDK 2.x expects an AuthorizationCodeResult carrying the same fields.
+    """
+    if _get_mcp_major_version() >= 2:
+        from mcp.shared.auth import AuthorizationCodeResult
+
+        async def sdk2_callback_handler() -> AuthorizationCodeResult:
+            code, state = await get_auth_code()
+            return AuthorizationCodeResult(code=code, state=state)
+
+        return sdk2_callback_handler
+
+    return get_auth_code
+
+
+def _unpack_transport(transport):
+    """Return (read, write) streams from an HTTP transport.
+
+    mcp SDK 1.x yields a 3-tuple (read, write, session_id_getter); SDK 2.x
+    yields a 2-tuple (read, write).
+    """
+    if _get_mcp_major_version() >= 2:
+        read, write = transport
+    else:
+        read, write, _ = transport
+
+    return read, write

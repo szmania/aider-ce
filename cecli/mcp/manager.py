@@ -153,7 +153,6 @@ class McpServerManager:
         Returns:
             Boolean indicating success or failure
         """
-        from litellm import experimental_mcp_client
 
         server = self.get_server(name)
         if not server:
@@ -187,9 +186,8 @@ class McpServerManager:
         for attempt in range(1, max_retries + 1):
             try:
                 session = await server.connect()
-                tools = await experimental_mcp_client.load_mcp_tools(
-                    session=session, format="openai"
-                )
+                tools_result = await session.list_tools()
+                tools = _mcp_tools_to_openai_tools(tools_result.tools)
                 self._server_tools[server.name] = tools
                 self._connected_servers.add(server)
                 self._log_verbose(f"Connected to MCP server: {name}")
@@ -361,3 +359,56 @@ def get_local_tool_schemas():
         if hasattr(tool_module, "SCHEMA"):
             schemas.append(tool_module.SCHEMA)
     return schemas
+
+
+def _mcp_tool_input_schema(tool):
+    """Return the input schema of an mcp Tool across SDK versions.
+
+    mcp SDK 1.x names the field inputSchema; SDK 2.x renamed it to
+    input_schema.
+    """
+    schema = getattr(tool, "input_schema", None)
+    if schema is None:
+        schema = getattr(tool, "inputSchema", None)
+    return schema
+
+
+def _normalize_mcp_input_schema(input_schema):
+    """Normalize an MCP input schema for OpenAI function calling.
+
+    OpenAI requires function parameters to have type 'object', a
+    properties dict, and (recommended) additionalProperties: false.
+    Mirrors litellm's _normalize_mcp_input_schema.
+    """
+    if not input_schema:
+        return {"type": "object", "properties": {}, "additionalProperties": False}
+
+    normalized = dict(input_schema)
+    if "type" not in normalized:
+        normalized["type"] = "object"
+    if "properties" not in normalized:
+        normalized["properties"] = {}
+    if "additionalProperties" not in normalized:
+        normalized["additionalProperties"] = False
+    return normalized
+
+
+def _mcp_tools_to_openai_tools(tools):
+    """Convert a list of mcp Tool objects to OpenAI 'tools' JSON dicts.
+
+    Uses the SDK's own session.list_tools() output and converts to the
+    standard OpenAI chat tools format. Version-aware: mcp SDK 2.x renamed
+    Tool.inputSchema to input_schema.
+    """
+    return [
+        {
+            "type": "function",
+            "function": {
+                "name": tool.name,
+                "description": tool.description or "",
+                "parameters": _normalize_mcp_input_schema(_mcp_tool_input_schema(tool)),
+                "strict": False,
+            },
+        }
+        for tool in tools
+    ]
