@@ -256,7 +256,9 @@ a {
 
 .ascii-art {
     display: inline-block;
-    font-family: monospace;
+    font-family: "Fira Code", "DejaVu Sans Mono", "Courier New", monospace;
+    font-variant-ligatures: none;
+    font-kerning: none;
     white-space: pre;
     text-align: left;
     vertical-align: bottom;
