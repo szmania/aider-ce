@@ -1,10 +1,11 @@
+```
                        ▒▒╗▒▒╗
    ▒▒▒▒▒╗ ▒▒▒▒▒╗ ▒▒▒▒▒╗▒▒║╚═╝
   ▒▒╔═══╝▒▒▓▓▓▒║▒▒╔═══╝▒▒║▒▒╗
   ▒▒║    ▒▒╔═══╝▒▒║    ▒▒║▒▒║
   ╚▒▒▒▒▒╗╚▒▒▒▒▒╗╚▒▒▒▒▒╗▒▒║▒▒║
    ╚════╝ ╚════╝ ╚════╝╚═╝╚═╝ (probably pronounced like "Cecily")
-
+```
 
 `cecli` is yet another cli agent crafted for extensibility and customization. For folks who like seeing under the hood, welcome to the fold. Made for nerds, geeks, and the extremely curious.
 
