@@ -105,6 +105,31 @@ def convert_yaml_to_json_string(value):
     return value
 
 
+def merge_agent_config(cli_agent_config: str, file_agent_config) -> str:
+    """
+    Deep-merge the config-file agent-config into the CLI agent-config so CLI
+    values override individual keys while keys provided only by the config
+    files (e.g. skills_paths, skills_init) are preserved instead of being
+    discarded wholesale when --agent-config is passed on the CLI.
+
+    configargparse discards config-file values for options that are also given
+    on the command line, so without this merge a CLI --agent-config silently
+    drops every agent-config key that lives only in .cecli.conf.yml.
+    """
+    try:
+        from cecli.helpers.config_utils import deep_merge
+
+        file_ac = file_agent_config
+        if isinstance(file_ac, str):
+            file_ac = json.loads(file_ac)
+        cli_ac = json.loads(cli_agent_config)
+        if isinstance(file_ac, dict) and file_ac and isinstance(cli_ac, dict):
+            return json.dumps(deep_merge(file_ac, cli_ac, deep_merge_arrays=False))
+    except Exception:
+        pass
+    return cli_agent_config
+
+
 def check_config_files_for_yes(config_files):
     from cecli.decoding import safe_open
 
@@ -731,6 +756,11 @@ async def main_async(
 
     if hasattr(args, "agent_config") and args.agent_config is not None:
         args.agent_config = convert_yaml_to_json_string(args.agent_config)
+        # CLI --agent-config should deep-merge with (not replace) the
+        # agent-config from the merged config files so file-only keys
+        # (e.g. skills_paths, skills_init) are preserved.
+        file_agent_config = merged_config.get("agent-config") or merged_config.get("agent_config")
+        args.agent_config = merge_agent_config(args.agent_config, file_agent_config)
     if hasattr(args, "tui_config") and args.tui_config is not None:
         args.tui_config = convert_yaml_to_json_string(args.tui_config)
     if hasattr(args, "mcp_servers") and args.mcp_servers is not None:
