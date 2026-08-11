@@ -10,7 +10,7 @@ import json
 import re
 from typing import Any, AsyncIterator, Dict, List, Optional, Tuple
 
-import httpx
+from cecli.http import httpx
 
 
 async def sse_json_lines(resp: httpx.Response) -> AsyncIterator[Dict[str, Any]]:

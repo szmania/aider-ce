@@ -3060,7 +3060,7 @@ class Coder(metaclass=UsageMeta):
 
     async def _execute_mcp_tools(self, server, tool_calls):
         """Execute MCP tools via LiteLLM."""
-        import httpx
+        from cecli.http import httpx
 
         tool_responses = []
         try:

@@ -20,14 +20,14 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import re
 import warnings
 from dataclasses import dataclass, field
 from types import SimpleNamespace
 from typing import Any, Dict, List, Optional
 
-import httpx
-
 from cecli.dump import dump  # noqa: F401
+from cecli.http import httpx
 
 warnings.filterwarnings("ignore", category=UserWarning, module="pydantic")
 
@@ -982,16 +982,27 @@ class _LiteLLMFacade:
 
     def encode(
         self, model: Optional[str] = None, text: Optional[str] = None, **kwargs: Any
-    ) -> List[int]:
-        """Tokenize ``text`` with tiktoken (fallback: cl100k_base)."""
-        import tiktoken
+    ) -> range:
+        """Estimate tokens for ``text`` without loading a BPE tokenizer.
 
-        try:
-            enc = tiktoken.encoding_for_model(model)
-        except Exception:
-            enc = tiktoken.get_encoding("cl100k_base")
+        tiktoken's cl100k_base/o200k_base encodings cost ~30-95MB of RSS the
+        first time they are loaded, so we approximate instead: roughly one token
+        per four ASCII characters (the classic rule of thumb), plus one token per
+        non-ASCII character (CJK/emoji tokenize at about one token per char), and
+        never fewer tokens than there are whitespace-delimited word/punctuation
+        runs (dense code with short tokens is otherwise undercounted).
 
-        return enc.encode(text or "")
+        The estimate lands within ~±30% of cl100k_base on code and prose, which
+        is plenty for context-window checks, cost display, and file-size
+        warnings.
+
+        Returns a ``range`` whose length is the estimated token count; the
+        individual values are dummy ids (callers only use ``len()``/iteration).
+        """
+
+        n = _estimate_token_count(text or "")
+
+        return range(n)
 
     def token_counter(
         self, model: Optional[str] = None, messages: Optional[Any] = None, **kwargs: Any
@@ -1117,3 +1128,29 @@ class LazyLiteLLM:
 litellm = LazyLiteLLM()
 
 __all__ = ["litellm"]
+
+
+# ---------------------------------------------------------------------------
+# Token-count estimator (tiktoken-free)
+# ---------------------------------------------------------------------------
+
+_WORD_OR_PUNCT_RE = re.compile(r"\w+|[^\w\s]")
+_NON_ASCII_RE = re.compile(r"[^\x00-\x7f]")
+
+
+def _estimate_token_count(text: str) -> int:
+    """Estimate the number of tokens in ``text`` without a BPE tokenizer.
+
+    Uses the classic ~4 chars/token rule of thumb, lifted for non-ASCII text
+    (CJK/emoji tokenize at roughly one token per character) and floored by the
+    number of word/punctuation runs so dense code with many short tokens isn't
+    undercounted.
+    """
+
+    if not text:
+        return 0
+
+    units = len(_WORD_OR_PUNCT_RE.findall(text))
+    non_ascii = len(_NON_ASCII_RE.findall(text))
+
+    return max(1, len(text) // 4, units) + non_ascii

@@ -7,7 +7,6 @@ from contextlib import AsyncExitStack
 from enum import Enum, auto
 from urllib.parse import urlparse
 
-import httpx
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.auth import OAuthClientProvider
 from mcp.client.sse import sse_client
@@ -16,6 +15,7 @@ from mcp.client.streamable_http import streamable_http_client
 from mcp.shared.auth import OAuthClientMetadata
 
 from cecli.decoding import safe_open
+from cecli.http import httpx
 
 from .oauth import (
     FileBasedTokenStorage,
@@ -164,7 +164,7 @@ class McpServer:
         Returns:
             bool: True if the error indicates a 404 session expiry
         """
-        import httpx
+        from cecli.http import httpx
 
         if isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code == 404:
             return True

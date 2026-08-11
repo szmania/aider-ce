@@ -17,7 +17,7 @@ import time
 from typing import Any, Dict, Optional
 from uuid import uuid4
 
-import httpx
+from cecli.http import httpx
 
 from .base import ProviderAdapter
 

@@ -10,7 +10,7 @@ from __future__ import annotations
 import ssl
 from typing import Any
 
-import httpx
+from cecli.http import httpx
 
 #: Global TLS verification flag; set False for ``--no-verify-ssl``.
 VERIFY_SSL = True

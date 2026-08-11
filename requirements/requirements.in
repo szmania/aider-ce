@@ -13,8 +13,10 @@ GitPython>=3.1.45
 pathspec>=0.12.1
 
 # communication
-llm>=0.32
-tiktoken>=0.13.0
+# token counts are estimated (no BPE tokenizer); tiktoken was ~30-95MB RSS
+# NOTE: requests is imported directly by cecli (models/onboarding/versioncheck);
+# it used to come in transitively via tiktoken, so declare it explicitly now.
+requests>=2.32.0
 mcp>=1.24.0
 socksio>=1.0.0
 truststore
