@@ -25,7 +25,7 @@ from ..types import (
     Usage,
     parts_message_to_message,
 )
-from ..utils import sse_json_lines, system_prompt
+from ..utils import split_data_url, sse_json_lines, system_prompt
 
 DEFAULT_TIMEOUT = 120.0
 
@@ -162,6 +162,9 @@ def gemini_content(
 
     if isinstance(content, str):
         return {"role": "user", "parts": [{"text": content}]}
+
+    if isinstance(content, list):
+        return {"role": "user", "parts": _gemini_user_parts(content)}
 
     parts: List[Dict[str, Any]] = []
 
@@ -694,6 +697,48 @@ def _gemini_schema(schema: Dict[str, Any]) -> Dict[str, Any]:
             cleaned[key] = value
 
     return cleaned
+
+
+def _gemini_user_parts(content: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Translate OpenAI-style user content parts into Gemini ``parts``.
+
+    - ``text`` parts become ``{"text": ...}``
+    - ``image_url`` data URLs become ``{"inlineData": {"mimeType", "data"}}``
+    - ``image_url`` http(s) URLs become ``{"fileData": {"fileUri"}}``
+    - anything else is JSON-serialized into a text part (never dropped)
+    """
+    parts: List[Dict[str, Any]] = []
+
+    for part in content:
+        if not isinstance(part, dict):
+            parts.append({"text": json.dumps(part)})
+
+            continue
+
+        if part.get("type") == "text" and isinstance(part.get("text"), str):
+            parts.append({"text": part["text"]})
+
+            continue
+
+        if part.get("type") == "image_url":
+            image_url = part.get("image_url")
+            url = image_url.get("url") if isinstance(image_url, dict) else None
+            parsed = split_data_url(url)
+
+            if parsed:
+                mime, data = parsed
+                parts.append({"inlineData": {"mimeType": mime, "data": data}})
+
+                continue
+
+            if isinstance(url, str) and url.startswith(("http://", "https://")):
+                parts.append({"fileData": {"fileUri": url}})
+
+                continue
+
+        parts.append({"text": json.dumps(part)})
+
+    return parts
 
 
 __all__ = [

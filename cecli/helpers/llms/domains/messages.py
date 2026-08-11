@@ -29,7 +29,7 @@ from ..types import (
     Usage,
     parts_message_to_message,
 )
-from ..utils import sse_json_lines, system_prompt
+from ..utils import split_data_url, sse_json_lines, system_prompt
 
 DEFAULT_TIMEOUT = 120.0
 
@@ -144,6 +144,9 @@ def anthropic_message(msg: Dict[str, Any]) -> Dict[str, Any]:
         return {"role": "assistant", "content": blocks}
 
     content = msg.get("content")
+    if isinstance(content, list):
+        return {"role": role, "content": _anthropic_user_blocks(content)}
+
     return {"role": role, "content": content if isinstance(content, str) else json.dumps(content)}
 
 
@@ -540,6 +543,47 @@ def _anthropic_message_content(msg: Dict[str, Any]) -> Optional[List[Dict[str, A
             )
 
     return content or None
+
+
+def _anthropic_user_blocks(content: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Translate OpenAI-style user content parts into Anthropic content blocks.
+
+    - ``text`` parts become ``{"type": "text", ...}``
+    - ``image_url`` base64 data URLs become ``{"type": "image", "source": {base64}}``
+    - anything else is JSON-serialized into a text block (never dropped)
+    """
+    blocks: List[Dict[str, Any]] = []
+
+    for part in content:
+        if not isinstance(part, dict):
+            blocks.append({"type": "text", "text": json.dumps(part)})
+
+            continue
+
+        if part.get("type") == "text" and isinstance(part.get("text"), str):
+            blocks.append({"type": "text", "text": part["text"]})
+
+            continue
+
+        if part.get("type") == "image_url":
+            image_url = part.get("image_url")
+            url = image_url.get("url") if isinstance(image_url, dict) else None
+            parsed = split_data_url(url)
+
+            if parsed:
+                mime, data = parsed
+                blocks.append(
+                    {
+                        "type": "image",
+                        "source": {"type": "base64", "media_type": mime, "data": data},
+                    }
+                )
+
+                continue
+
+        blocks.append({"type": "text", "text": json.dumps(part)})
+
+    return blocks
 
 
 __all__ = [

@@ -7,7 +7,8 @@ by multiple domain adapters, so they live here rather than being duplicated.
 from __future__ import annotations
 
 import json
-from typing import Any, AsyncIterator, Dict, List, Optional
+import re
+from typing import Any, AsyncIterator, Dict, List, Optional, Tuple
 
 import httpx
 
@@ -73,4 +74,24 @@ def extract_reasoning(msg: Dict[str, Any]) -> str:
     return "\n".join(parts)
 
 
-__all__ = ["sse_json_lines", "system_prompt", "extract_reasoning"]
+_DATA_URL_RE = re.compile(r"data:([^;,]+)(;base64)?,(.*)", re.DOTALL)
+
+
+def split_data_url(url: Any) -> Optional[Tuple[str, str]]:
+    """Parse a ``data:<mime>;base64,<payload>`` URL into ``(mime_type, data)``.
+
+    Returns None for non-data URLs (https://..., gs://...) or non-base64
+    payloads so callers can fall back to fileData / text placeholders.
+    """
+    if not isinstance(url, str):
+        return None
+
+    match = _DATA_URL_RE.match(url)
+
+    if not match or not match.group(2):
+        return None
+
+    return (match.group(1) or "application/octet-stream", match.group(3))
+
+
+__all__ = ["sse_json_lines", "system_prompt", "extract_reasoning", "split_data_url"]

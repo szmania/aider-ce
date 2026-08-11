@@ -152,6 +152,17 @@ def to_responses_input(
             )
             continue
 
+        if isinstance(content, list):
+            items.append(
+                {
+                    "type": "message",
+                    "role": role,
+                    "content": _responses_user_content(content),
+                }
+            )
+
+            continue
+
         text = content if isinstance(content, str) else json.dumps(content)
         items.append(
             {"type": "message", "role": role, "content": [{"type": "input_text", "text": text}]}
@@ -497,6 +508,40 @@ def _build_usage(usage_raw: Dict[str, Any]) -> Usage:
         prompt_tokens_details=input_details,
         completion_tokens_details=output_details,
     )
+
+
+def _responses_user_content(content: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Translate OpenAI-style user content parts into responses-API content parts.
+
+    - ``text`` parts become ``{"type": "input_text", ...}``
+    - ``image_url`` parts become ``{"type": "input_image", "image_url": <url>}``
+    - anything else is JSON-serialized into an ``input_text`` part (never dropped)
+    """
+    out: List[Dict[str, Any]] = []
+
+    for part in content:
+        if not isinstance(part, dict):
+            out.append({"type": "input_text", "text": json.dumps(part)})
+
+            continue
+
+        if part.get("type") == "text" and isinstance(part.get("text"), str):
+            out.append({"type": "input_text", "text": part["text"]})
+
+            continue
+
+        if part.get("type") == "image_url":
+            image_url = part.get("image_url")
+            url = image_url.get("url") if isinstance(image_url, dict) else None
+
+            if isinstance(url, str):
+                out.append({"type": "input_image", "image_url": url})
+
+                continue
+
+        out.append({"type": "input_text", "text": json.dumps(part)})
+
+    return out
 
 
 __all__ = [
