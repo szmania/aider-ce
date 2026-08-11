@@ -76,8 +76,15 @@ def responses_payload(
     if temperature is not None:
         payload["temperature"] = temperature
 
+    extra_body = dict(kwargs.get("extra_body") or {})
+    # The Responses API controls reasoning via the nested ``reasoning.effort``
+    # field (already handled above); a generic top-level ``thinking`` budget
+    # (or flat ``reasoning_effort``) has no wire equivalent and would be
+    # rejected as an unknown field.
+    extra_body.pop("reasoning_effort", None)
+    extra_body.pop("thinking", None)
     payload.update(resolved.get("extra_body") or {})
-    payload.update(kwargs.get("extra_body") or {})
+    payload.update(extra_body)
     return payload
 
 

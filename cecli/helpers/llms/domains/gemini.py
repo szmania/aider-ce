@@ -69,7 +69,23 @@ def gemini_payload(
     api_block = resolved.get("api_block") or {}
     gen_config = payload.setdefault("generationConfig", {})
 
-    if api_block.get("reasoning_effort"):
+    # Caller/system overrides ride in ``kwargs["extra_body"]`` (models.py's
+    # ``set_reasoning_effort`` / ``set_thinking_tokens``). Map them onto
+    # ``generationConfig.thinkingConfig`` and keep the generic keys out of the
+    # top level (Gemini rejects unknown fields).
+    override_body = kwargs.get("extra_body") or {}
+    override_effort = override_body.get("reasoning_effort")
+    override_thinking = override_body.get("thinking")
+
+    # The explicit ``set_thinking_tokens`` budget wins over the config-default
+    # ``reasoning_effort`` that rides in the same channel: gemini configs default
+    # to ``reasoning_effort`` (never ``thinking``), so an override ``thinking``
+    # only appears when the user explicitly requested a thinking budget.
+    if isinstance(override_thinking, dict) and override_thinking.get("budget_tokens"):
+        gen_config["thinkingConfig"] = {"thinkingBudget": override_thinking["budget_tokens"]}
+    elif override_effort:
+        gen_config["thinkingConfig"] = gemini_thinking_config(resolved, override_effort)
+    elif api_block.get("reasoning_effort"):
         gen_config["thinkingConfig"] = gemini_thinking_config(
             resolved, api_block["reasoning_effort"]
         )
@@ -85,8 +101,14 @@ def gemini_payload(
     temperature = kwargs.get("temperature")
     if temperature is not None:
         payload.setdefault("generationConfig", {})["temperature"] = temperature
-    payload.update(resolved.get("extra_body") or {})
-    payload.update(kwargs.get("extra_body") or {})
+
+    # Apply extra_body passthrough without leaking the generic reasoning keys
+    # (they are consumed above into thinkingConfig).
+    extra_body = dict(resolved.get("extra_body") or {})
+    extra_body.update(kwargs.get("extra_body") or {})
+    extra_body.pop("reasoning_effort", None)
+    extra_body.pop("thinking", None)
+    payload.update(extra_body)
     return payload
 
 

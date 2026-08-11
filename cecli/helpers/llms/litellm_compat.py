@@ -765,6 +765,21 @@ class _LiteLLMFacade:
             if kwargs.get(key) is not None:
                 passthrough[key] = kwargs[key]
 
+        # The model-config pipeline formatters (helpers.format_reasoning /
+        # helpers.format_thinking) lift reasoning_effort/thinking OUT of
+        # extra_body into top-level kwargs (models.py set_reasoning_effort /
+        # set_thinking_tokens). Forward them on the same extra_body channel the
+        # domain payload builders consume; a top-level value wins over an
+        # extra_body copy (it is the post-format value).
+        extra_body = dict(kwargs.get("extra_body") or {})
+
+        for key in ("reasoning_effort", "thinking"):
+            if kwargs.get(key) is not None:
+                extra_body[key] = kwargs[key]
+
+        if extra_body:
+            passthrough["extra_body"] = extra_body
+
         max_tokens = kwargs.get("max_tokens") or kwargs.get("max_completion_tokens")
         if max_tokens:
             passthrough["max_tokens"] = max_tokens

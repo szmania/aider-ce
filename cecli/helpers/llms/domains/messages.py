@@ -59,6 +59,18 @@ def anthropic_payload(
 
     api_block = resolved.get("api_block") or {}
 
+    # Caller/system overrides ride in ``kwargs["extra_body"]`` (models.py's
+    # ``set_reasoning_effort`` / ``set_thinking_tokens``). Merge them into the
+    # api_block so the generation-gated dispatcher below emits the right wire
+    # field (output_config.effort on Claude 5+, thinking block pre-5).
+    override_body = kwargs.get("extra_body") or {}
+
+    if override_body.get("reasoning_effort"):
+        api_block = {**api_block, "reasoning_effort": override_body["reasoning_effort"]}
+
+    if override_body.get("thinking"):
+        api_block = {**api_block, "thinking": override_body["thinking"]}
+
     # Claude 5+ uses adaptive thinking via ``output_config.effort``; pre-5
     # Claude uses the ``thinking`` block. Gate on the model generation so
     # e.g. claude-haiku-4-5 (no effort support) never receives output_config.
@@ -70,8 +82,14 @@ def anthropic_payload(
     if temperature is not None:
         payload["temperature"] = temperature
 
-    payload.update(resolved.get("extra_body") or {})
-    payload.update(kwargs.get("extra_body") or {})
+    # Apply extra_body passthrough without leaking the generic reasoning keys
+    # (they are consumed above by format_thinking; Anthropic rejects unknown
+    # params).
+    extra_body = dict(resolved.get("extra_body") or {})
+    extra_body.update(kwargs.get("extra_body") or {})
+    extra_body.pop("reasoning_effort", None)
+    extra_body.pop("thinking", None)
+    payload.update(extra_body)
     return payload
 
 
