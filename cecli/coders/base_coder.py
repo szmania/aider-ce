@@ -3491,9 +3491,9 @@ class Coder(metaclass=UsageMeta):
         msg = response_dict["choices"][0]["message"]
 
         if self.partial_response_tool_calls:
-            msg["tool_calls"] = self.partial_response_tool_calls
+            msg["tool_calls"] = [_tool_call_to_dict(tc) for tc in self.partial_response_tool_calls]
         elif self.partial_response_function_call:
-            msg["function_call"] = self.partial_response_function_call
+            msg["function_call"] = _function_call_to_dict(self.partial_response_function_call)
 
         if "reasoning_content" not in msg:
             msg["reasoning_content"] = self.partial_response_reasoning_content
@@ -3611,7 +3611,7 @@ class Coder(metaclass=UsageMeta):
             return prompts.added_files.format(fnames=", ".join(added_fnames))
 
     async def send(self, messages, model=None, functions=None, tools=None):
-        from litellm.types.utils import ModelResponse
+        ModelResponse = litellm.types.utils.ModelResponse
 
         self.interrupt_event.clear()
         self.got_reasoning_content = False
@@ -3745,7 +3745,7 @@ class Coder(metaclass=UsageMeta):
                     self.io.ai_output(json.dumps(args, indent=4))
 
     async def show_send_output(self, completion):
-        from litellm.types.utils import ModelResponse
+        ModelResponse = litellm.types.utils.ModelResponse
 
         if self.verbose:
             print(completion)
@@ -4008,6 +4008,15 @@ class Coder(metaclass=UsageMeta):
                         for key, value in psf.items():
                             if isinstance(value, list):
                                 message_provider_specific_fields.setdefault(key, []).extend(value)
+                            elif (
+                                key in message_provider_specific_fields
+                                and isinstance(message_provider_specific_fields[key], dict)
+                                and isinstance(value, dict)
+                            ):
+                                # Merge dict-valued metadata (e.g. gemini per-call
+                                # function_call_signatures) so parallel tool calls
+                                # each keep their own signature across chunks.
+                                message_provider_specific_fields[key].update(value)
                             elif value is not None:
                                 message_provider_specific_fields[key] = value
             except (AttributeError, IndexError):
@@ -4101,7 +4110,8 @@ class Coder(metaclass=UsageMeta):
         parallel call is preserved, correctly ordered, and keeps its
         provider-specific fields (e.g. thought signatures) attached.
         """
-        from litellm.types.utils import ChatCompletionMessageToolCall, Function
+        ChatCompletionMessageToolCall = litellm.types.utils.ChatCompletionMessageToolCall
+        Function = litellm.types.utils.Function
 
         tool_calls_dict = {}
 
@@ -4632,7 +4642,12 @@ class Coder(metaclass=UsageMeta):
     def parse_partial_args(self):
         # dump(self.partial_response_function_call)
 
-        data = self.partial_response_function_call.get("arguments")
+        function_call = self.partial_response_function_call
+        if isinstance(function_call, dict):
+            data = function_call.get("arguments")
+        else:
+            data = getattr(function_call, "arguments", None)
+
         if not data:
             return
 
@@ -4910,3 +4925,25 @@ class Coder(metaclass=UsageMeta):
         else:
             # Append the command to the prefix with a space
             return f"{command_prefix} {command}"
+
+
+def _tool_call_to_dict(tc):
+    """Normalize a tool call (dict or litellm-shaped object) to a wire-format dict."""
+    if isinstance(tc, dict):
+        return tc
+
+    if hasattr(tc, "to_dict"):
+        return tc.to_dict()
+
+    return tc
+
+
+def _function_call_to_dict(function_call):
+    """Normalize a function call (dict or litellm-shaped Function) to a dict."""
+    if isinstance(function_call, dict):
+        return function_call
+
+    if hasattr(function_call, "to_dict"):
+        return function_call.to_dict()
+
+    return function_call

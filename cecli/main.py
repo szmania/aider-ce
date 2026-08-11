@@ -577,7 +577,6 @@ async def main_async(
     from cecli.history import ChatSummary
     from cecli.hooks import HookService
     from cecli.io import InputOutput
-    from cecli.llm import litellm
     from cecli.mcp import McpServerManager, load_mcp_servers
     from cecli.models import ModelSettings
     from cecli.onboarding import offer_openrouter_oauth, select_default_model
@@ -771,12 +770,9 @@ async def main_async(
     if git is None:
         args.git = False
     if not args.verify_ssl:
-        import httpx
+        from cecli.helpers.llms import set_verify_ssl
 
-        os.environ["LITELLM_LOCAL_MODEL_COST"] = "true"
-        litellm._load_litellm()
-        litellm._lazy_module.client_session = httpx.Client(verify=False)
-        litellm._lazy_module.aclient_session = httpx.AsyncClient(verify=False)
+        set_verify_ssl(False)
         models.model_info_manager.set_verify_ssl(False)
     if args.timeout:
         models.request_timeout = args.timeout
@@ -983,16 +979,17 @@ async def main_async(
     await check_and_load_imports(io, is_first_run, verbose=args.verbose)
     register_models(git_root, args.model_settings_file, io, verbose=args.verbose)
     register_litellm_models(git_root, args.model_metadata_file, io, verbose=args.verbose)
+
+    # Release transient garbage from the (heavy) model/litellm imports now that
+    # registration is done, so import-time bloat doesn't carry into the session.
+    from cecli.helpers.memory_control import trim_memory
+
+    trim_memory()
     if args.model_providers:
         try:
             user_providers = json.loads(args.model_providers)
             if isinstance(user_providers, dict):
                 models.model_info_manager.provider_manager.merge_provider_configs(user_providers)
-                from cecli.helpers.model_providers import (
-                    register_user_providers_with_litellm,
-                )
-
-                register_user_providers_with_litellm(user_providers)
                 if args.verbose:
                     io.tool_output(f"Loaded {len(user_providers)} custom model provider(s):")
                     for slug in user_providers:

@@ -300,7 +300,7 @@ nvidia-nvtx-cu12==12.8.90
     # via torch
 objgraph==3.6.2
     # via -r requirements/requirements-dev.in
-openai==2.8.1
+openai>=2.32.0
     # via litellm
 orjson==3.11.9
     # via -r requirements/requirements.in
@@ -467,7 +467,6 @@ scikit-learn==1.7.2
     # via sentence-transformers
 scipy==1.16.3
     # via
-    #   -r requirements/requirements.in
     #   scikit-learn
     #   sentence-transformers
 semver==3.0.4
@@ -515,7 +514,7 @@ textual==8.2.8
     #   memray
 threadpoolctl==3.6.0
     # via scikit-learn
-tiktoken==0.12.0
+tiktoken>=0.13.0
     # via
     #   litellm
     #   llama-index-core

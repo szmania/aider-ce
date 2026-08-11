@@ -13,7 +13,8 @@ GitPython>=3.1.45
 pathspec>=0.12.1
 
 # communication
-litellm>=1.80.11,!=1.82.7,!=1.82.8
+llm>=0.32
+tiktoken>=0.13.0
 mcp>=1.24.0
 socksio>=1.0.0
 truststore
@@ -22,7 +23,8 @@ truststore
 cryptography>=42.0.0
 xxhash>=3.6.0
 
-# scraping
+# scraping (OPTIONAL: only used by the scrape command; bs4 already imported lazily in cecli/scrape.py)
+# TODO: split into a `[scrape]` extra (requirements-scrape.in) after making pypandoc lazy
 beautifulsoup4>=4.13.4
 pypandoc>=1.15
 
@@ -42,7 +44,8 @@ diff-match-patch>=20241021
 # copying and pasting
 pyperclip>=1.9.0
 
-# audio
+# audio (OPTIONAL: only used by the voice command; imported lazily in cecli/voice.py)
+# TODO: split into a `[voice]` extra (requirements-voice.in) - safe because imports are lazy
 pydub>=0.25.1
 sounddevice>=0.5.2
 soundfile>=0.13.1
@@ -59,7 +62,8 @@ textual>=8.2.8
 blinker>=1.9.0
 websockets>=16.1.1
 
-# file system lookup aids
+# file system lookup aids (OPTIONAL: only used for fuzzy model-name search; imported lazily in cecli/models.py)
+# TODO: split into a `[search]` extra (requirements-search.in) - safe because imports are lazy
 marisa-trie>=1.0
 ngram>=4.0.3
 rapidfuzz>=3.0
@@ -67,10 +71,10 @@ rapidfuzz>=3.0
 # replaced networkx with rustworkx for better performance in repomap
 rustworkx>=0.15.0
 
-# scipy is still needed for other parts of the codebase
-scipy>=1.15.3
+# NOTE: scipy was removed - unused across the whole repo (grep for `scipy` finds nothing).
+# It previously pulled in the numpy stack (~100 modules) for zero usage.
 
-# dependencies added because litellm is sometimes really mid and doesn't declare all of its deps properly
+# fast JSON serialization (kept pinned for tooling/performance)
 orjson>=3.11.6
 
 # tool helpers

@@ -11,7 +11,6 @@ from typing import Optional, Union
 from uuid import uuid4 as generate_unique_id
 
 import yaml
-from PIL import Image
 
 from cecli import __version__
 from cecli.decoding import safe_open
@@ -728,8 +727,6 @@ class Model(ModelSettings):
                         litellm.model_cost[model_name] = {}
 
                     litellm.model_cost[model_name].update(self.info)
-                    litellm.utils._invalidate_model_cost_lowercase_map()
-                    litellm.add_known_models(model_cost_map=litellm.model_cost)
 
             elif isinstance(value, dict) and isinstance(self.extra_params.get(key), dict):
                 self.extra_params[key] = {**self.extra_params[key], **value}
@@ -1051,6 +1048,8 @@ class Model(ModelSettings):
         :param fname: The filename of the image.
         :return: A tuple (width, height) representing the image size in pixels.
         """
+        from PIL import Image
+
         with Image.open(fname) as img:
             return img.size
 
