@@ -81,6 +81,13 @@ def resolve_model_config(model: str) -> Dict[str, Any]:
             family = "chat"
         else:
             family = "responses"
+    elif provider in ("bedrock", "bedrock_converse"):
+        # AWS Bedrock Converse wire (SigV4-signed; see domains/bedrock.py).
+        family = "bedrock"
+    elif provider == "bedrock_mantle":
+        # Mantle is an OpenAI-compatible chat wire (SigV4-signed via the chat
+        # family's signer hook); see providers/bedrock_mantle.py.
+        family = "chat"
     elif mode == "responses" or "/v1/responses" in endpoints:
         family = "responses"
     elif provider == "anthropic":
@@ -102,6 +109,7 @@ def resolve_model_config(model: str) -> Dict[str, Any]:
         "api_key_env": key_env,
         "extra_headers": extra_headers,
         "extra_body": extra_body,
+        "extra_query": dict(pcfg.get("extra_query") or {}),
         "api_block": api_block,
         "llm_block": llm_block,
     }

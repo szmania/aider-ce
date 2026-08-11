@@ -16,6 +16,8 @@ from .config import resolve_model_config
 from .domains import (
     anthropic_complete,
     anthropic_stream,
+    bedrock_complete,
+    bedrock_stream,
     chat_complete,
     chat_stream,
     gemini_complete,
@@ -49,6 +51,11 @@ async def acompletion(
 
     family = resolved["family"]
 
+    # Providers that need to sign the final request (URL + body) expose a
+    # ``sign_request`` hook; the family adapter invokes it after building the
+    # payload (e.g. Bedrock Mantle's SigV4 path).
+    resolved["_signer"] = getattr(provider, "sign_request", None)
+
     headers = dict(resolved.get("extra_headers") or {})
     headers.update(extra_headers or {})
     headers = provider.build_headers(resolved, key, family, headers)
@@ -81,6 +88,9 @@ async def _complete_family(
     if family == "gemini":
         return await gemini_complete(resolved, messages, tools, key, headers, kwargs)
 
+    if family == "bedrock":
+        return await bedrock_complete(resolved, messages, tools, key, headers, kwargs)
+
     return await chat_complete(resolved, messages, tools, key, headers, kwargs)
 
 
@@ -107,6 +117,12 @@ async def _stream_family(
 
     if family == "gemini":
         async for chunk in gemini_stream(resolved, messages, tools, key, headers, kwargs):
+            yield chunk
+
+        return
+
+    if family == "bedrock":
+        async for chunk in bedrock_stream(resolved, messages, tools, key, headers, kwargs):
             yield chunk
 
         return

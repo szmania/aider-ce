@@ -96,10 +96,23 @@ async def chat_complete(
 ) -> CompletionResponse:
     url = f"{resolved['api_base']}/chat/completions"
     payload = chat_payload(resolved, messages, tools, False, kwargs)
-    hdrs = {"Authorization": f"Bearer {key}", "Content-Type": "application/json", **headers}
+    hdrs = {"Content-Type": "application/json", **headers}
+    body: Optional[bytes] = None
+    signer = resolved.get("_signer")
+
+    if signer:
+        url, hdrs, body = signer(url, payload, hdrs, key)
+
+    params = dict(resolved.get("extra_query") or {}) or None
+    post_kwargs: Dict[str, Any] = {}
+
+    if body is not None:
+        post_kwargs["content"] = body
+    else:
+        post_kwargs["json"] = payload
 
     async with make_client(timeout=DEFAULT_TIMEOUT, verify=VERIFY_SSL) as client:
-        resp = await client.post(url, json=payload, headers=hdrs)
+        resp = await client.post(url, headers=hdrs, params=params, **post_kwargs)
         resp.raise_for_status()
         data = resp.json()
 
@@ -116,10 +129,23 @@ async def chat_stream(
 ) -> AsyncIterator[CompletionChunk]:
     url = f"{resolved['api_base']}/chat/completions"
     payload = chat_payload(resolved, messages, tools, True, kwargs)
-    hdrs = {"Authorization": f"Bearer {key}", "Content-Type": "application/json", **headers}
+    hdrs = {"Content-Type": "application/json", **headers}
+    body: Optional[bytes] = None
+    signer = resolved.get("_signer")
+
+    if signer:
+        url, hdrs, body = signer(url, payload, hdrs, key)
+
+    params = dict(resolved.get("extra_query") or {}) or None
+    stream_kwargs: Dict[str, Any] = {}
+
+    if body is not None:
+        stream_kwargs["content"] = body
+    else:
+        stream_kwargs["json"] = payload
 
     async with make_client(timeout=DEFAULT_TIMEOUT, verify=VERIFY_SSL) as client:
-        async with client.stream("POST", url, json=payload, headers=hdrs) as resp:
+        async with client.stream("POST", url, headers=hdrs, params=params, **stream_kwargs) as resp:
             resp.raise_for_status()
             last_finish_reason = None
 

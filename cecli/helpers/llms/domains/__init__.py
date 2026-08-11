@@ -2,12 +2,13 @@
 
 One module per API family: chat (OpenAI /v1/chat/completions), responses
 (OpenAI /v1/responses), messages (Anthropic /v1/messages), gemini
-(generateContent). Each exports ``*_complete`` / ``*_stream`` entry points
-plus payload builders and response normalizers.
+(generateContent), bedrock (AWS Bedrock Converse). Each exports ``*_complete``
+/ ``*_stream`` entry points plus payload builders and response normalizers.
 """
 
 from __future__ import annotations
 
+from .bedrock import bedrock_complete, bedrock_stream
 from .chat import chat_complete, chat_stream
 from .gemini import gemini_complete, gemini_stream
 from .messages import anthropic_complete, anthropic_stream
@@ -22,4 +23,6 @@ __all__ = [
     "anthropic_stream",
     "gemini_complete",
     "gemini_stream",
+    "bedrock_complete",
+    "bedrock_stream",
 ]

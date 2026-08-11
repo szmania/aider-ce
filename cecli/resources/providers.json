@@ -20,6 +20,19 @@
     ],
     "display_name": "apertis"
   },
+  "azure": {
+    "api_base": "https://{resource}.openai.azure.com/openai/deployments/{deployment}",
+    "api_key_env": [
+      "AZURE_API_KEY"
+    ],
+    "base_url_env": [
+      "AZURE_API_BASE"
+    ],
+    "display_name": "azure",
+    "extra_query": {
+      "api-version": "2024-10-21"
+    }
+  },
   "azure_ai": {
     "api_base": "https://{resource}.services.ai.azure.com",
     "api_key_env": [
@@ -33,6 +46,24 @@
       "BASETEN_API_KEY"
     ],
     "display_name": "baseten"
+  },
+  "bedrock": {
+    "api_base": "https://bedrock-runtime.{region}.amazonaws.com",
+    "api_key_env": [
+      "AWS_ACCESS_KEY_ID"
+    ],
+    "display_name": "bedrock",
+    "supports_stream": false
+  },
+  "bedrock_mantle": {
+    "api_base": "https://bedrock-mantle.{region}.api.aws/v1",
+    "api_key_env": [
+      "BEDROCK_MANTLE_API_KEY"
+    ],
+    "base_url_env": [
+      "BEDROCK_MANTLE_API_BASE"
+    ],
+    "display_name": "bedrock_mantle"
   },
   "cerebras": {
     "api_base": "https://api.cerebras.ai/v1",
