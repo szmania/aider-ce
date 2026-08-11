@@ -51,9 +51,13 @@ def gemini_payload(
     # text part makes the model re-invoke the tool instead of consuming the
     # result.
     call_meta = _build_call_meta(messages)
+    # Gemini 3.x requires a native ``thoughtSignature`` on every replayed
+    # ``functionCall`` part; messages from other providers cannot provide one,
+    # so their calls are dropped to text (see :func:`_requires_thought_signatures`).
+    require_signatures = _requires_thought_signatures(resolved)
 
     payload: Dict[str, Any] = {
-        "contents": _encode_contents(messages, call_meta),
+        "contents": _encode_contents(messages, call_meta, require_signatures),
     }
 
     if system:
@@ -110,7 +114,9 @@ def gemini_thinking_config(resolved: Dict[str, Any], effort: str) -> Dict[str, A
 
 
 def gemini_content(
-    msg: Dict[str, Any], name_by_call_id: Optional[Dict[str, Any]] = None
+    msg: Dict[str, Any],
+    name_by_call_id: Optional[Dict[str, Any]] = None,
+    require_signatures: bool = False,
 ) -> Dict[str, Any]:
     """Encode one chat message as a Gemini ``Content`` dict.
 
@@ -119,12 +125,15 @@ def gemini_content(
     tool results become ``functionResponse`` parts that echo the original call
     id/signature when available. Assistant turns replay prior thought parts
     (with their ``thoughtSignature``) for multi-turn reasoning.
+    ``require_signatures`` is set for Gemini 3.x targets, which reject
+    ``functionCall`` parts without a native signature (see
+    :func:`_requires_thought_signatures`).
     """
     if msg.get("role") == "tool":
-        return _tool_content(msg, name_by_call_id)
+        return _tool_content(msg, name_by_call_id, require_signatures)
 
     if msg.get("role") == "assistant":
-        return _model_content(msg)
+        return _model_content(msg, require_signatures)
 
     # user (and any non-assistant role, e.g. system, which folds into user).
     content = msg.get("content")
@@ -416,6 +425,18 @@ def _gemini_usage(usage_raw: Dict[str, Any]) -> Optional[Usage]:
     )
 
 
+def _requires_thought_signatures(resolved: Dict[str, Any]) -> bool:
+    """Whether the target model requires a signature on replayed functionCall parts.
+
+    Gemini 3.x demands the native ``thoughtSignature`` (an opaque encrypted
+    blob) on every ``functionCall`` part replayed in history; without it the
+    API rejects the request with a 400. Older models (e.g. gemini-2.5-pro)
+    accept signature-less replays. Messages from other providers never carry a
+    Gemini signature, so for 3.x targets the encoder drops those calls to text.
+    """
+    return "gemini-3" in (resolved.get("route") or "").lower()
+
+
 def _build_call_meta(messages: List[Dict[str, Any]]) -> Dict[str, Any]:
     """Map assistant tool-call ids to ``{"name", "signature"}`` metadata.
 
@@ -460,12 +481,22 @@ def _call_meta(name_by_call_id: Optional[Dict[str, Any]], call_id: Optional[str]
     return {"name": entry or ""}
 
 
-def _tool_content(msg: Dict[str, Any], name_by_call_id: Optional[Dict[str, Any]]) -> Dict[str, Any]:
-    """Encode a tool-result message as a ``functionResponse`` user Content."""
+def _tool_content(
+    msg: Dict[str, Any],
+    name_by_call_id: Optional[Dict[str, Any]],
+    require_signatures: bool = False,
+) -> Dict[str, Any]:
+    """Encode a tool-result message as a ``functionResponse`` user Content.
+
+    On Gemini 3.x targets the matching ``functionCall`` was dropped to text
+    when no signature was available, so the result is downgraded to a plain
+    text part too (a ``functionResponse`` without its ``functionCall`` would
+    be rejected or ignored).
+    """
     meta = _call_meta(name_by_call_id, msg.get("tool_call_id"))
     name = meta.get("name") or ""
 
-    if name:
+    if name and (meta.get("signature") or not require_signatures):
         fr: Dict[str, Any] = {
             "name": name,
             "response": {"output": msg.get("content") or ""},
@@ -477,16 +508,17 @@ def _tool_content(msg: Dict[str, Any], name_by_call_id: Optional[Dict[str, Any]]
 
         part_dict: Dict[str, Any] = {"functionResponse": fr}
 
-        if meta.get("signature"):
+        if require_signatures and meta.get("signature"):
             part_dict["thoughtSignature"] = meta["signature"]
 
         return {"role": "user", "parts": [part_dict]}
 
-    # No matching functionCall recorded -- fall back to plain text.
+    # No matching functionCall recorded (or it was dropped for a
+    # signature-requiring model) -- fall back to plain text.
     return {"role": "user", "parts": [{"text": msg.get("content") or ""}]}
 
 
-def _model_content(msg: Dict[str, Any]) -> Dict[str, Any]:
+def _model_content(msg: Dict[str, Any], require_signatures: bool = False) -> Dict[str, Any]:
     """Encode an assistant message, replaying prior thought parts.
 
     Gemini requires the full thinking turn (thought parts + ``thoughtSignature``)
@@ -495,6 +527,11 @@ def _model_content(msg: Dict[str, Any]) -> Dict[str, Any]:
     live on ``provider_specific_fields``; when an upstream consumer dropped
     them, fall back to reconstructing a single thought part from
     ``reasoning_content``.
+
+    Gemini 3.x also requires a native ``thoughtSignature`` on every replayed
+    ``functionCall`` part. Foreign messages never carry one, so on those models
+    the call is dropped and surfaced as a text part instead of failing with a
+    400 (see :func:`_requires_thought_signatures`).
     """
     psf = msg.get("provider_specific_fields") or {}
     thought_parts = psf.get("thought_parts") or []
@@ -540,15 +577,24 @@ def _model_content(msg: Dict[str, Any]) -> Dict[str, Any]:
         except json.JSONDecodeError:
             args = {}
 
+        sig = call_signatures.get(tc["id"]) if tc.get("id") else None
+
+        # A signature-requiring model cannot replay a call without its native
+        # signature (foreign messages never have one). Drop the functionCall
+        # and surface the call as text so the turn stays coherent; the
+        # matching tool result is downgraded to text by _tool_content too.
+        if require_signatures and not sig:
+            parts.append({"text": f"[tool call: {fn.get('name', '')}({json.dumps(args)})]"})
+            continue
+
         fc: Dict[str, Any] = {"name": fn.get("name", ""), "args": args}
 
         if tc.get("id"):
             fc["id"] = tc["id"]
 
         part_dict: Dict[str, Any] = {"functionCall": fc}
-        sig = call_signatures.get(tc["id"]) if tc.get("id") else None
 
-        if sig:
+        if require_signatures and sig:
             part_dict["thoughtSignature"] = sig
 
         parts.append(part_dict)
@@ -563,7 +609,9 @@ def _model_content(msg: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _encode_contents(
-    messages: List[Dict[str, Any]], name_by_call_id: Optional[Dict[str, Any]]
+    messages: List[Dict[str, Any]],
+    name_by_call_id: Optional[Dict[str, Any]],
+    require_signatures: bool = False,
 ) -> List[Dict[str, Any]]:
     """Encode the message list, merging consecutive same-role Contents.
 
@@ -574,7 +622,11 @@ def _encode_contents(
     Merging keeps e.g. multiple tool results (plus a following user text turn)
     in ONE Content right after the assistant tool-call turn.
     """
-    encoded = [gemini_content(m, name_by_call_id) for m in messages if m.get("role") != "system"]
+    encoded = [
+        gemini_content(m, name_by_call_id, require_signatures)
+        for m in messages
+        if m.get("role") != "system"
+    ]
     merged: List[Dict[str, Any]] = []
 
     for content in encoded:

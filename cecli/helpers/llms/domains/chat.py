@@ -38,9 +38,10 @@ def chat_payload(
     stream: bool,
     kwargs: Dict[str, Any],
 ) -> Dict[str, Any]:
+    api_block = resolved.get("api_block") or {}
     payload: Dict[str, Any] = {
         "model": resolved["route"],
-        "messages": messages,
+        "messages": _coerce_reasoning_content(messages, api_block),
         "stream": stream,
     }
 
@@ -48,7 +49,6 @@ def chat_payload(
         payload["tools"] = tools
         payload["tool_choice"] = kwargs.get("tool_choice", "auto")
 
-    api_block = resolved.get("api_block") or {}
     if api_block.get("reasoning_effort"):
         payload["reasoning_effort"] = api_block["reasoning_effort"]
 
@@ -282,6 +282,60 @@ def _usage_from_raw(usage_raw: Optional[Dict[str, Any]]) -> Optional[Usage]:
         prompt_tokens_details=usage_raw.get("prompt_tokens_details"),
         completion_tokens_details=usage_raw.get("completion_tokens_details"),
     )
+
+
+def _coerce_reasoning_content(
+    messages: List[Dict[str, Any]], api_block: Dict[str, Any]
+) -> List[Dict[str, Any]]:
+    """Ensure assistant messages carry ``reasoning_content`` for thinking-mode chat.
+
+    DeepSeek (and other OpenAI-compatible providers in thinking mode) require
+    the ``reasoning_content`` of a prior assistant turn to be echoed back when
+    that message is replayed; a missing/``None`` value is rejected with ``The
+    reasoning_content in the thinking mode must be passed back to the API``.
+    Messages produced by other providers (gemini / anthropic / copilot) do not
+    carry it, so we loosely map any captured reasoning (anthropic thinking
+    blocks, gemini thought parts) into ``reasoning_content`` and otherwise send
+    an empty string, which DeepSeek accepts.
+    """
+    if not (api_block.get("reasoning_effort") or api_block.get("thinking")):
+        return messages
+
+    out: List[Dict[str, Any]] = []
+    changed = False
+
+    for msg in messages:
+        if msg.get("role") == "assistant" and msg.get("reasoning_content") is None:
+            copied = dict(msg)
+            copied["reasoning_content"] = _map_reasoning_content(msg) or ""
+            out.append(copied)
+            changed = True
+        else:
+            out.append(msg)
+
+    return out if changed else messages
+
+
+def _map_reasoning_content(msg: Dict[str, Any]) -> str:
+    """Loosely map foreign-provider reasoning into a ``reasoning_content`` string."""
+    psf = msg.get("provider_specific_fields") or {}
+    texts: List[str] = []
+
+    for block in psf.get("anthropic") or []:
+        if isinstance(block, dict) and block.get("type") == "thinking" and block.get("thinking"):
+            texts.append(block["thinking"])
+
+    for tp in psf.get("thought_parts") or []:
+        if isinstance(tp, dict) and tp.get("text"):
+            texts.append(tp["text"])
+
+    for key in ("reasoning_text", "reasoning"):
+        value = psf.get(key)
+
+        if isinstance(value, str) and value:
+            texts.append(value)
+
+    return "\n".join(texts)
 
 
 __all__ = [

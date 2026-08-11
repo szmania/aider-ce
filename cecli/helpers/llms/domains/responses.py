@@ -49,7 +49,7 @@ def responses_payload(
 ) -> Dict[str, Any]:
     payload: Dict[str, Any] = {
         "model": resolved["route"],
-        "input": to_responses_input(messages),
+        "input": to_responses_input(messages, resolved.get("model")),
         "stream": stream,
         "store": False,
     }
@@ -81,8 +81,17 @@ def responses_payload(
     return payload
 
 
-def to_responses_input(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """Convert OpenAI chat messages to responses-API input items."""
+def to_responses_input(
+    messages: List[Dict[str, Any]], current_model: Optional[str] = None
+) -> List[Dict[str, Any]]:
+    """Convert OpenAI chat messages to responses-API input items.
+
+    ``current_model`` gates the encrypted-reasoning replay: reasoning items are
+    only replayed when the model that produced them (recorded at stash time in
+    ``provider_specific_fields["reasoning_items_origin"]``) matches the current
+    target. Foreign encrypted reasoning (ids + ciphertext are provider/model
+    specific) is dropped instead of replayed, which would 400.
+    """
     items: List[Dict[str, Any]] = []
 
     for msg in messages:
@@ -94,9 +103,9 @@ def to_responses_input(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 
         if role == "assistant":
             # Replay stashed reasoning items BEFORE the assistant message item
-            # so the provider can continue the encrypted reasoning state
+            # so the provider can continue its OWN encrypted reasoning state
             # (stateless round-trip: the whole conversation is re-sent).
-            for r_item in _stashed_reasoning_items(msg):
+            for r_item in _stashed_reasoning_items(msg, current_model):
                 items.append(_reasoning_input_item(r_item))
 
             # Assistant turns must use ``output_text`` content blocks; Copilot /
@@ -198,6 +207,10 @@ async def responses_stream(
     hdrs = {"Authorization": f"Bearer {key}", "Content-Type": "application/json", **headers}
 
     _reset_stream_state()
+    # Tag reasoning items stashed during this stream with the producing model
+    # so the request encoder replays them only to the same model (a switch to
+    # another provider/model 400s on foreign reasoning ids/ciphertext).
+    _stream_state["model"] = resolved["model"]
 
     async with make_client(timeout=DEFAULT_TIMEOUT, verify=VERIFY_SSL) as client:
         async with client.stream("POST", url, json=payload, headers=hdrs) as resp:
@@ -232,6 +245,10 @@ def normalize_responses_response(data: Dict[str, Any], model: str) -> Completion
             # redacted instead of fabricating placeholder text.
             if item.get("encrypted_content"):
                 provider_fields.setdefault("reasoning_items", []).append(item)
+                # Record which model produced this encrypted reasoning so the
+                # request encoder only replays it to the SAME model (ids and
+                # ciphertext are model-specific; a switch 400s otherwise).
+                provider_fields["reasoning_items_origin"] = model
                 parts.append(ReasoningPart(redacted=True))
 
         elif item_type == "function_call":
@@ -326,7 +343,8 @@ def parse_responses_chunk(data: Dict[str, Any]) -> Optional[CompletionChunk]:
         # per-event ciphertext differs, so only the final items are emitted.
         if _stream_state["reasoning_items"]:
             chunk.provider_specific_fields = {
-                "reasoning_items": list(_stream_state["reasoning_items"].values())
+                "reasoning_items": list(_stream_state["reasoning_items"].values()),
+                "reasoning_items_origin": _stream_state.get("model"),
             }
 
         chunk.usage = _build_usage(resp.get("usage") or {})
@@ -339,6 +357,7 @@ def _reset_stream_state() -> None:
     """Clear per-stream correlation state before a new SSE loop."""
     _stream_state["tool_items"] = {}
     _stream_state["reasoning_items"] = {}
+    _stream_state["model"] = None
 
 
 def _on_output_item_added(item: Dict[str, Any], output_index: Optional[int] = None) -> None:
@@ -406,17 +425,34 @@ def _capture_final_reasoning(resp: Dict[str, Any]) -> None:
     _stream_state["reasoning_items"] = {item.get("id"): item for item in items}
 
 
-def _stashed_reasoning_items(msg: Dict[str, Any]) -> List[Dict[str, Any]]:
+def _stashed_reasoning_items(
+    msg: Dict[str, Any], current_model: Optional[str] = None
+) -> List[Dict[str, Any]]:
     """Collect stashed reasoning items from a stored assistant message.
 
     The normalizer stores whole ``reasoning`` items under
     ``provider_specific_fields["reasoning_items"]``; ``helpers.requests`` may
     hoist them to the message top level (``msg["reasoning_items"]``) before
     this point, so both locations are honoured.
+
+    Encrypted reasoning is model-specific: the ``id`` format and ciphertext are
+    only valid for the model that produced them. When the current target model
+    differs from the recorded origin (or the origin is unknown/absent -- a
+    legacy or foreign stash), the items are dropped instead of being replayed
+    verbatim; replaying foreign items 400s ("Invalid reasoning item id
+    format").
     """
     raw = (msg.get("provider_specific_fields") or {}).get("reasoning_items")
     if raw is None:
         raw = msg.get("reasoning_items")
+
+    if not raw:
+        return []
+
+    origin = (msg.get("provider_specific_fields") or {}).get("reasoning_items_origin")
+
+    if not current_model or not origin or origin != current_model:
+        return []
 
     if isinstance(raw, dict):
         return [raw]
