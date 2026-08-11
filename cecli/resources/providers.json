@@ -145,6 +145,13 @@
     ],
     "display_name": "gmi"
   },
+  "gradient_ai": {
+    "api_base": "https://inference.do-ai.run/v1",
+    "api_key_env": [
+      "GRADIENT_AI_API_KEY"
+    ],
+    "display_name": "gradient_ai"
+  },
   "groq": {
     "api_base": "https://api.groq.com/openai/v1",
     "api_key_env": [
@@ -213,6 +220,16 @@
       "LLAMA_API_KEY"
     ],
     "display_name": "meta_llama"
+  },
+  "minimax": {
+    "api_base": "https://api.minimax.io/v1",
+    "api_key_env": [
+      "MINIMAX_API_KEY"
+    ],
+    "base_url_env": [
+      "MINIMAX_API_BASE"
+    ],
+    "display_name": "minimax"
   },
   "mistral": {
     "api_base": "https://api.mistral.ai/v1",
