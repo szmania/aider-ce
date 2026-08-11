@@ -6,6 +6,9 @@ ships with (base URL + API-key env var). This locks in that each one:
 - is loaded by ``ModelProviderManager`` (supports_provider == True)
 - resolves through ``resolve_model_config`` to the ``chat`` family (the
   OpenAI-compatible /chat/completions wire, which is what these providers
+  advertise); ``chatgpt`` is the exception and uses OpenAI's newer
+  ``responses`` family
+  OpenAI-compatible /chat/completions wire, which is what these providers
   advertise)
 - keeps its configured base URL and key env var
 - routes through the base OpenAI-style provider adapter (Bearer auth), since
@@ -46,7 +49,10 @@ def test_every_provider_resolves_to_chat_family_with_base_and_key():
 
     for name, cfg in providers.items():
         resolved = resolve_model_config(f"{name}/sample-model")
-        assert resolved["family"] == "chat", f"{name} should use chat completions"
+        if name == "chatgpt":  # ChatGPT subscription routes via /v1/responses
+            assert resolved["family"] == "responses", f"{name} should use responses"
+        else:
+            assert resolved["family"] == "chat", f"{name} should use chat completions"
         assert resolved["provider"] == name
         assert resolved["api_base"] == cfg["api_base"].rstrip("/")
         assert resolved["api_key_env"] in cfg["api_key_env"]
