@@ -52,7 +52,27 @@ def extract_reasoning(msg: Dict[str, Any]) -> str:
       - ``reasoning_content`` (str) - deepseek-style
       - ``reasoning`` (str) - openrouter
       - ``reasoning_details`` (list of {"type": "reasoning.text", "text": ...})
+
+    OpenRouter (and minimax via OpenRouter) sends BOTH the flat ``reasoning``
+    string AND a ``reasoning_details`` list holding the *same* incremental text
+    on every delta; combining them doubled the reasoning. The structured list
+    is authoritative when present; the flat string is only a fallback.
     """
+    details = msg.get("reasoning_details") or msg.get("reasoning_content_details")
+
+    if isinstance(details, list) and details:
+        texts: List[str] = []
+
+        for item in details:
+            if isinstance(item, dict):
+                text = item.get("text")
+
+                if isinstance(text, str) and text.strip():
+                    texts.append(text)
+
+        if texts:
+            return "\n".join(texts)
+
     parts: List[str] = []
 
     for key in ("reasoning_content", "reasoning"):
@@ -60,16 +80,6 @@ def extract_reasoning(msg: Dict[str, Any]) -> str:
 
         if isinstance(val, str) and val.strip():
             parts.append(val)
-
-    details = msg.get("reasoning_details") or msg.get("reasoning_content_details")
-
-    if isinstance(details, list):
-        for item in details:
-            if isinstance(item, dict):
-                text = item.get("text")
-
-                if isinstance(text, str) and text.strip():
-                    parts.append(text)
 
     return "\n".join(parts)
 
