@@ -3,9 +3,10 @@
 Mirrors litellm's ``Authenticator`` (llms/github_copilot/authenticator.py):
 an access token (from device flow) is exchanged for a short-lived Copilot API
 key via ``https://api.github.com/copilot_internal/v2/token``; the key is cached
-to disk (api-key.json) and refreshed on expiry. The tenant endpoint
-(``endpoints.api``) comes from the authenticated session, never a caller-
-supplied base (token-leak prevention, matching litellm).
+to disk (api-key.json) and refreshed on expiry, within a leeway of it, and
+periodically for long-lived keys (see the ``COPILOT_*`` refresh constants).
+The tenant endpoint (``endpoints.api``) comes from the authenticated session,
+never a caller-supplied base (token-leak prevention, matching litellm).
 """
 
 from __future__ import annotations
@@ -28,6 +29,17 @@ COPILOT_CLIENT_ID = "Iv1.b507a08c87ecfe98"
 COPILOT_TOKEN_DIR = os.path.expanduser("~/.config/litellm/github_copilot")
 COPILOT_TIMEOUT = 120.0
 
+#: Refresh the Copilot API key when it is within this many seconds of
+#: expiring, so a key never dies mid-request.
+COPILOT_REFRESH_LEEWAY = 300.0  # 5 minutes
+
+#: Keys whose total lifetime exceeds this are rotated at most every
+#: ``COPILOT_MAX_REFRESH_INTERVAL`` instead of waiting for natural expiry.
+COPILOT_LONG_LIVED_THRESHOLD = 24 * 3600.0  # 1 day
+
+#: Maximum age of a long-lived key before it is refreshed.
+COPILOT_MAX_REFRESH_INTERVAL = 4 * 3600.0  # 4 hours
+
 
 class CopilotAuthenticator:
     """GitHub Copilot OAuth: device flow + disk-cached API key with refresh."""
@@ -38,25 +50,43 @@ class CopilotAuthenticator:
         self.api_key_file = os.path.join(self.token_dir, "api-key.json")
 
     def get_api_key(self) -> Optional[str]:
-        """Return a valid Copilot API key, refreshing from disk if needed."""
+        """Return a valid Copilot API key, refreshing from disk if needed.
+
+        The cached key is refreshed when it is expired, when it is within
+        ``COPILOT_REFRESH_LEEWAY`` of expiring, or when a long-lived key
+        (lifetime > ``COPILOT_LONG_LIVED_THRESHOLD``) has been held for more
+        than ``COPILOT_MAX_REFRESH_INTERVAL``. A failed refresh keeps serving
+        a cached key that is still unexpired instead of failing the request.
+        """
+        cached = None
+        expired = False
+
         try:
             with open(self.api_key_file) as f:
                 info = json.load(f)
 
-            if info.get("expires_at", 0) > time.time():
-                return info.get("token")
+            cached = info.get("token")
+
+            if not self._should_refresh(info):
+                return cached
+
+            expired = info.get("expires_at", 0) <= time.time()
         except (IOError, json.JSONDecodeError):
             pass
 
         try:
             info = self._refresh_api_key()
             os.makedirs(self.token_dir, exist_ok=True)
+            info["refreshed_at"] = time.time()
 
             with open(self.api_key_file, "w") as f:
                 json.dump(info, f)
 
             return info.get("token")
         except Exception:
+            if cached and not expired:
+                return cached
+
             return None
 
     def get_api_base(self) -> Optional[str]:
@@ -141,6 +171,39 @@ class CopilotAuthenticator:
             time.sleep(5)
 
         raise RuntimeError("Timed out waiting for user to authorize the device")
+
+    def _should_refresh(self, info: Dict[str, Any]) -> bool:
+        """True when the cached key should be replaced.
+
+        Refreshes when the key is expired, within ``COPILOT_REFRESH_LEEWAY``
+        of expiring, or when a long-lived key has been held for more than
+        ``COPILOT_MAX_REFRESH_INTERVAL`` (periodic rotation). Rotation
+        metadata (``refreshed_at``) is stamped when this version caches a
+        key; legacy caches fall back to the natural-expiry rules.
+        """
+        now = time.time()
+        expires_at = info.get("expires_at", 0)
+
+        if expires_at <= now:
+            return True
+
+        if expires_at - now <= COPILOT_REFRESH_LEEWAY:
+            return True
+
+        refreshed_at = info.get("refreshed_at") or info.get("issued_at")
+
+        if not refreshed_at:
+            return False
+
+        lifetime = expires_at - refreshed_at
+
+        if (
+            lifetime > COPILOT_LONG_LIVED_THRESHOLD
+            and now - refreshed_at >= COPILOT_MAX_REFRESH_INTERVAL
+        ):
+            return True
+
+        return False
 
 
 #: Module-level singleton so config resolution and pipeline share one instance.
