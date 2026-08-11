@@ -2,18 +2,15 @@
 
 The implementation is verified for parity against botocore's own ``SigV4Auth``
 (Amazon's reference SDK implementation) with a pinned clock, so the tests are
-meaningful without any live AWS credentials.
+meaningful without any live AWS credentials. botocore is only used as a test
+oracle; the parity tests are skipped when it is not installed.
 """
 
 from __future__ import annotations
 
 from datetime import datetime
 
-import botocore.auth as botauth
 import pytest
-from botocore.auth import SigV4Auth
-from botocore.awsrequest import AWSRequest
-from botocore.credentials import Credentials
 
 from cecli.helpers.llms.aws_sigv4 import (
     AWSCredentials,
@@ -29,10 +26,20 @@ FIXED_NOW = datetime(2015, 8, 30, 12, 36, 0)
 @pytest.fixture(autouse=True)
 def _pin_botocore_clock(monkeypatch):
     """Pin botocore's clock so the reference signature is deterministic."""
+    try:
+        import botocore.auth as botauth
+    except ImportError:
+        return
+
     monkeypatch.setattr(botauth, "get_current_datetime", lambda: FIXED_NOW)
 
 
 def _botocore_authorization(method, url, payload, headers, region, service, session=None):
+    pytest.importorskip("botocore")
+    from botocore.auth import SigV4Auth
+    from botocore.awsrequest import AWSRequest
+    from botocore.credentials import Credentials
+
     creds = Credentials(ACCESS_KEY, SECRET_KEY, session)
     request = AWSRequest(method=method, url=url, data=payload, headers=headers)
     SigV4Auth(creds, service, region).add_auth(request)
