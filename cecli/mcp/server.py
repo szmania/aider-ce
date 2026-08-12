@@ -541,11 +541,17 @@ def _get_http_client_module():
     """Return the HTTP client module used by the installed mcp SDK.
 
     mcp SDK 2.x migrated from httpx to httpx2; earlier versions use httpx.
+
+    Note: ``cecli.http.httpx`` aliases ``httpx2`` when mcp SDK 2.x is
+    installed, so import the real module here instead of relying on the
+    module-level ``httpx`` name (which may be the httpx2 alias).
     """
     if _get_mcp_major_version() >= 2:
         import httpx2
 
         return httpx2
+
+    import httpx
 
     return httpx
 
