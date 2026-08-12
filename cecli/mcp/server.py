@@ -7,7 +7,6 @@ from contextlib import AsyncExitStack
 from enum import Enum, auto
 from urllib.parse import urlparse
 
-import httpx
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.auth import OAuthClientProvider
 from mcp.client.sse import sse_client
@@ -16,6 +15,7 @@ from mcp.client.streamable_http import streamable_http_client
 from mcp.shared.auth import OAuthClientMetadata
 
 from cecli.decoding import safe_open
+from cecli.http import httpx
 
 from .oauth import (
     FileBasedTokenStorage,
@@ -164,7 +164,7 @@ class McpServer:
         Returns:
             bool: True if the error indicates a 404 session expiry
         """
-        import httpx
+        from cecli.http import httpx
 
         if isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code == 404:
             return True
@@ -541,11 +541,17 @@ def _get_http_client_module():
     """Return the HTTP client module used by the installed mcp SDK.
 
     mcp SDK 2.x migrated from httpx to httpx2; earlier versions use httpx.
+
+    Note: ``cecli.http.httpx`` aliases ``httpx2`` when mcp SDK 2.x is
+    installed, so import the real module here instead of relying on the
+    module-level ``httpx`` name (which may be the httpx2 alias).
     """
     if _get_mcp_major_version() >= 2:
         import httpx2
 
         return httpx2
+
+    import httpx
 
     return httpx
 

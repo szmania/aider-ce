@@ -352,7 +352,7 @@ class Tool(BaseTool):
         all_operation_results = []
 
         for search_op in searches:
-            pattern = strip_hashline(search_op.get("pattern"))
+            pattern = strip_hashline(search_op.get("pattern", ""))
             file_pattern = search_op.get("file_glob", "*")
             directory = search_op.get("directory", search_op.get("path", "."))
             use_regex = search_op.get("use_regex", False)
@@ -376,6 +376,11 @@ class Tool(BaseTool):
                 "error": None,
                 "files": [],
             }
+
+            if not pattern:
+                op_result["error"] = "Search operation requires a non-empty 'pattern'."
+                all_operation_results.append(op_result)
+                continue
 
             try:
                 search_dir_path = Path(repo.root) / directory

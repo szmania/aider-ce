@@ -874,6 +874,19 @@ class TUI(App):
             self._switch_to_container(target_uuid)
             return
 
+        # Intercept queue management commands (/queue, /list-queue, /remove-queue)
+        # to dispatch immediately without a full generation cycle - they only
+        # modify the active coder's prompt_queue.
+        if (
+            stripped == "/queue"
+            or stripped.startswith("/queue ")
+            or stripped == "/list-queue"
+            or stripped == "/remove-queue"
+            or stripped.startswith("/remove-queue ")
+        ):
+            self._handle_queue_command(stripped)
+            return
+
         # Save to history before clearing
         input_area = self.query_one("#input", InputArea)
         input_area.save_to_history(user_input)
@@ -949,6 +962,84 @@ class TUI(App):
             else:
                 self.input_queue.put({"text": user_input, "coder_uuid": coder_uuid})
                 queues.wake_input_waiters()
+
+    def _handle_queue_command(self, stripped: str) -> None:
+        """Dispatch /queue, /list-queue and /remove-queue immediately.
+
+        These commands only mutate the active coder's ``prompt_queue``, so they
+        are handled here without running a full generation cycle.
+        """
+        from cecli.helpers import command_queue
+        from cecli.helpers.agents.service import AgentService
+
+        input_area = self.query_one("#input", InputArea)
+        input_area.save_to_history(stripped)
+        input_area.value = ""
+        self.add_user_message(stripped)
+
+        active_coder = (
+            AgentService.get_instance(self.worker.coder).foreground_coder or self.worker.coder
+        )
+        cmd, _, args = stripped.partition(" ")
+        args = args.strip()
+
+        if cmd == "/queue":
+            if not args:
+                self.show_error("Usage: /queue <prompt text>")
+                return
+
+            try:
+                item = command_queue.enqueue_prompt(active_coder, args)
+            except (ValueError, RuntimeError) as e:
+                self.show_error(str(e))
+                return
+
+            position = command_queue.get_queue_length(active_coder)
+            self._get_visible_container().add_output(
+                f"Prompt queued at position {position} (id: {item['id']})"
+            )
+
+        elif cmd == "/list-queue":
+            items = command_queue.list_queue(active_coder)
+            if not items:
+                self._get_visible_container().add_output("Queue is empty.")
+                return
+
+            lines = []
+            for index, item in enumerate(items):
+                text = item["text"]
+                preview = text[:80] + ("..." if len(text) > 80 else "")
+                stamp = time.strftime("%H:%M:%S", time.localtime(item["timestamp"]))
+                lines.append(f"[{index + 1}] {preview} ({stamp})")
+
+            self._get_visible_container().add_output("\n".join(lines))
+
+        elif cmd == "/remove-queue":
+            if not args:
+                self.show_error("Usage: /remove-queue <index|*>")
+                return
+
+            if args == "*":
+                removed = command_queue.clear_queue(active_coder)
+                self._get_visible_container().add_output(
+                    f"Removed all {len(removed)} queued prompt(s)."
+                )
+                return
+
+            try:
+                index = int(args)
+            except ValueError:
+                self.show_error("Usage: /remove-queue <index|*>")
+                return
+
+            removed = command_queue.remove_from_queue(active_coder, index - 1)
+            if removed is None:
+                self.show_error(f"No queued prompt at index {index}.")
+                return
+
+            self._get_visible_container().add_output(
+                f"Removed queued prompt {index}: {removed['text'][:80]}"
+            )
 
     def set_input_value(self, text) -> None:
         """Find the input widget and set focus to it."""

@@ -1083,7 +1083,11 @@ def test_reasoning_effort_option(dummy_io, git_temp_dir):
         **dummy_io,
         return_coder=True,
     )
-    assert coder.main_model.extra_params.get("extra_body", {}).get("reasoning_effort") == "3"
+    # OpenRouter / responses-mode models store the effort as the nested
+    # ``reasoning.effort``; everything else uses the flat ``reasoning_effort``.
+    extra_body = coder.main_model.extra_params.get("extra_body", {})
+    effort = extra_body.get("reasoning_effort") or extra_body.get("reasoning", {}).get("effort")
+    assert effort == "3"
 
 
 def test_thinking_tokens_option(dummy_io, git_temp_dir):

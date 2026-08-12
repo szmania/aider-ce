@@ -9,35 +9,26 @@ constructed conversation history:
 3. Tool-call deltas that start at a non-zero index were mishandled.
 """
 
-from litellm.types.utils import (
-    ChatCompletionDeltaToolCall,
-    Delta,
-    Function,
-    ModelResponseStream,
-    StreamingChoices,
-)
-
 from cecli.coders.base_coder import Coder
+from cecli.llm import litellm
 
 
 def mk_chunk(delta_kwargs, finish_reason=None, usage=None, cid="cmpl-1", created=1000):
-    delta = Delta(**delta_kwargs)
-    choices = [StreamingChoices(finish_reason=finish_reason, index=0, delta=delta, logprobs=None)]
-    return ModelResponseStream(
+    delta = litellm.Delta(**delta_kwargs)
+    choices = [litellm.StreamChoice(finish_reason=finish_reason, index=0, delta=delta)]
+    return litellm.StreamChunk(
         id=cid,
         created=created,
         model="gpt-test",
-        object="chat.completion.chunk",
-        system_fingerprint=None,
         choices=choices,
         usage=usage,
     )
 
 
 def tc(index, id=None, name=None, arguments=None):
-    return ChatCompletionDeltaToolCall(
+    return litellm.ChatCompletionMessageToolCall(
         id=id,
-        function=Function(arguments=arguments or "", name=name),
+        function=litellm.Function(arguments=arguments or "", name=name),
         type="function",
         index=index,
     )
