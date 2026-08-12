@@ -4280,9 +4280,21 @@ class Coder(metaclass=UsageMeta):
         cache_hit_tokens = 0
         cache_write_tokens = 0
 
-        if completion and hasattr(completion, "usage") and completion.usage is not None:
-            prompt_tokens = completion.usage.prompt_tokens
-            completion_tokens = completion.usage.completion_tokens
+        if (
+            completion
+            and nested.getter(completion, "usage.prompt_tokens") is not None
+            and nested.getter(completion, "usage.completion_tokens") is not None
+        ):
+            prompt_tokens = (
+                nested.getter(completion.usage, "prompt_tokens", 0)
+                or nested.getter(completion.usage, "prompt_eval_count", 0)
+                or 0
+            )
+            completion_tokens = (
+                nested.getter(completion.usage, "completion_tokens", 0)
+                or nested.getter(completion.usage, "eval_count", 0)
+                or 0
+            )
             cache_hit_tokens = (
                 getattr(completion.usage, "prompt_cache_hit_tokens", 0)
                 or getattr(completion.usage, "cache_read_input_tokens", 0)
