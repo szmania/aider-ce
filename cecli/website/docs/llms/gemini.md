@@ -36,15 +36,3 @@ cecli --model gemini-exp
 cecli --list-models gemini/
 ```
 
-You may need to install the `google-generativeai` package. 
-
-```bash
-# If you installed with cecli-install or `uv tool`
-uv tool run --from cecli-dev pip install google-generativeai
-
-# Or with pipx...
-pipx inject cecli-dev google-generativeai
-
-# Or with pip
-pip install -U google-generativeai
-```

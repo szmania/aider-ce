@@ -41,7 +41,7 @@ The json file should be a dictionary with an entry for each model, as follows:
 
 ### Contribute model metadata
 
-Cecli relies on [litellm's model_prices_and_context_window.json file](https://github.com/BerriAI/litellm/blob/main/model_prices_and_context_window.json) for model metadata.
+Cecli ships its own bundled model metadata in `cecli/resources/model-metadata.json` (see the file in the [cecli repository](https://github.com/cecli-dev/cecli/blob/main/cecli/resources/model-metadata.json)). It is based on LiteLLM's configuration scheme [here](https://github.com/BerriAI/litellm/blob/main/model_prices_and_context_window.json).
 
 Consider submitting a PR to that file to add missing models.
 
@@ -62,9 +62,9 @@ If the files above exist, they will be loaded in that order. Files loaded last w
 
 The YAML file should be a list of dictionary objects for each model.
 
-### Passing extra params to litellm.completion
+### Passing extra params to model requests
 
-The `extra_params` attribute of model settings is used to pass arbitrary extra parameters to the `litellm.completion()` call when sending data to the given model.
+The `extra_params` attribute of model settings is used to pass arbitrary extra parameters to cecli's completion dispatcher when sending data to the given model. These become request parameters sent to the provider API.
 
 For example:
 
@@ -76,7 +76,7 @@ For example:
     max_tokens: 8192
 ```
 
-You can use the special model name `cecli/extra_params` to define `extra_params` that will be passed to `litellm.completion()` for all models. Only the `extra_params` dict is used from this special model name.
+You can use the special model name `cecli/extra_params` to define `extra_params` that will be passed to cecli's completion dispatcher for all models. Only the `extra_params` dict is used from this special model name.
 
 For example:
 

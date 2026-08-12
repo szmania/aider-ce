@@ -19,4 +19,4 @@ uv tool install cecli-dev
 
 ---
 
-When you specify a github copilot model on start up (e.g. `github_copilot/gpt-5-mini`), [litellm](https://github.com/BerriAI/litellm) will enter a github auth workflow wherein you will connect to your github account with the provided auth code to grant the system access. Further details can be found [here](https://docs.litellm.ai/docs/providers/github_copilot).
+When you specify a GitHub Copilot model on start up (e.g. `github_copilot/gpt-5-mini`), cecli will enter a GitHub auth workflow natively, wherein you will connect to your GitHub account with the provided auth code to grant the system access.

@@ -35,4 +35,3 @@ Cecli pins its dependencies and is tested to work with those specific versions. 
 
 In particular, be careful with the packages with pinned versions noted at the end of [cecli's requirements.in file](https://github.com/cecli-dev/cecli/blob/main/requirements/requirements.in). These versions are pinned because cecli is known not to work with the latest versions of these libraries.
 
-Also be wary of upgrading `litellm`, as it changes versions frequently and sometimes introduces bugs or backwards incompatible changes.

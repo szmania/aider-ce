@@ -45,9 +45,9 @@ Yes, you can use local LLMs with cecli. Here's a summary of the options:
 
 2. OpenAI-compatible API: cecli can access local models that provide an OpenAI-compatible API.
 
-3. Other local models: cecli uses the LiteLLM package to connect to various LLM providers, which may include options for running models locally.
+3. Other local models: cecli connects directly to many LLM providers, including local and OpenAI-compatible endpoints (Ollama, LM Studio, etc.).
 
-However, it's important to note that cecli works best with more capable models. Less capable models may have difficulty properly returning "code edits," which could result in cecli not being able to edit your files and commit changes effectively.
+However, it's important to note that cecli works best with more capable models. Less capable models may have difficulty properly returning code edits, which could result in cecli not being able to edit your files and commit changes effectively.
 
 For more detailed information on using local LLMs and connecting to various models, you might want to check out these relevant documentation pages:
 

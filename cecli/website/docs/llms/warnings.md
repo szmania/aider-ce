@@ -67,5 +67,5 @@ If required variables are missing,
 you may get errors when you attempt to chat with the model.
 You can look in the [cecli's LLM documentation](../llms.html)
 or the
-[litellm documentation](https://docs.litellm.ai/docs/providers)
+provider pages in this section
 to see if the required variables are listed there.

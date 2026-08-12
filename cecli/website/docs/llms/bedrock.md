@@ -17,7 +17,7 @@ Amazon Bedrock has added support for a new feature called [cross-region "inferen
 
 If you attempt to use a `Model ID` for a model that exclusively supports the Inference Profile feature, you will receive an error message like the following:
 
-> litellm.BadRequestError: BedrockException - b'{"message":"Invocation of model ID
+> BadRequestError: BedrockException - b'{"message":"Invocation of model ID
 anthropic.claude-3-7-sonnet-20250219-v1:0 with on-demand throughput isn\xe2\x80\x99t supported. Retry your request with the ID or ARN of an inference profile that contains this model."}'
 
 ## Installation and Configuration
@@ -94,22 +94,11 @@ cecli --list-models bedrock/
 
 Make sure you have access to these models in your AWS account before attempting to use them with cecli.
 
-## Install boto3
-You may need to install the `boto3` package.
+## AWS credentials
 
-```bash
-# If you installed with cecli-install or `uv tool`
-uv tool run --from cecli-dev pip install boto3
-
-# Or with pipx...
-pipx inject cecli-dev boto3
-
-# Or with pip
-pip install -U boto3
-```
+Cecli signs Bedrock requests itself (AWS SigV4) using the standard AWS credentials from your environment (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` and optionally `AWS_SESSION_TOKEN`), so the `boto3` package is not required.
 
 # More info
 
 For more information on Amazon Bedrock and its models, refer to the [official AWS documentation](https://docs.aws.amazon.com/bedrock/latest/userguide/what-is-bedrock.html).
 
-Also, see the [litellm docs on Bedrock](https://litellm.vercel.app/docs/providers/bedrock).

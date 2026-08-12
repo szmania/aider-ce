@@ -16,12 +16,12 @@ Cecli allows you to customize and override LLM configurations to fine-tune their
 
 For advanced configurations, you can organize override parameters into three logical groups: `api`, `llm`, and `agent`.
 ### 1. `api`
-Values under `api` are merged directly into the model's API request parameters (`headers`). This is useful for configuring provider-specific API options, temperature, or custom headers. For the full list of supported parameters, see the [LiteLLM completion input documentation](https://docs.litellm.ai/docs/completion/input).
+Values under `api` are request-level parameters that cecli passes to the provider API. This is useful for configuring provider-specific API options, temperature, or custom headers. For more details, see the [advanced model settings](../config/adv-model-settings.html) page.
 
 **Common parameters**: `temperature`, `top_p`, `max_tokens`, `parallel_tool_calls`, `extra_body` (e.g., `thinking: true` or `reasoning_effort: "high"`).
 
 ### 2. `llm`
-Values under `llm` are merged into the model's info dictionary (`self.info`). This allows you to override or augment model metadata and capabilities. For a comprehensive list of available model metadata fields, see the [LiteLLM model prices and context window reference](https://github.com/BerriAI/litellm/blob/litellm_internal_staging/model_prices_and_context_window.json).
+Values under `llm` are merged into the model's info dictionary (`self.info`). This allows you to override or augment model metadata and capabilities. For a comprehensive list of available model metadata fields, see cecli's bundled metadata in [cecli/resources/model-metadata.json](https://github.com/cecli-dev/cecli/blob/main/cecli/resources/model-metadata.json).
 
 **Common parameters**: `supports_vision`, `supports_function_calling`, token limits, or pricing information.
 
