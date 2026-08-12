@@ -35,7 +35,7 @@ from uuid import uuid4 as generate_unique_id
 
 import cecli.prompts.utils.system as prompts
 from cecli import __version__, models, urls, utils
-from cecli.commands import Commands, SwitchCoderSignal
+from cecli.commands import Commands, ReloadProgramSignal, SwitchCoderSignal
 from cecli.decoding import safe_open
 from cecli.exceptions import LiteLLMExceptions
 from cecli.helpers import command_parser, coroutines, nested, responses
@@ -584,6 +584,15 @@ class Coder(metaclass=UsageMeta):
 
         self.commands = commands or Commands(self.io, self, args=args)
         self.commands.coder = self
+
+        # Prompt queue for CLI-33: in-memory FIFO queue for deferred prompt
+        # processing. The queue lives on the coder so primary agents and
+        # sub-agents each have their own independent queue, managed by
+        # cecli.helpers.command_queue.
+        self.prompt_queue = []
+        self._queue_counter = 0
+        self._queue_lock = threading.Lock()
+        self._processing_queue = False
 
         self.data_cache = {
             "repo": {"last_key": "", "read_only_count": None},
@@ -1518,6 +1527,16 @@ class Coder(metaclass=UsageMeta):
                         await self.commands.cmd_running_event.wait()
                         continue
 
+                    # Process any queued prompts (CLI-33) before waiting for input
+                    if self.prompt_queue and not self._processing_queue:
+                        self._processing_queue = True
+                        try:
+                            processed = await self._process_next_queued_prompt(preproc)
+                        finally:
+                            self._processing_queue = False
+                        if processed:
+                            continue
+
                     if not self.suppress_announcements_for_next_prompt:
                         self.show_announcements()
                     self.suppress_announcements_for_next_prompt = True
@@ -1707,6 +1726,22 @@ class Coder(metaclass=UsageMeta):
                     await self.commands.cmd_running_event.wait()
                     continue
 
+                # Process any queued prompts (CLI-33) while idle
+                if (
+                    self.prompt_queue
+                    and not self._processing_queue
+                    and not self.user_message
+                    and not coroutines.is_active(self.io.output_task)
+                ):
+                    self._processing_queue = True
+                    try:
+                        processed = await self._process_next_queued_prompt(preproc)
+                    finally:
+                        self._processing_queue = False
+                    if processed:
+                        await self.auto_save_session()
+                        continue
+
                 # Check if we have a user message to process
                 if self.user_message and not self.io.get_confirmation_acknowledgement():
                     user_message = self.user_message
@@ -1803,6 +1838,35 @@ class Coder(metaclass=UsageMeta):
             self.io.stop_spinner()
             # Trim memory in the background so it doesn't stall the event loop
             coroutines.fire_and_forget(asyncio.to_thread(trim_memory))
+
+    async def _process_next_queued_prompt(self, preproc: bool) -> bool:
+        """Pop and run the next queued prompt (CLI-33).
+
+        Dequeues the next prompt from this coder's ``prompt_queue`` (FIFO) and
+        runs it through the normal generation path. Returns True when a queued
+        prompt was processed so the caller's loop can continue draining the
+        queue.
+        """
+        from cecli.helpers import command_queue
+
+        item = command_queue.dequeue_prompt(self)
+        if item is None:
+            return False
+
+        self.io.tool_output(f"Processing queued prompt (id: {item['id']})...")
+        try:
+            self.io.output_task = asyncio.create_task(self.generate(item["text"], preproc))
+            await self.io.output_task
+        except SwitchCoderSignal:
+            raise
+        except ReloadProgramSignal:
+            raise
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            self.io.tool_error(f"Error processing queued prompt (id: {item['id']}): {e}")
+
+        return True
 
     def copy_context(self):
         if self.auto_copy_context:
