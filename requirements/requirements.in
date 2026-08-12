@@ -1,6 +1,7 @@
 # configuration
 configargparse>=1.7.1
 shtab>=1.7.2
+python-dotenv>=1.0.1
 
 # operating system integration
 oslex>=0.1.3

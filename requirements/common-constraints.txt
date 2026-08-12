@@ -397,6 +397,7 @@ python-dateutil==2.9.0.post0
     #   pandas
 python-dotenv==1.2.2
     # via
+    #   -r requirements/requirements.in
     #   pydantic-settings
     #   pytest-env
 python-multipart==0.0.20

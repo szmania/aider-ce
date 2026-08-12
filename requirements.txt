@@ -239,6 +239,7 @@ pyperclip==1.11.0
 python-dotenv==1.2.2
     # via
     #   -c requirements/common-constraints.txt
+    #   -r requirements/requirements.in
     #   pydantic-settings
 python-multipart==0.0.20
     # via
