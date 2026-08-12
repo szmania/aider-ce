@@ -1759,6 +1759,7 @@ class Coder(metaclass=UsageMeta):
             except (SwitchCoderSignal, SystemExit):
                 raise
             except Exception as e:
+                self.error_code = 1
                 traceback_str = traceback.format_exc()
                 update_error_prefix(traceback_str)
 
@@ -2759,6 +2760,7 @@ class Coder(metaclass=UsageMeta):
                             dict(role="assistant", content=self.multi_response_content, prefix=True)
                         )
                 except Exception as err:
+                    self.error_code = 1
                     self.mdstream = None
                     lines = traceback.format_exception(type(err), err, err.__traceback__)
                     self.io.tool_warning("".join(lines))
@@ -3508,6 +3510,7 @@ class Coder(metaclass=UsageMeta):
                 # but response.dict() is the Pydantic V1 method name.
                 response_dict = dict(response)
             except TypeError:
+                self.error_code = 1
                 self.io.tool_warning("Response parsing error.")
                 return
 
