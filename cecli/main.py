@@ -73,36 +73,83 @@ elif sys.platform == "darwin":
 from .dump import dump  # noqa
 
 
-def convert_yaml_to_json_string(value):
+def convert_yaml_to_json_string(value, config_file_value=None):
     """
     Convert YAML dict/list values to JSON strings for compatibility.
 
     configargparse.YAMLConfigFileParser converts YAML to Python objects,
     but some arguments expect JSON strings. This function handles:
     - Direct dict/list objects
-    - String representations of dicts/lists (Python literals)
+    - String representations of dicts/lists (JSON or Python literals)
     - Already JSON strings (passed through unchanged)
+
+    When config_file_value is provided (the value for the same option from the
+    merged config files), the CLI value is deep-merged on top of it so CLI keys
+    win per-key while keys provided only by the config files (e.g.
+    skills_paths, skills_init) are preserved instead of being discarded
+    wholesale. configargparse discards config-file values for options that are
+    also given on the command line, so without this merge a CLI --agent-config
+    silently drops every agent-config key that lives only in .cecli.conf.yml.
 
     Args:
         value: The value to convert
+        config_file_value: Optional config-file value to deep-merge underneath
+            the CLI value
 
     Returns:
         str: JSON string if value is a dict/list, otherwise the original value
     """
     if value is None:
         return None
-    if isinstance(value, (dict, list)):
-        return json.dumps(value)
+
+    parsed = value
+
     if isinstance(value, str):
         try:
-            import ast
+            parsed = json.loads(value)
+        except (json.JSONDecodeError, TypeError):
+            try:
+                import ast
 
-            parsed = ast.literal_eval(value)
-            if isinstance(parsed, (dict, list)):
-                return json.dumps(parsed)
-        except (SyntaxError, ValueError):
-            pass
+                parsed = ast.literal_eval(value)
+            except (SyntaxError, ValueError):
+                return value
+
+    if isinstance(parsed, (dict, list)):
+        if isinstance(parsed, dict) and config_file_value is not None:
+            from cecli.helpers.config_utils import deep_merge
+
+            try:
+                file_value = config_file_value
+
+                if isinstance(file_value, str):
+                    file_value = json.loads(file_value)
+
+                if isinstance(file_value, dict) and file_value:
+                    parsed = deep_merge(file_value, parsed, deep_merge_arrays=False)
+            except Exception:
+                pass
+
+        return json.dumps(parsed)
+
     return value
+
+
+# yaml-to-json args: argparse dest -> config-file key (hyphenated).
+# CLI values for these args deep-merge with the merged config-file value for
+# the same option, so CLI keys win per-key while file-only keys are preserved.
+YAML_TO_JSON_ARG_KEYS = {
+    "agent_config": "agent-config",
+    "tui_config": "tui-config",
+    "mcp_servers": "mcp-servers",
+    "custom": "custom",
+    "security_config": "security-config",
+    "retries": "retries",
+    "hooks": "hooks",
+    "workspaces": "workspaces",
+    "model_providers": "model-providers",
+    "server_config": "server-config",
+}
 
 
 def check_config_files_for_yes(config_files):
@@ -728,26 +775,18 @@ async def main_async(
     if len(unknown):
         print("Unknown Args: ", unknown)
 
-    if hasattr(args, "agent_config") and args.agent_config is not None:
-        args.agent_config = convert_yaml_to_json_string(args.agent_config)
-    if hasattr(args, "tui_config") and args.tui_config is not None:
-        args.tui_config = convert_yaml_to_json_string(args.tui_config)
-    if hasattr(args, "mcp_servers") and args.mcp_servers is not None:
-        args.mcp_servers = convert_yaml_to_json_string(args.mcp_servers)
-    if hasattr(args, "custom") and args.custom is not None:
-        args.custom = convert_yaml_to_json_string(args.custom)
-    if hasattr(args, "security_config") and args.security_config is not None:
-        args.security_config = convert_yaml_to_json_string(args.security_config)
-    if hasattr(args, "retries") and args.retries is not None:
-        args.retries = convert_yaml_to_json_string(args.retries)
-    if hasattr(args, "hooks") and args.hooks is not None:
-        args.hooks = convert_yaml_to_json_string(args.hooks)
-    if hasattr(args, "workspaces") and args.workspaces is not None:
-        args.workspaces = convert_yaml_to_json_string(args.workspaces)
-    if hasattr(args, "model_providers") and args.model_providers is not None:
-        args.model_providers = convert_yaml_to_json_string(args.model_providers)
-    if hasattr(args, "server_config") and args.server_config is not None:
-        args.server_config = convert_yaml_to_json_string(args.server_config)
+    # ── Convert yaml-to-json arguments, deep-merging CLI values with ──────
+    # the merged config-file values so CLI keys win per-key while file-only
+    # keys are preserved.
+    for arg_name, config_key in YAML_TO_JSON_ARG_KEYS.items():
+        if hasattr(args, arg_name) and getattr(args, arg_name) is not None:
+            config_file_value = merged_config.get(config_key)
+
+            setattr(
+                args,
+                arg_name,
+                convert_yaml_to_json_string(getattr(args, arg_name), config_file_value),
+            )
 
     # Interpolate environment variables in all string arguments
     for key, value in vars(args).items():
