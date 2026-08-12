@@ -206,6 +206,8 @@ class HashPos:
 
     @staticmethod
     def strip_prefix(text: str) -> str:
+        if text is None:
+            return ""
         lines = text.splitlines(keepends=True)
         result_lines = []
         for line in lines:

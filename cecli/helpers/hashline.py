@@ -73,6 +73,8 @@ def strip_hashline(text: str) -> str:
     """
     Remove HashPos prefixes from the start of every line.
     """
+    if text is None:
+        return ""
     return HashPos.strip_prefix(text)
 
 
