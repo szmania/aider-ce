@@ -71,7 +71,29 @@ class SkillsManager:
         if default_skill_dir not in directory_paths:
             directory_paths = [default_skill_dir] + list(directory_paths)
 
-        self.directory_paths = [Path(p).expanduser().resolve() for p in directory_paths]
+        # Resolve every path and drop exact directory duplicates.
+        resolved_paths = []
+        seen_paths = set()
+        for p in directory_paths:
+            try:
+                path = Path(p).expanduser().resolve()
+            except Exception:
+                continue
+            if path in seen_paths:
+                continue
+            seen_paths.add(path)
+            resolved_paths.append(path)
+
+        # Order paths: local project dirs first, then configured, home dirs last.
+        git_root_path = Path(git_root).expanduser().resolve() if git_root else None
+        ordered = sorted(
+            enumerate(resolved_paths),
+            key=lambda item: (
+                self._directory_priority(item[1], git_root_path),
+                item[0],
+            ),
+        )
+        self.directory_paths = [path for _, path in ordered]
         self.include_list = set(include_list) if include_list else None
         self.exclude_list = set(exclude_list) if exclude_list else set()
         self.git_root = Path(git_root).expanduser().resolve() if git_root else None
@@ -110,6 +132,35 @@ class SkillsManager:
                 self.hot_reload()
 
             # Save initial state from config
+
+    @staticmethod
+    def _directory_priority(path: Path, git_root: Optional[Path] = None) -> int:
+        """Return the ordering priority of a skill directory.
+
+        Lower values are scanned first and therefore win by-name conflicts:
+
+        0 - local project directory (under the git root or working directory)
+        1 - any other configured directory
+        2 - a home directory (including the implicit ``~/.cecli/skills`` default)
+        """
+        home = Path.home().resolve()
+
+        # Implicit default skills dir is always treated as a home dir.
+        if path == (home / ".cecli" / "skills"):
+            return 2
+
+        local_anchor = git_root if git_root is not None else Path.cwd()
+        try:
+            path.relative_to(local_anchor)
+            return 0
+        except ValueError:
+            pass
+
+        try:
+            path.relative_to(home)
+            return 2
+        except ValueError:
+            return 1
 
     def _get_coder(self):
         """Return coder via weak reference, or None if collected."""
@@ -176,6 +227,7 @@ class SkillsManager:
             return self._skills_find_cache
 
         skills = []
+        seen_names: set[str] = set()
 
         for directory_path in self.directory_paths:
             directory_path = Path(directory_path)
@@ -192,6 +244,11 @@ class SkillsManager:
                     try:
                         metadata = self._parse_skill_metadata(skill_md_path)
                         skill_name = metadata.name
+
+                        # First directory wins for duplicate skill names.
+                        if skill_name in seen_names:
+                            continue
+                        seen_names.add(skill_name)
 
                         # Apply include/exclude filters
                         if self.include_list and skill_name not in self.include_list:
