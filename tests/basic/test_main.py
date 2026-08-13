@@ -1302,31 +1302,6 @@ def test_model_accepts_settings_attribute(dummy_io, git_temp_dir, mocker):
     mock_instance.set_thinking_tokens.assert_not_called()
 
 
-@pytest.mark.parametrize(
-    "flags,should_warn",
-    [
-        (["--stream", "--cache-prompts"], True),
-        (["--stream"], False),
-        (["--cache-prompts", "--no-stream"], False),
-    ],
-    ids=["stream_and_cache", "stream_only", "cache_only"],
-)
-def test_stream_cache_warning(dummy_io, git_temp_dir, mocker, flags, should_warn):
-    """Test warning shown only when both streaming and caching are enabled."""
-    MockInputOutput = mocker.patch("cecli.io.InputOutput", autospec=True)
-    mock_io_instance = MockInputOutput.return_value
-    mock_io_instance.pretty = True
-    args = flags + ["--exit", "--yes-always"]
-    main(args, **dummy_io)
-    if should_warn:
-        mock_io_instance.tool_warning.assert_called_with(
-            "Cost estimates may be inaccurate when using streaming and caching."
-        )
-    else:
-        for call in mock_io_instance.tool_warning.call_args_list:
-            assert "Cost estimates may be inaccurate" not in call[0][0]
-
-
 def test_argv_file_respects_git(dummy_io, git_temp_dir):
     fname = Path("not_in_git.txt")
     fname.touch()

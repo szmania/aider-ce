@@ -892,7 +892,7 @@ class Coder(metaclass=UsageMeta):
             rel_repo_dir = self.repo.get_rel_repo_dir()
             num_files = len(self.repo.get_tracked_files())
             env_items.append(f"{rel_repo_dir} ({num_files:,} files)")
-            if num_files > 1000:
+            if num_files > 1000 and self.verbose:
                 env_items.append(
                     "Warning: For large repos, consider using --subtree-only and .cecli.ignore"
                 )
