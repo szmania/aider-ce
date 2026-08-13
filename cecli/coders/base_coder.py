@@ -3255,6 +3255,12 @@ class Coder(metaclass=UsageMeta):
         if not isinstance(arguments, dict):
             arguments = {}
 
+        # Some models mirror the OpenAI wire format and wrap the real params
+        # under a single "arguments"/"parameters"/"params" key. Unwrap so the
+        # server receives the actual parameters instead of rejecting the call
+        # with a "missing required parameter" error.
+        arguments = responses.coerce_tool_structure(arguments)
+
         return await session.call_tool(name=name, arguments=arguments)
 
     async def process_tool_calls(self, tool_call_response):

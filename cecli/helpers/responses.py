@@ -367,20 +367,24 @@ def unprefix_tool_call(tool_call):
 
 
 def parse_tool_arguments(args_string: str) -> dict:
-    """Parse tool-call arguments, merging glued ``{…}{} {…}`` object fragments."""
+    """Parse tool-call arguments, merging glued ``{…}{} {…}`` object fragments.
+
+    Also unwraps a single ``arguments``/``parameters``/``params`` wrapper key
+    that some models emit when mirroring the OpenAI wire format.
+    """
     text = (args_string or "").strip()
     if not text:
         return {}
     try:
         parsed = json.loads(text)
         if isinstance(parsed, dict):
-            return parsed
+            return coerce_tool_structure(parsed)
     except json.JSONDecodeError:
         pass
 
     parsed = try_parse_json_value(text)
     if isinstance(parsed, dict):
-        return parsed
+        return coerce_tool_structure(parsed)
 
     chunks = utils.split_concatenated_json(text)
     if len(chunks) <= 1:
@@ -388,18 +392,18 @@ def parse_tool_arguments(args_string: str) -> dict:
             return {}
         lone = try_parse_json_value(chunks[0])
         if isinstance(lone, dict):
-            return lone
+            return coerce_tool_structure(lone)
         try:
             json_string = json_repair.repair_json(chunks[0], ensure_ascii=False)
             single = json.loads(json_string)
         except json.JSONDecodeError as err:
             return {"@error": f"Malformed JSON arguments: {err}"}
-        return single if isinstance(single, dict) else {}
+        return coerce_tool_structure(single) if isinstance(single, dict) else {}
 
     merged = merge_glued_json_objects(chunks)
 
     if merged is not None:
-        return merged
+        return coerce_tool_structure(merged)
 
     return {
         "@error": "Could not merge glued JSON objects: argument fragments are not all JSON objects"
@@ -618,3 +622,40 @@ def _parse_bracket_arguments(payload_str: str) -> dict:
             arguments[key] = val_str
 
     return arguments
+
+
+def coerce_tool_structure(args: dict) -> dict:
+    """Unwrap a single ``arguments``/``parameters``/``params`` wrapper key.
+
+    Some models mirror the OpenAI wire format and emit the real params nested
+    under a single top-level ``arguments`` key (as a dict or a JSON-encoded
+    string) instead of as the params dict itself. Without normalization the
+    wrapper key is forwarded verbatim to the tool, which then fails required
+    parameter validation (e.g. MCP servers reporting "missing required
+    parameter").
+
+    Only unwraps when ``args`` has exactly one key matching one of the wrapper
+    names and that value is a dict (or a JSON string that parses to a dict), so
+    tools that legitimately declare a parameter named ``arguments`` are never
+    clobbered.
+    """
+    if not isinstance(args, dict) or len(args) != 1:
+        return args
+
+    for key in ("arguments", "parameters", "params"):
+        if key not in args:
+            continue
+
+        value = args[key]
+        if isinstance(value, str):
+            try:
+                value = json.loads(value)
+            except json.JSONDecodeError:
+                return args
+
+        if isinstance(value, dict):
+            return value
+
+        return args
+
+    return args
