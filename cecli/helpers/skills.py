@@ -84,11 +84,7 @@ class SkillsManager:
             seen_paths.add(path)
             resolved_paths.append(path)
 
-        # Order paths so local project directories come first, other configured
-        # directories follow in the listed order, and home directories always
-        # come last. Combined with the by-name deduplication in find_skills(),
-        # a skill defined in a local directory shadows the same-named skill
-        # found in any other (e.g. home) directory.
+        # Order paths: local project dirs first, then configured, home dirs last.
         git_root_path = Path(git_root).expanduser().resolve() if git_root else None
         ordered = sorted(
             enumerate(resolved_paths),
@@ -149,8 +145,7 @@ class SkillsManager:
         """
         home = Path.home().resolve()
 
-        # The implicit default skills directory is always treated as a home
-        # directory, even when a project happens to live under the user's home.
+        # Implicit default skills dir is always treated as a home dir.
         if path == (home / ".cecli" / "skills"):
             return 2
 
@@ -250,10 +245,7 @@ class SkillsManager:
                         metadata = self._parse_skill_metadata(skill_md_path)
                         skill_name = metadata.name
 
-                        # Directory paths are ordered by priority (local
-                        # project directories first, home directories last), so
-                        # the first occurrence of a skill name wins and later
-                        # duplicates from lower-priority directories are dropped.
+                        # First directory wins for duplicate skill names.
                         if skill_name in seen_names:
                             continue
                         seen_names.add(skill_name)

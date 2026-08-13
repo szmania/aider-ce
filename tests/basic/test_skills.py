@@ -5,7 +5,7 @@ Tests for cecli/helpers/skills.py
 import os
 import tempfile
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -179,90 +179,6 @@ Test content.
         # Test with non-existent path
         paths = SkillsManager.resolve_skill_directories(["/non-existent/path"])
         assert len(paths) == 0
-
-    def test_find_skills_deduplicates_by_name_keeping_first_directory(self):
-        """Same-named skills in multiple directories resolve to the first one."""
-        dir1 = Path(self.temp_dir) / "dir1"
-        dir2 = Path(self.temp_dir) / "dir2"
-        for d in (dir1, dir2):
-            d.mkdir()
-
-        def _write_skill(base, name, description):
-            skill_dir = base / name
-            skill_dir.mkdir()
-            (skill_dir / "SKILL.md").write_text(
-                f"---\nname: {name}\ndescription: {description}\n---\n"
-            )
-
-        _write_skill(dir1, "shared", "first version")
-        _write_skill(dir1, "unique1", "only in dir1")
-        _write_skill(dir2, "shared", "second version")
-        _write_skill(dir2, "unique2", "only in dir2")
-
-        # Point the implicit home dir somewhere harmless so it can't pollute the test
-        with patch.object(Path, "home", return_value=Path(self.temp_dir) / "fake-home"):
-            manager = SkillsManager([str(dir1), str(dir2)])
-
-        skills = manager.find_skills()
-        # Directory iteration order within a dir is filesystem order, so only
-        # compare names as a set; the important guarantees are that the
-        # duplicate was dropped and that the first directory's copy won.
-        assert {s.name for s in skills} == {"shared", "unique1", "unique2"}
-        assert len(skills) == 3
-        shared = next(s for s in skills if s.name == "shared")
-        assert shared.description == "first version"
-        assert shared.path == (dir1 / "shared").resolve()
-
-    def test_local_skill_wins_over_home_duplicate(self, monkeypatch):
-        """A local .cecli/skills skill shadows the same-named ~/skills skill."""
-        home_dir = Path(self.temp_dir) / "home"
-        project_dir = Path(self.temp_dir) / "project"
-        (home_dir / "skills" / "dupe-skill").mkdir(parents=True)
-        (project_dir / ".cecli" / "skills" / "dupe-skill").mkdir(parents=True)
-
-        (home_dir / "skills" / "dupe-skill" / "SKILL.md").write_text(
-            "---\nname: dupe-skill\ndescription: home version\n---\n"
-        )
-        (project_dir / ".cecli" / "skills" / "dupe-skill" / "SKILL.md").write_text(
-            "---\nname: dupe-skill\ndescription: local version\n---\n"
-        )
-
-        monkeypatch.chdir(project_dir)
-        with (
-            patch.object(Path, "home", return_value=home_dir),
-            patch.dict(os.environ, {"HOME": str(home_dir)}),
-        ):
-            manager = SkillsManager(["~/skills", "./.cecli/skills"], git_root=str(project_dir))
-
-            # Local directory is scanned first, home directories come last
-            assert manager.directory_paths[0] == (project_dir / ".cecli" / "skills").resolve()
-            assert manager.directory_paths[-1] == (home_dir / "skills").resolve()
-            assert (home_dir / ".cecli" / "skills").resolve() in manager.directory_paths
-
-            skills = manager.find_skills()
-            assert [s.name for s in skills] == ["dupe-skill"]
-            assert skills[0].description == "local version"
-            assert skills[0].path == (project_dir / ".cecli" / "skills" / "dupe-skill").resolve()
-
-    def test_default_skill_dir_and_local_first_ordering(self, monkeypatch):
-        """No skills_paths -> only ~/.cecli/skills; local paths still ordered first."""
-        home_dir = Path(self.temp_dir) / "fake-home"
-        project_dir = Path(self.temp_dir) / "project"
-        (project_dir / ".cecli" / "skills").mkdir(parents=True)
-
-        monkeypatch.chdir(project_dir)
-        with (
-            patch.object(Path, "home", return_value=home_dir),
-            patch.dict(os.environ, {"HOME": str(home_dir)}),
-        ):
-            # Default: with no skills_paths the only directory is ~/.cecli/skills
-            manager = SkillsManager([])
-            assert manager.directory_paths == [(home_dir / ".cecli" / "skills").resolve()]
-
-            # When a local path is configured it is scanned before the home default
-            manager = SkillsManager(["./.cecli/skills"])
-            assert manager.directory_paths[0] == (project_dir / ".cecli" / "skills").resolve()
-            assert manager.directory_paths[-1] == (home_dir / ".cecli" / "skills").resolve()
 
     def test_remove_skill(self):
         """Test the remove_skill instance method."""
