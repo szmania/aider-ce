@@ -12,6 +12,8 @@ import threading
 from collections import deque
 from typing import Dict, List, Optional, Tuple
 
+import xxhash
+
 from cecli.decoding import safe_open
 
 try:
@@ -419,7 +421,8 @@ class BackgroundCommandManager:
             Unique command key
         """
         with cls._lock:
-            key = f"bg_{cls._next_id}_{hash(command) % 10000:04d}"
+            digest = xxhash.xxh64(command.encode("utf-8")).intdigest()
+            key = f"bg_{cls._next_id}_{digest % 10000:04d}"
             cls._next_id += 1
             return key
 

@@ -1437,7 +1437,7 @@ async def main_async(
         )
         io.tool_output(f"Cur working dir: {Path.cwd()}")
         io.tool_output(f"Git working dir: {git_root}")
-    if args.stream and args.cache_prompts:
+    if args.stream and args.cache_prompts and args.verbose:
         io.tool_warning("Cost estimates may be inaccurate when using streaming and caching.")
     if args.load:
         await commands.execute("load", args.load)

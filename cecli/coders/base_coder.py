@@ -892,7 +892,7 @@ class Coder(metaclass=UsageMeta):
             rel_repo_dir = self.repo.get_rel_repo_dir()
             num_files = len(self.repo.get_tracked_files())
             env_items.append(f"{rel_repo_dir} ({num_files:,} files)")
-            if num_files > 1000:
+            if num_files > 1000 and self.verbose:
                 env_items.append(
                     "Warning: For large repos, consider using --subtree-only and .cecli.ignore"
                 )
@@ -1759,6 +1759,7 @@ class Coder(metaclass=UsageMeta):
             except (SwitchCoderSignal, SystemExit):
                 raise
             except Exception as e:
+                self.error_code = 1
                 traceback_str = traceback.format_exc()
                 update_error_prefix(traceback_str)
 
@@ -2759,6 +2760,7 @@ class Coder(metaclass=UsageMeta):
                             dict(role="assistant", content=self.multi_response_content, prefix=True)
                         )
                 except Exception as err:
+                    self.error_code = 1
                     self.mdstream = None
                     lines = traceback.format_exception(type(err), err, err.__traceback__)
                     self.io.tool_warning("".join(lines))
@@ -3253,6 +3255,12 @@ class Coder(metaclass=UsageMeta):
         if not isinstance(arguments, dict):
             arguments = {}
 
+        # Some models mirror the OpenAI wire format and wrap the real params
+        # under a single "arguments"/"parameters"/"params" key. Unwrap so the
+        # server receives the actual parameters instead of rejecting the call
+        # with a "missing required parameter" error.
+        arguments = responses.coerce_tool_structure(arguments)
+
         return await session.call_tool(name=name, arguments=arguments)
 
     async def process_tool_calls(self, tool_call_response):
@@ -3508,6 +3516,7 @@ class Coder(metaclass=UsageMeta):
                 # but response.dict() is the Pydantic V1 method name.
                 response_dict = dict(response)
             except TypeError:
+                self.error_code = 1
                 self.io.tool_warning("Response parsing error.")
                 return
 
@@ -4277,9 +4286,21 @@ class Coder(metaclass=UsageMeta):
         cache_hit_tokens = 0
         cache_write_tokens = 0
 
-        if completion and hasattr(completion, "usage") and completion.usage is not None:
-            prompt_tokens = completion.usage.prompt_tokens
-            completion_tokens = completion.usage.completion_tokens
+        if (
+            completion
+            and nested.getter(completion, "usage.prompt_tokens") is not None
+            and nested.getter(completion, "usage.completion_tokens") is not None
+        ):
+            prompt_tokens = (
+                nested.getter(completion.usage, "prompt_tokens", 0)
+                or nested.getter(completion.usage, "prompt_eval_count", 0)
+                or 0
+            )
+            completion_tokens = (
+                nested.getter(completion.usage, "completion_tokens", 0)
+                or nested.getter(completion.usage, "eval_count", 0)
+                or 0
+            )
             cache_hit_tokens = (
                 getattr(completion.usage, "prompt_cache_hit_tokens", 0)
                 or getattr(completion.usage, "cache_read_input_tokens", 0)

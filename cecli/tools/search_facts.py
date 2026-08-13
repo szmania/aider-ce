@@ -64,11 +64,6 @@ class Tool(BaseTool):
         try:
             results = search_facts(coder, words=words, tags=tags)
 
-            if not results:
-                # Re-search without tags as fallback
-                if tags:
-                    results = search_facts(coder, words=words, tags=None)
-
             for r in results:
                 response.append_result(
                     {

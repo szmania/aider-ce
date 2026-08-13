@@ -108,7 +108,7 @@ class Tool(BaseTool):
         if not command:
             return command
 
-        return xxhash.xxh64(command).hexdigest()
+        return xxhash.xxh64(command.encode("utf-8")).hexdigest()
 
     @classmethod
     async def execute(

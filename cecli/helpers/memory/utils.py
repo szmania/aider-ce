@@ -6,6 +6,7 @@ Public API
 - ``add_fact(fact=..., tags=[...])`` – insert a fact with optional tags
 - ``remove_facts(id_facts=[...])`` – delete facts by id
 - ``search_facts(words=[...], tags=[...])`` – full-text search the fact store
+- ``recent_tags(coder, limit=100)`` – most recently used tags + total count
 - ``invoke_memorizer(coder, additional_context=...)`` – fire the memorizer
   sub-agent with current context
 """
@@ -203,6 +204,51 @@ def search_facts(
     return results
 
 
+def recent_tags(coder, limit: int = 100) -> dict:
+    """Return the most recently used tags plus the total tag count.
+
+    Tags are deduplicated and ordered by the recency of the most recent
+    fact they are attached to (facts sorted by ``id_fact`` descending),
+    then truncated to *limit* entries.
+
+    Args:
+        coder: The active Coder instance (used to locate the project root).
+        limit: Maximum number of recent tags to return (default 100).
+
+    Returns:
+        A dict with keys ``tags`` (list of tag strings, most recent first)
+        and ``total`` (int count of all distinct tags in the store).
+    """
+
+    init_db(root=coder.root)
+
+    conn = _get_connection(root=coder.root)
+    cursor = conn.cursor()
+
+    # Tags ordered by the recency of the most recent fact they tag:
+    # sort facts by id descending and dedupe on the tag name.
+    cursor.execute(
+        """
+        SELECT t.tag
+        FROM Facts f
+        JOIN FactTags ft ON ft.id_fact = f.id_fact
+        JOIN Tags t ON t.id_tag = ft.id_tag
+        GROUP BY t.tag
+        ORDER BY MAX(f.id_fact) DESC
+        LIMIT ?
+        """,
+        (limit,),
+    )
+
+    tags = [row["tag"] for row in cursor.fetchall()]
+
+    cursor.execute("SELECT COUNT(*) AS total FROM Tags")
+
+    total = cursor.fetchone()["total"]
+
+    return {"tags": tags, "total": total}
+
+
 async def invoke_memorizer(
     coder,
     additional_context: str = "",
@@ -241,6 +287,14 @@ async def invoke_memorizer(
 
     # Gather context pieces
     parts: list[str] = []
+
+    # Recent tags (deduplicated, most recently used first) plus the total
+    # tag count — first context part so the memorizer sees active tags
+    recent = recent_tags(coder)
+
+    tag_list = ", ".join(recent["tags"]) if recent["tags"] else "(none)"
+
+    parts.append(f"## Recent Tags\n\n{tag_list}\n\n## Total Tags in DB\n\n{recent['total']}")
 
     # Latest user message
     last_user = getattr(coder, "last_user_message", "")

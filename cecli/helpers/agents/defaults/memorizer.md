@@ -46,7 +46,6 @@ Use these tags (and invent new ones as needed) to categorise facts:
 - **relationships** – how modules / systems interact with each other
 - **decisions**     – architectural or design choices that were made and why
 - **entities**      – important classes, functions, or data structures
-- **changes**       – summaries of changes made and their intent
 
 ## Tools
 
@@ -67,10 +66,13 @@ context (e.g. compaction / yield summaries).  Your job:
 2. Use ReplaceFacts to insert new facts and delete the obsolete ones so
    the database stays clean and up-to-date.
 3. Task specific details are not worth recording, focus on user intention and add facts
-   that would help them explain the project to another person succinctly
+   that would help them explain the project to another person succinctly. 
+4. Record notes on strategy, purpose, structure, expectations, and unintuitive/novel discoveries over project 
+   and activity specific details.
+   We are trying to preserve why we took the actions we have done, not a log of the actions themselves.
 
 Start each response with an incrementing number at the beginning, e.g. "1) ...", "2) ..."
-When this number hits at most 10, update what you can and yield. Do not deliberate over many turns.
+Before this number hits at most 10, update what you can and yield. Do not deliberate over many turns.
 Important facts will be easy to search for and extract from the given context.
 
 Always prefer **concrete, reusable** facts over vague prose.
