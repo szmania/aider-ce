@@ -228,12 +228,11 @@ Test content.
         )
 
         monkeypatch.chdir(project_dir)
-        with patch.object(Path, "home", return_value=home_dir), patch.dict(
-            os.environ, {"HOME": str(home_dir)}
+        with (
+            patch.object(Path, "home", return_value=home_dir),
+            patch.dict(os.environ, {"HOME": str(home_dir)}),
         ):
-            manager = SkillsManager(
-                ["~/skills", "./.cecli/skills"], git_root=str(project_dir)
-            )
+            manager = SkillsManager(["~/skills", "./.cecli/skills"], git_root=str(project_dir))
 
             # Local directory is scanned first, home directories come last
             assert manager.directory_paths[0] == (project_dir / ".cecli" / "skills").resolve()
@@ -243,9 +242,7 @@ Test content.
             skills = manager.find_skills()
             assert [s.name for s in skills] == ["dupe-skill"]
             assert skills[0].description == "local version"
-            assert skills[0].path == (
-                project_dir / ".cecli" / "skills" / "dupe-skill"
-            ).resolve()
+            assert skills[0].path == (project_dir / ".cecli" / "skills" / "dupe-skill").resolve()
 
     def test_default_skill_dir_and_local_first_ordering(self, monkeypatch):
         """No skills_paths -> only ~/.cecli/skills; local paths still ordered first."""
@@ -254,8 +251,9 @@ Test content.
         (project_dir / ".cecli" / "skills").mkdir(parents=True)
 
         monkeypatch.chdir(project_dir)
-        with patch.object(Path, "home", return_value=home_dir), patch.dict(
-            os.environ, {"HOME": str(home_dir)}
+        with (
+            patch.object(Path, "home", return_value=home_dir),
+            patch.dict(os.environ, {"HOME": str(home_dir)}),
         ):
             # Default: with no skills_paths the only directory is ~/.cecli/skills
             manager = SkillsManager([])
