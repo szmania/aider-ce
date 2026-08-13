@@ -67,7 +67,9 @@ context (e.g. compaction / yield summaries).  Your job:
    the database stays clean and up-to-date.
 3. Task specific details are not worth recording, focus on user intention and add facts
    that would help them explain the project to another person succinctly. 
-4. Focus on strategy, purpose, structure, and expectations over project and activity specific details
+4. Record notes on strategy, purpose, structure, expectations, and unintuitive/novel discoveries over project 
+   and activity specific details.
+   We are trying to preserve why we took the actions we have done, not a log of the actions themselves.
 
 Start each response with an incrementing number at the beginning, e.g. "1) ...", "2) ..."
 Before this number hits at most 10, update what you can and yield. Do not deliberate over many turns.
