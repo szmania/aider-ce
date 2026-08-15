@@ -28452,6 +28452,455 @@
     "litellm_provider": "openai",
     "mode": "chat"
   },
+  "opencode-go/deepseek-v4-flash": {
+    "litellm_provider": "opencode-go",
+    "max_input_tokens": 1000000,
+    "max_output_tokens": 384000,
+    "max_tokens": 384000,
+    "mode": "chat",
+    "source": "https://opencode.ai",
+    "supported_endpoints": [
+      "/v1/chat/completions"
+    ],
+    "supports_assistant_prefill": true,
+    "supports_function_calling": true,
+    "supports_native_streaming": true,
+    "supports_parallel_function_calling": true,
+    "supports_prompt_caching": true,
+    "supports_reasoning": true,
+    "supports_response_schema": true,
+    "supports_system_messages": true,
+    "supports_tool_choice": true,
+    "supports_vision": false
+  },
+  "opencode-go/deepseek-v4-pro": {
+    "litellm_provider": "opencode-go",
+    "max_input_tokens": 1000000,
+    "max_output_tokens": 384000,
+    "max_tokens": 384000,
+    "mode": "chat",
+    "source": "https://opencode.ai",
+    "supported_endpoints": [
+      "/v1/chat/completions"
+    ],
+    "supports_assistant_prefill": true,
+    "supports_function_calling": true,
+    "supports_native_streaming": true,
+    "supports_parallel_function_calling": true,
+    "supports_prompt_caching": true,
+    "supports_reasoning": true,
+    "supports_response_schema": true,
+    "supports_system_messages": true,
+    "supports_tool_choice": true,
+    "supports_vision": false
+  },
+  "opencode-go/glm-5": {
+    "max_input_tokens": 200000,
+    "max_output_tokens": 128000,
+    "mode": "chat",
+    "supports_function_calling": true,
+    "supports_prompt_caching": true,
+    "supports_reasoning": true,
+    "supports_tool_choice": true,
+    "litellm_provider": "opencode-go",
+    "source": "https://opencode.ai",
+    "supported_endpoints": [
+      "/v1/chat/completions"
+    ]
+  },
+  "opencode-go/glm-5.1": {
+    "max_input_tokens": 200000,
+    "max_output_tokens": 128000,
+    "mode": "chat",
+    "supports_function_calling": true,
+    "supports_prompt_caching": true,
+    "supports_reasoning": true,
+    "supports_tool_choice": true,
+    "litellm_provider": "opencode-go",
+    "source": "https://opencode.ai",
+    "supported_endpoints": [
+      "/v1/chat/completions"
+    ]
+  },
+  "opencode-go/glm-5.2": {
+    "max_input_tokens": 262144,
+    "max_output_tokens": 262144,
+    "max_tokens": 262144,
+    "mode": "chat",
+    "supports_function_calling": true,
+    "supports_reasoning": true,
+    "litellm_provider": "opencode-go",
+    "source": "https://opencode.ai",
+    "supported_endpoints": [
+      "/v1/chat/completions"
+    ]
+  },
+  "opencode-go/glm-5.3": {
+    "max_input_tokens": 200000,
+    "max_output_tokens": 128000,
+    "mode": "chat",
+    "supports_function_calling": true,
+    "supports_prompt_caching": true,
+    "supports_reasoning": true,
+    "supports_tool_choice": true,
+    "litellm_provider": "opencode-go",
+    "source": "https://opencode.ai",
+    "supported_endpoints": [
+      "/v1/chat/completions"
+    ]
+  },
+  "opencode-go/gpt-5.6-luna": {
+    "max_input_tokens": 1050000,
+    "max_output_tokens": 128000,
+    "max_tokens": 128000,
+    "mode": "chat",
+    "supported_endpoints": [
+      "/v1/chat/completions"
+    ],
+    "supported_modalities": [
+      "text",
+      "image"
+    ],
+    "supported_output_modalities": [
+      "text"
+    ],
+    "supports_function_calling": true,
+    "supports_minimal_reasoning_effort": false,
+    "supports_native_streaming": true,
+    "supports_none_reasoning_effort": true,
+    "supports_parallel_function_calling": true,
+    "supports_pdf_input": true,
+    "supports_prompt_caching": true,
+    "supports_reasoning": true,
+    "supports_response_schema": true,
+    "supports_system_messages": true,
+    "supports_tool_choice": true,
+    "supports_vision": true,
+    "supports_web_search": true,
+    "supports_xhigh_reasoning_effort": true,
+    "litellm_provider": "opencode-go",
+    "source": "https://opencode.ai"
+  },
+  "opencode-go/grok-4.5": {
+    "max_input_tokens": 500000,
+    "max_output_tokens": 500000,
+    "max_tokens": 500000,
+    "mode": "chat",
+    "supports_function_calling": true,
+    "supports_prompt_caching": true,
+    "supports_reasoning": true,
+    "supports_response_schema": true,
+    "supports_tool_choice": true,
+    "supports_vision": true,
+    "supports_web_search": true,
+    "litellm_provider": "opencode-go",
+    "source": "https://opencode.ai",
+    "supported_endpoints": [
+      "/v1/chat/completions"
+    ]
+  },
+  "opencode-go/hy3": {
+    "litellm_provider": "opencode-go",
+    "max_input_tokens": 1000000,
+    "max_output_tokens": 128000,
+    "max_tokens": 128000,
+    "mode": "chat",
+    "source": "https://opencode.ai",
+    "supported_endpoints": [
+      "/v1/chat/completions"
+    ],
+    "supports_function_calling": true,
+    "supports_native_streaming": true,
+    "supports_parallel_function_calling": true,
+    "supports_prompt_caching": true,
+    "supports_reasoning": true,
+    "supports_response_schema": true,
+    "supports_system_messages": true,
+    "supports_tool_choice": true,
+    "supports_vision": false
+  },
+  "opencode-go/hy3-preview": {
+    "litellm_provider": "opencode-go",
+    "max_input_tokens": 1000000,
+    "max_output_tokens": 128000,
+    "max_tokens": 128000,
+    "mode": "chat",
+    "source": "https://opencode.ai",
+    "supported_endpoints": [
+      "/v1/chat/completions"
+    ],
+    "supports_function_calling": true,
+    "supports_native_streaming": true,
+    "supports_parallel_function_calling": true,
+    "supports_prompt_caching": true,
+    "supports_reasoning": true,
+    "supports_response_schema": true,
+    "supports_system_messages": true,
+    "supports_tool_choice": true,
+    "supports_vision": false
+  },
+  "opencode-go/kimi-k2.5": {
+    "max_input_tokens": 262144,
+    "max_output_tokens": 262144,
+    "max_tokens": 262144,
+    "mode": "chat",
+    "supports_function_calling": true,
+    "supports_reasoning": true,
+    "supports_response_schema": true,
+    "supports_tool_choice": true,
+    "supports_video_input": true,
+    "supports_vision": true,
+    "litellm_provider": "opencode-go",
+    "source": "https://opencode.ai",
+    "supported_endpoints": [
+      "/v1/chat/completions"
+    ]
+  },
+  "opencode-go/kimi-k2.6": {
+    "max_input_tokens": 262144,
+    "max_output_tokens": 262144,
+    "max_tokens": 262144,
+    "mode": "chat",
+    "supports_function_calling": true,
+    "supports_reasoning": true,
+    "supports_response_schema": true,
+    "supports_tool_choice": true,
+    "supports_video_input": true,
+    "supports_vision": true,
+    "litellm_provider": "opencode-go",
+    "source": "https://opencode.ai",
+    "supported_endpoints": [
+      "/v1/chat/completions"
+    ]
+  },
+  "opencode-go/kimi-k2.7-code": {
+    "max_input_tokens": 262144,
+    "max_output_tokens": 262144,
+    "max_tokens": 262144,
+    "mode": "chat",
+    "supports_function_calling": true,
+    "supports_reasoning": true,
+    "litellm_provider": "opencode-go",
+    "source": "https://opencode.ai",
+    "supported_endpoints": [
+      "/v1/chat/completions"
+    ]
+  },
+  "opencode-go/kimi-k3": {
+    "max_input_tokens": 262144,
+    "max_output_tokens": 262144,
+    "max_tokens": 262144,
+    "mode": "chat",
+    "supports_function_calling": true,
+    "supports_reasoning": true,
+    "supports_response_schema": true,
+    "supports_tool_choice": true,
+    "supports_video_input": true,
+    "supports_vision": true,
+    "litellm_provider": "opencode-go",
+    "source": "https://opencode.ai",
+    "supported_endpoints": [
+      "/v1/chat/completions"
+    ]
+  },
+  "opencode-go/mimo-v2-omni": {
+    "max_input_tokens": 1048576,
+    "max_output_tokens": 131072,
+    "max_tokens": 131072,
+    "mode": "chat",
+    "supports_function_calling": true,
+    "supports_tool_choice": true,
+    "supports_reasoning": true,
+    "supports_vision": true,
+    "supports_audio_input": true,
+    "supports_video_input": true,
+    "supports_response_schema": true,
+    "supports_prompt_caching": true,
+    "litellm_provider": "opencode-go",
+    "source": "https://opencode.ai",
+    "supported_endpoints": [
+      "/v1/chat/completions"
+    ]
+  },
+  "opencode-go/mimo-v2-pro": {
+    "max_input_tokens": 1048576,
+    "max_output_tokens": 16384,
+    "max_tokens": 16384,
+    "mode": "chat",
+    "supports_function_calling": true,
+    "supports_tool_choice": true,
+    "supports_reasoning": true,
+    "supports_vision": false,
+    "supports_response_schema": true,
+    "supports_prompt_caching": true,
+    "litellm_provider": "opencode-go",
+    "source": "https://opencode.ai",
+    "supported_endpoints": [
+      "/v1/chat/completions"
+    ]
+  },
+  "opencode-go/mimo-v2.5": {
+    "max_input_tokens": 1048576,
+    "max_output_tokens": 131072,
+    "max_tokens": 131072,
+    "mode": "chat",
+    "supports_function_calling": true,
+    "supports_tool_choice": true,
+    "supports_reasoning": true,
+    "supports_vision": true,
+    "supports_audio_input": true,
+    "supports_video_input": true,
+    "supports_response_schema": true,
+    "supports_prompt_caching": true,
+    "litellm_provider": "opencode-go",
+    "source": "https://opencode.ai",
+    "supported_endpoints": [
+      "/v1/chat/completions"
+    ]
+  },
+  "opencode-go/mimo-v2.5-pro": {
+    "max_input_tokens": 1048576,
+    "max_output_tokens": 16384,
+    "max_tokens": 16384,
+    "mode": "chat",
+    "supports_function_calling": true,
+    "supports_tool_choice": true,
+    "supports_reasoning": true,
+    "supports_vision": false,
+    "supports_response_schema": true,
+    "supports_prompt_caching": true,
+    "litellm_provider": "opencode-go",
+    "source": "https://opencode.ai",
+    "supported_endpoints": [
+      "/v1/chat/completions"
+    ]
+  },
+  "opencode-go/minimax-m2.5": {
+    "max_input_tokens": 196608,
+    "max_output_tokens": 65536,
+    "max_tokens": 65536,
+    "mode": "chat",
+    "supports_function_calling": true,
+    "supports_tool_choice": true,
+    "supports_reasoning": true,
+    "supports_vision": false,
+    "supports_prompt_caching": true,
+    "supports_computer_use": false,
+    "litellm_provider": "opencode-go",
+    "source": "https://opencode.ai",
+    "supported_endpoints": [
+      "/v1/chat/completions"
+    ]
+  },
+  "opencode-go/minimax-m2.7": {
+    "max_tokens": 1000192,
+    "max_input_tokens": 1000192,
+    "max_output_tokens": 1000192,
+    "mode": "chat",
+    "supports_function_calling": true,
+    "supports_assistant_prefill": true,
+    "supports_reasoning": false,
+    "litellm_provider": "opencode-go",
+    "source": "https://opencode.ai",
+    "supported_endpoints": [
+      "/v1/chat/completions"
+    ]
+  },
+  "opencode-go/minimax-m3": {
+    "max_input_tokens": 512000,
+    "max_output_tokens": 512000,
+    "max_tokens": 512000,
+    "mode": "chat",
+    "supports_function_calling": true,
+    "supports_reasoning": true,
+    "supports_response_schema": true,
+    "supports_tool_choice": true,
+    "supports_vision": true,
+    "litellm_provider": "opencode-go",
+    "source": "https://opencode.ai",
+    "supported_endpoints": [
+      "/v1/chat/completions"
+    ]
+  },
+  "opencode-go/qwen3.5-plus": {
+    "max_input_tokens": 991808,
+    "max_output_tokens": 65536,
+    "max_tokens": 65536,
+    "mode": "chat",
+    "supports_function_calling": true,
+    "supports_reasoning": true,
+    "supports_tool_choice": true,
+    "supports_vision": true,
+    "litellm_provider": "opencode-go",
+    "source": "https://opencode.ai",
+    "supported_endpoints": [
+      "/v1/chat/completions"
+    ]
+  },
+  "opencode-go/qwen3.6-plus": {
+    "max_input_tokens": 1000000,
+    "max_output_tokens": 65536,
+    "max_tokens": 65536,
+    "mode": "chat",
+    "supports_function_calling": true,
+    "supports_reasoning": true,
+    "supports_tool_choice": true,
+    "supports_vision": true,
+    "litellm_provider": "opencode-go",
+    "source": "https://opencode.ai",
+    "supported_endpoints": [
+      "/v1/chat/completions"
+    ]
+  },
+  "opencode-go/qwen3.7-max": {
+    "max_input_tokens": 991808,
+    "max_output_tokens": 65536,
+    "max_tokens": 65536,
+    "mode": "chat",
+    "supports_function_calling": true,
+    "supports_prompt_caching": true,
+    "supports_reasoning": true,
+    "supports_response_schema": true,
+    "supports_tool_choice": true,
+    "litellm_provider": "opencode-go",
+    "source": "https://opencode.ai",
+    "supported_endpoints": [
+      "/v1/chat/completions"
+    ]
+  },
+  "opencode-go/qwen3.7-plus": {
+    "max_input_tokens": 991808,
+    "max_output_tokens": 65536,
+    "max_tokens": 65536,
+    "mode": "chat",
+    "supports_function_calling": true,
+    "supports_prompt_caching": true,
+    "supports_reasoning": true,
+    "supports_response_schema": true,
+    "supports_tool_choice": true,
+    "supports_vision": true,
+    "litellm_provider": "opencode-go",
+    "source": "https://opencode.ai",
+    "supported_endpoints": [
+      "/v1/chat/completions"
+    ]
+  },
+  "opencode-go/qwen3.8-max": {
+    "max_input_tokens": 991808,
+    "max_output_tokens": 65536,
+    "max_tokens": 65536,
+    "mode": "chat",
+    "supports_function_calling": true,
+    "supports_prompt_caching": true,
+    "supports_reasoning": true,
+    "supports_response_schema": true,
+    "supports_tool_choice": true,
+    "litellm_provider": "opencode-go",
+    "source": "https://opencode.ai",
+    "supported_endpoints": [
+      "/v1/chat/completions"
+    ]
+  },
   "openrouter/anthropic/claude-3-haiku": {
     "input_cost_per_image": 0.0004,
     "input_cost_per_token": 2.5e-7,

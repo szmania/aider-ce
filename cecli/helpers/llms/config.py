@@ -28,6 +28,14 @@ PROVIDER_DEFAULTS: Dict[str, Dict[str, Any]] = {
     "github_copilot": {"api_base": "https://api.githubcopilot.com", "api_key_env": None},
     "meta": {"api_base": "https://api.meta.ai/v1", "api_key_env": "META_API_KEY"},
     "chutes": {"api_base": "https://llm.chutes.ai/v1/", "api_key_env": "CHUTES_API_KEY"},
+    "opencode-go": {
+        "api_base": "https://opencode.ai/zen/go/v1",
+        "api_key_env": "OPENCODE_GO_API_KEY",
+    },
+    "opencode-zen": {
+        "api_base": "https://opencode.ai/zen/zen/v1",
+        "api_key_env": "OPENCODE_ZEN_API_KEY",
+    },
 }
 
 
