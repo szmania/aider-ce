@@ -46,6 +46,8 @@ def resolve_model_config(model: str) -> Dict[str, Any]:
     route = model.split("/", 1)[1] if "/" in model else model
     is_claude = "claude" in route.lower()
 
+    mpm = ModelProviderManager()
+
     # Providers with dedicated routing semantics (authenticated session, AWS
     # SigV4 signing, dedicated endpoint templates) win over the metadata
     # record's ``litellm_provider`` for every model under their prefix, so a
@@ -63,7 +65,14 @@ def resolve_model_config(model: str) -> Dict[str, Any]:
     elif prefix and prefix != "anthropic" and is_claude:
         provider = prefix
 
-    mpm = ModelProviderManager()
+    # A configured provider (built-in providers.json entry or a user-defined
+    # ``model-providers`` entry such as ``bifrost``) wins over the metadata
+    # record's ``litellm_provider`` for every model under its prefix, so
+    # ``bifrost/gemini/gemini-2.5-pro`` routes through bifrost (its api_base)
+    # rather than falling back to the bare ``gemini/gemini-2.5-pro`` record.
+    elif prefix and provider != prefix and mpm.supports_provider(prefix):
+        provider = prefix
+
     pcfg = mpm.get_provider_config(provider) or {}
 
     env_base = os.environ.get(f"{provider.upper()}_API_BASE") if provider else None

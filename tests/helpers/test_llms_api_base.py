@@ -49,6 +49,47 @@ def test_env_api_base_trailing_slash_stripped(monkeypatch):
     assert resolved["api_base"] == "https://env.example.com/v1"
 
 
+def test_configured_provider_prefix_wins_over_metadata_record():
+    """A user-configured provider (model-providers) overrides a metadata record.
+
+    ``bifrost/gemini/gemini-2.5-pro`` collides with the bundled
+    ``gemini/gemini-2.5-pro`` record (``litellm_provider: gemini``); because
+    ``bifrost`` is a configured provider, it must route through bifrost's
+    api_base on the chat wire instead of the native gemini family.
+    """
+    from cecli.helpers.model_providers import PROVIDER_CONFIGS, ModelProviderManager
+
+    # Without the provider configured, the colliding route stays native gemini.
+    baseline = resolve_model_config("bifrost/gemini/gemini-2.5-pro")
+
+    assert baseline["provider"] == "gemini"
+    assert baseline["family"] == "gemini"
+
+    original = dict(PROVIDER_CONFIGS)
+
+    try:
+        ModelProviderManager().merge_provider_configs(
+            {
+                "bifrost": {
+                    "api_base": "http://localhost:8090/v1",
+                    "requires_api_key": False,
+                    "display_name": "bifrost",
+                    "models_url": "http://localhost:8090/v1/models",
+                }
+            }
+        )
+
+        resolved = resolve_model_config("bifrost/gemini/gemini-2.5-pro")
+
+        assert resolved["provider"] == "bifrost"
+        assert resolved["family"] == "chat"
+        assert resolved["api_base"] == "http://localhost:8090/v1"
+        assert resolved["api_key_env"] is None
+    finally:
+        PROVIDER_CONFIGS.clear()
+        PROVIDER_CONFIGS.update(original)
+
+
 # ---------------------------------------------------------------------------
 # Per-request override via the pipeline
 # ---------------------------------------------------------------------------
