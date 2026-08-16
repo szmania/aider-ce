@@ -1802,8 +1802,10 @@ class InputOutput:
 
                 # Determine if this is a terminal bell command that should not be suppressed
                 is_bell_cmd = (
-                    "\\a" in self.notifications_command or "\a" in self.notifications_command
-                ) and re.search(r"(?:echo|print)", self.notifications_command, re.IGNORECASE)
+                    "\\a" in self.notifications_command
+                    or "\a" in self.notifications_command
+                    or "bel" in self.notifications_command
+                ) and re.search(r"(?:echo|print|tput)", self.notifications_command, re.IGNORECASE)
 
                 kwargs = {
                     "shell": True,
