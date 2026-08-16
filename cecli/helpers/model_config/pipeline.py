@@ -29,7 +29,10 @@ RESOURCE_FILE = "model-metadata.json"
 
 #: Suffix segments dropped when looking for a nearby model family.
 #: ``gpt-5.6-luna`` -> ``gpt-5.6`` -> ``gpt-5`` -> ``gpt``
-_TRAILING_SEGMENT_RE = re.compile(r"[-.][^.]+$")
+#: ``claude-sonnet-4-5`` -> ``claude-sonnet-4`` -> ``claude-sonnet`` -> ``claude``
+#: ``[^.-]`` (no dots, no hyphens) ensures exactly one trailing ``-X`` / ``.X``
+#: segment is dropped per pass instead of collapsing the whole remainder.
+_TRAILING_SEGMENT_RE = re.compile(r"[-.][^.-]+$")
 
 #: Lazily loaded raw text of the bundled metadata file (never json.loads-ed).
 _BUNDLED_RAW_CACHE: Optional[str] = None

@@ -4310,13 +4310,9 @@ class Coder(metaclass=UsageMeta):
             cache_write_tokens = getattr(completion.usage, "cache_creation_input_tokens", 0) or 0
             self.message_cached_tokens += cache_hit_tokens
 
-            if hasattr(completion.usage, "cache_read_input_tokens") or hasattr(
-                completion.usage, "cache_creation_input_tokens"
-            ):
-                self.message_tokens_sent += prompt_tokens
-                self.message_tokens_sent += cache_write_tokens
-            else:
-                self.message_tokens_sent += prompt_tokens
+            # ``prompt_tokens`` is normalized to the full input (including any
+            # cache read/write) for anthropic usage, so no separate add here.
+            self.message_tokens_sent += prompt_tokens
 
         else:
             prompt_tokens = self.get_active_model().token_count(messages)

@@ -33,6 +33,9 @@ from ..utils import split_data_url, sse_json_lines, system_prompt
 
 DEFAULT_TIMEOUT = 120.0
 
+#: Anthropic allows at most 4 ``cache_control`` breakpoints per request.
+MAX_CACHE_BREAKPOINTS = 4
+
 
 def anthropic_payload(
     resolved: Dict[str, Any],
@@ -58,6 +61,7 @@ def anthropic_payload(
         payload["tools"] = [anthropic_tool(t) for t in tools]
 
     api_block = resolved.get("api_block") or {}
+    agent_block = resolved.get("agent_block") or {}
 
     # Caller/system overrides ride in ``kwargs["extra_body"]`` (models.py's
     # ``set_reasoning_effort`` / ``set_thinking_tokens``). Merge them into the
@@ -90,6 +94,16 @@ def anthropic_payload(
     extra_body.pop("reasoning_effort", None)
     extra_body.pop("thinking", None)
     payload.update(extra_body)
+
+    # Anthropic prompt caching is a byte-exact prefix match: it only happens
+    # when the request carries explicit ``cache_control`` breakpoints. The
+    # model config flags messages-API models ``cache_control`` True and
+    # ``caches_by_default`` False (see config.resolve_model_config), so the
+    # messages domain owns the marking here rather than the conversation
+    # manager.
+    if agent_block.get("cache_control") and not agent_block.get("caches_by_default"):
+        _apply_anthropic_cache_control(payload)
+
     return payload
 
 
@@ -465,11 +479,20 @@ def _finish_reason(stop_reason: Optional[str]) -> Optional[str]:
 
 
 def _anthropic_usage(usage_raw: Dict[str, Any]) -> Usage:
-    """Build a normalized Usage from an Anthropic usage block."""
+    """Build a normalized Usage from an Anthropic usage block.
+
+    Anthropic's ``input_tokens`` excludes cached input, so ``prompt_tokens``
+    is normalized to the full input (``input_tokens + cache_read +
+    cache_creation``) to match the OpenAI-style semantics
+    ``base_coder.calculate_and_show_tokens_and_cost`` expects: its hit-rate
+    and cost math rely on ``prompt_tokens`` being the total input
+    (``cache_creation + cache_read + input == total``).
+    """
     input_tokens = usage_raw.get("input_tokens") or 0
     output_tokens = usage_raw.get("output_tokens") or 0
     cache_read = usage_raw.get("cache_read_input_tokens") or 0
     cache_creation = usage_raw.get("cache_creation_input_tokens") or 0
+    prompt_tokens = input_tokens + cache_read + cache_creation
 
     details: Dict[str, Any] = {}
     output_details = usage_raw.get("output_tokens_details") or {}
@@ -484,9 +507,9 @@ def _anthropic_usage(usage_raw: Dict[str, Any]) -> Usage:
         details["service_tier"] = service_tier
 
     return Usage(
-        prompt_tokens=input_tokens or None,
+        prompt_tokens=prompt_tokens or None,
         completion_tokens=output_tokens or None,
-        total_tokens=(input_tokens + cache_read + cache_creation) or None,
+        total_tokens=prompt_tokens or None,
         cache_read_input_tokens=usage_raw.get("cache_read_input_tokens"),
         cache_creation_input_tokens=usage_raw.get("cache_creation_input_tokens"),
         completion_tokens_details=details or None,
@@ -584,6 +607,140 @@ def _anthropic_user_blocks(content: List[Dict[str, Any]]) -> List[Dict[str, Any]
         blocks.append({"type": "text", "text": json.dumps(part)})
 
     return blocks
+
+
+def _apply_anthropic_cache_control(payload: Dict[str, Any]) -> None:
+    """Attach ephemeral ``cache_control`` breakpoints to a copy of the stream.
+
+    Anthropic prompt caching is a byte-exact prefix match: a breakpoint on the
+    last content block of a message caches every token up to and including it.
+    Following the conversation manager's placement (``manager.py
+    _add_cache_control``), we mark the three stable boundaries of a multi-turn
+    exchange:
+
+    - the last system block at the start of the stream (which also covers the
+      tool definitions rendered before it), and
+    - the last content block of the two most recent non-tool user/assistant
+      turns.
+
+    The message stream is copied and only the key messages are replaced, so
+    caller-owned lists are never mutated. Anthropic allows at most
+    ``MAX_CACHE_BREAKPOINTS`` breakpoints per request, so the marking stops
+    early once that budget (including any caller-supplied markers) is
+    exhausted.
+    """
+    import copy
+
+    budget = MAX_CACHE_BREAKPOINTS - _count_cache_breakpoints(payload)
+
+    if budget <= 0:
+        return
+
+    system = payload.get("system")
+
+    if isinstance(system, str):
+        payload["system"] = [
+            {"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}
+        ]
+        budget -= 1
+
+    elif isinstance(system, list) and system:
+        system = list(system)
+        last = system[-1]
+
+        if isinstance(last, dict):
+            last = copy.deepcopy(last)
+            system[-1] = last
+
+        if _mark_cache_breakpoint(last):
+            budget -= 1
+
+        payload["system"] = system
+
+    messages = payload.get("messages") or []
+    result = list(messages)
+    marked = 0
+
+    for i in range(len(result) - 1, -1, -1):
+        if marked >= 2 or budget <= 0:
+            break
+
+        msg = result[i]
+
+        if _is_tool_turn(msg):
+            continue
+
+        content = msg.get("content")
+
+        if isinstance(content, str):
+            msg = copy.deepcopy(msg)
+            msg["content"] = [
+                {"type": "text", "text": content, "cache_control": {"type": "ephemeral"}}
+            ]
+            result[i] = msg
+            marked += 1
+            budget -= 1
+
+        elif isinstance(content, list) and content:
+            msg = copy.deepcopy(msg)
+            blocks = list(msg["content"])
+
+            if _mark_cache_breakpoint(blocks[-1]):
+                marked += 1
+                budget -= 1
+
+            msg["content"] = blocks
+            result[i] = msg
+
+    payload["messages"] = result
+
+
+def _count_cache_breakpoints(payload: Dict[str, Any]) -> int:
+    """Count existing ``cache_control`` markers in a payload (system + messages)."""
+    count = 0
+    system = payload.get("system")
+
+    if isinstance(system, list):
+        count += sum(isinstance(block, dict) and "cache_control" in block for block in system)
+
+    for tool in payload.get("tools") or []:
+        if isinstance(tool, dict) and "cache_control" in tool:
+            count += 1
+
+    for msg in payload.get("messages") or []:
+        content = msg.get("content")
+
+        if isinstance(content, list):
+            count += sum(isinstance(block, dict) and "cache_control" in block for block in content)
+
+    return count
+
+
+def _mark_cache_breakpoint(block: Any) -> bool:
+    """Add an ephemeral breakpoint to ``block`` unless it already has one."""
+    if not isinstance(block, dict) or "cache_control" in block:
+        return False
+
+    block["cache_control"] = {"type": "ephemeral"}
+
+    return True
+
+
+def _is_tool_turn(msg: Dict[str, Any]) -> bool:
+    """True when a wire message is a tool turn (transient content).
+
+    Matches the conversation manager's placement, which skips tool messages
+    and assistant tool-call turns when choosing cache breakpoints.
+    """
+    content = msg.get("content")
+
+    if not isinstance(content, list) or not content:
+        return False
+
+    return any(
+        isinstance(block, dict) and block.get("type") in ("tool_result", "tool_use")
+        for block in content
+    )
 
 
 __all__ = [

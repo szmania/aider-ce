@@ -105,6 +105,7 @@ def test_no_match_returns_defaults():
         "cache_control": False,
         "caches_by_default": True,
         "use_temperature": False,
+        "uses_messages_api": False,
     }
     # Unknown models get a noop reasoning formatter (the default behavior in
     # set_reasoning_effort is used unchanged).
