@@ -8,6 +8,7 @@ base. No network: the family adapter / package dispatch are monkeypatched.
 """
 
 import asyncio
+import json
 
 import cecli.helpers.llms as llms_pkg
 import cecli.helpers.llms.pipeline as pipeline
@@ -115,3 +116,153 @@ def test_shim_forwards_api_base_to_dispatch(monkeypatch):
     )
 
     assert captured.get("api_base") == "https://my-proxy.example.com/v1"
+
+
+# ---------------------------------------------------------------------------
+# Request-time OPENAI_API_BASE / OPENAI_API_KEY override
+# (docs/llms/openai-compat.md)
+# ---------------------------------------------------------------------------
+
+
+class _FakeResponse:
+    def raise_for_status(self):
+        return None
+
+    def json(self):
+        return {
+            "id": "x",
+            "model": "m",
+            "choices": [{"index": 0, "message": {"role": "assistant", "content": "hi"}}],
+            "usage": {},
+        }
+
+
+class _FakeClient:
+    def __init__(self):
+        self.calls = []
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *args):
+        return None
+
+    async def post(self, url, **kwargs):
+        self.calls.append({"url": url, **kwargs})
+        return _FakeResponse()
+
+    def stream(self, method, url, **kwargs):
+        self.calls.append({"url": url, **kwargs})
+        return self
+
+    def raise_for_status(self):
+        return None
+
+    async def aiter_lines(self):
+        yield "data: " + json.dumps(
+            {
+                "id": "x",
+                "choices": [{"index": 0, "delta": {"content": "hi"}, "finish_reason": "stop"}],
+            }
+        )
+        yield "data: [DONE]"
+
+
+def test_chat_domain_openai_api_base_overrides_request_url(monkeypatch):
+    import cecli.helpers.llms.domains.chat as chat_domain
+
+    client = _FakeClient()
+    monkeypatch.setattr(chat_domain, "make_client", lambda *a, **k: client)
+    monkeypatch.setenv("OPENAI_API_BASE", "https://my-proxy.example.com/v1")
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-env-key")
+
+    resolved = resolve_model_config("deepseek/deepseek-v4-flash")
+
+    asyncio.run(
+        chat_domain.chat_complete(
+            resolved,
+            MSGS,
+            None,
+            "sk-deepseek",
+            {"Authorization": "Bearer sk-deepseek"},
+            {},
+        )
+    )
+
+    call = client.calls[0]
+    assert call["url"] == "https://my-proxy.example.com/v1/chat/completions"
+    assert call["headers"]["Authorization"] == "Bearer sk-env-key"
+
+
+def test_chat_domain_malformed_openai_api_base_ignored(monkeypatch):
+    import cecli.helpers.llms.domains.chat as chat_domain
+
+    client = _FakeClient()
+    monkeypatch.setattr(chat_domain, "make_client", lambda *a, **k: client)
+    monkeypatch.setenv("OPENAI_API_BASE", "localhost:8000")
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-env-key")
+
+    resolved = resolve_model_config("deepseek/deepseek-v4-flash")
+
+    asyncio.run(
+        chat_domain.chat_complete(
+            resolved,
+            MSGS,
+            None,
+            "sk-deepseek",
+            {"Authorization": "Bearer sk-deepseek"},
+            {},
+        )
+    )
+
+    call = client.calls[0]
+    assert call["url"] == "https://api.deepseek.com/v1/chat/completions"
+    assert call["headers"]["Authorization"] == "Bearer sk-deepseek"
+
+
+def test_chat_domain_stream_uses_openai_api_base(monkeypatch):
+    import cecli.helpers.llms.domains.chat as chat_domain
+
+    client = _FakeClient()
+    monkeypatch.setattr(chat_domain, "make_client", lambda *a, **k: client)
+    monkeypatch.setenv("OPENAI_API_BASE", "https://my-proxy.example.com/v1/")
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-env-key")
+
+    resolved = resolve_model_config("deepseek/deepseek-v4-flash")
+
+    async def collect():
+        out = []
+
+        async for chunk in chat_domain.chat_stream(
+            resolved,
+            MSGS,
+            None,
+            "sk-deepseek",
+            {"Authorization": "Bearer sk-deepseek"},
+            {},
+        ):
+            out.append(chunk)
+
+        return out
+
+    asyncio.run(collect())
+
+    call = client.calls[0]
+    assert call["url"] == "https://my-proxy.example.com/v1/chat/completions"
+    assert call["headers"]["Authorization"] == "Bearer sk-env-key"
+
+
+def test_pipeline_openai_env_overrides_chat_request(monkeypatch):
+    import cecli.helpers.llms.domains.chat as chat_domain
+
+    client = _FakeClient()
+    monkeypatch.setattr(chat_domain, "make_client", lambda *a, **k: client)
+    monkeypatch.setenv("OPENAI_API_BASE", "https://my-proxy.example.com/v1")
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-env-key")
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "sk-deepseek")
+
+    asyncio.run(pipeline.acompletion(model="deepseek/deepseek-v4-flash", messages=MSGS))
+
+    call = client.calls[0]
+    assert call["url"] == "https://my-proxy.example.com/v1/chat/completions"
+    assert call["headers"]["Authorization"] == "Bearer sk-env-key"

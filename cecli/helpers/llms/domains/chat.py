@@ -5,12 +5,20 @@ is extracted via :func:`cecli.helpers.llms.utils.extract_reasoning` which
 handles the three wild shapes (reasoning_content / reasoning /
 reasoning_details). Reasoning tokens reported without streamed text are marked
 redacted (``Message.reasoning_redacted``).
+
+At request time the ``OPENAI_API_BASE`` / ``OPENAI_API_KEY`` env vars
+(docs/llms/openai-compat.md) can redirect the wire to any OpenAI-compatible
+endpoint: ``OPENAI_API_BASE`` wins over the resolved base and
+``OPENAI_API_KEY`` replaces the provider key when the base is a well-formed
+http(s) URL.
 """
 
 from __future__ import annotations
 
 import json
-from typing import Any, AsyncIterator, Dict, List, Optional
+import os
+from typing import Any, AsyncIterator, Dict, List, Optional, Tuple
+from urllib.parse import urlparse
 
 from ..runtime import VERIFY_SSL, make_client
 from ..types import (
@@ -94,11 +102,17 @@ async def chat_complete(
     headers: Dict[str, str],
     kwargs: Dict[str, Any],
 ) -> CompletionResponse:
-    url = f"{resolved['api_base']}/chat/completions"
+    env = _openai_env_override()
+    base = env[0] if env else resolved["api_base"]
+    url = f"{base}/chat/completions"
     payload = chat_payload(resolved, messages, tools, False, kwargs)
     hdrs = {"Content-Type": "application/json", **headers}
     body: Optional[bytes] = None
     signer = resolved.get("_signer")
+
+    if env and env[1]:
+        key = env[1]
+        hdrs["Authorization"] = f"Bearer {key}"
 
     if signer:
         url, hdrs, body = signer(url, payload, hdrs, key)
@@ -127,11 +141,17 @@ async def chat_stream(
     headers: Dict[str, str],
     kwargs: Dict[str, Any],
 ) -> AsyncIterator[CompletionChunk]:
-    url = f"{resolved['api_base']}/chat/completions"
+    env = _openai_env_override()
+    base = env[0] if env else resolved["api_base"]
+    url = f"{base}/chat/completions"
     payload = chat_payload(resolved, messages, tools, True, kwargs)
     hdrs = {"Content-Type": "application/json", **headers}
     body: Optional[bytes] = None
     signer = resolved.get("_signer")
+
+    if env and env[1]:
+        key = env[1]
+        hdrs["Authorization"] = f"Bearer {key}"
 
     if signer:
         url, hdrs, body = signer(url, payload, hdrs, key)
@@ -362,6 +382,30 @@ def _map_reasoning_content(msg: Dict[str, Any]) -> str:
             texts.append(value)
 
     return "\n".join(texts)
+
+
+def _openai_env_override() -> Optional[Tuple[str, Optional[str]]]:
+    """Return (api_base, api_key) from the OPENAI_API_* env vars when the base
+    is a well-formed http(s) URL (docs/llms/openai-compat.md).
+
+    Lets a custom OpenAI-compatible endpoint take over the chat completions
+    wire at request time: the env base wins over the resolved provider base and
+    OPENAI_API_KEY replaces the provider's own key for that request. A base
+    that is not a well-formed URL (no http(s) scheme / host, e.g.
+    ``localhost:8000``) is ignored so unrelated OPENAI_API_* leftovers cannot
+    hijack requests.
+    """
+    raw = os.environ.get("OPENAI_API_BASE")
+
+    if not raw:
+        return None
+
+    parsed = urlparse(raw.strip())
+
+    if parsed.scheme not in ("http", "https") or not parsed.netloc:
+        return None
+
+    return (raw.strip().rstrip("/"), os.environ.get("OPENAI_API_KEY") or None)
 
 
 __all__ = [
