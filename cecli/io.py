@@ -1741,39 +1741,42 @@ class InputOutput:
 
         # 2. Define the Notification component
         notif_cmd = None
-        if system == "Darwin":
-            if shutil.which("terminal-notifier"):
-                notif_cmd = f"terminal-notifier -title 'cecli' -message '{NOTIFICATION_MESSAGE}'"
-            else:
-                notif_cmd = f'osascript -e \'display notification "{NOTIFICATION_MESSAGE}" with title "cecli"\''
+        if self.notifications:
+            if system == "Darwin":
+                if shutil.which("terminal-notifier"):
+                    notif_cmd = (
+                        f"terminal-notifier -title 'cecli' -message '{NOTIFICATION_MESSAGE}'"
+                    )
+                else:
+                    notif_cmd = f'osascript -e \'display notification "{NOTIFICATION_MESSAGE}" with title "cecli"\''
 
-        elif system == "Linux":
-            for cmd in ["notify-send", "zenity"]:
-                if shutil.which(cmd):
-                    if cmd == "notify-send":
-                        notif_cmd = f"notify-send 'cecli' '{NOTIFICATION_MESSAGE}'"
-                    elif cmd == "zenity":
-                        notif_cmd = f"zenity --notification --text='{NOTIFICATION_MESSAGE}'"
-                    break
+            elif system == "Linux":
+                for cmd in ["notify-send", "zenity"]:
+                    if shutil.which(cmd):
+                        if cmd == "notify-send":
+                            notif_cmd = f"notify-send 'cecli' '{NOTIFICATION_MESSAGE}'"
+                        elif cmd == "zenity":
+                            notif_cmd = f"zenity --notification --text='{NOTIFICATION_MESSAGE}'"
+                        break
 
-        elif system == "Windows":
-            ps_body = (
-                ' "try {{ Add-Type -AssemblyName System.Runtime.WindowsRuntime; $null ='
-                " [Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications,"
-                " ContentType = WindowsRuntime] }} catch {{}}; "
-                "$template ="
-                " [Windows.UI.Notifications.ToastNotificationManager]::GetTemplateContent"
-                "([Windows.UI.Notifications.ToastTemplateType]::ToastText02); "
-                "$toastXml = $template.GetXml(); "
-                "$toastXml.GetElementsByTagName('text')[0].AppendChild"
-                "($template.CreateTextNode('cecli')) > $null; "
-                "$toastXml.GetElementsByTagName('text')[1].AppendChild"
-                f"($template.CreateTextNode('{NOTIFICATION_MESSAGE}')) > $null; "
-                "$toast = [Windows.UI.Notifications.ToastNotification]::new($toastXml); "
-                "[Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('cecli')"
-                '.Show($toast)"'
-            )
-            notif_cmd = f"powershell -WindowStyle Hidden -Command {ps_body}"
+            elif system == "Windows":
+                ps_body = (
+                    ' "try {{ Add-Type -AssemblyName System.Runtime.WindowsRuntime; $null ='
+                    " [Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications,"
+                    " ContentType = WindowsRuntime] }} catch {{}}; "
+                    "$template ="
+                    " [Windows.UI.Notifications.ToastNotificationManager]::GetTemplateContent"
+                    "([Windows.UI.Notifications.ToastTemplateType]::ToastText02); "
+                    "$toastXml = $template.GetXml(); "
+                    "$toastXml.GetElementsByTagName('text')[0].AppendChild"
+                    "($template.CreateTextNode('cecli')) > $null; "
+                    "$toastXml.GetElementsByTagName('text')[1].AppendChild"
+                    f"($template.CreateTextNode('{NOTIFICATION_MESSAGE}')) > $null; "
+                    "$toast = [Windows.UI.Notifications.ToastNotification]::new($toastXml); "
+                    "[Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('cecli')"
+                    '.Show($toast)"'
+                )
+                notif_cmd = f"powershell -WindowStyle Hidden -Command {ps_body}"
 
         # 3. Concatenate them based on bell preference
         if notif_cmd:
@@ -1802,8 +1805,10 @@ class InputOutput:
 
                 # Determine if this is a terminal bell command that should not be suppressed
                 is_bell_cmd = (
-                    "\\a" in self.notifications_command or "\a" in self.notifications_command
-                ) and re.search(r"(?:echo|print)", self.notifications_command, re.IGNORECASE)
+                    "\\a" in self.notifications_command
+                    or "\a" in self.notifications_command
+                    or "bel" in self.notifications_command
+                ) and re.search(r"(?:echo|print|tput)", self.notifications_command, re.IGNORECASE)
 
                 kwargs = {
                     "shell": True,

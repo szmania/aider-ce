@@ -116,6 +116,7 @@ class ModelSettings:
     extra_params: Optional[dict] = None
     cache_control: bool = False
     caches_by_default: bool = False
+    uses_messages_api: bool = False
     use_system_prompt: bool = True
     use_temperature: Union[bool, float] = True
     streaming: bool = True

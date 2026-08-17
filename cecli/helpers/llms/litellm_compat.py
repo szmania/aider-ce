@@ -936,7 +936,12 @@ class _LiteLLMFacade:
         )
 
     def completion_cost(self, completion_response: Optional[Any] = None, **kwargs: Any) -> float:
-        """Estimate cost from usage tokens and cecli's own model metadata."""
+        """Estimate cost from usage tokens and cecli's own model metadata.
+
+        Mirrors ``base_coder.compute_costs_from_tokens`` so normalized usage
+        (``prompt_tokens`` = full input including cache read/write) is billed
+        with the cache discounts instead of the plain input price.
+        """
         usage = getattr(completion_response, "usage", None)
         if not usage:
             return 0.0
@@ -945,9 +950,38 @@ class _LiteLLMFacade:
         info = self.get_model_info(model) if model else {}
         input_cost = info.get("input_cost_per_token") or 0.0
         output_cost = info.get("output_cost_per_token") or 0.0
-        return (usage.prompt_tokens or 0) * input_cost + (
-            usage.completion_tokens or 0
-        ) * output_cost
+        cache_hit_cost = (
+            info.get("input_cost_per_token_cache_hit")
+            or info.get("cache_read_input_token_cost")
+            or 0.0
+        )
+        prompt = usage.prompt_tokens or 0
+        completion = usage.completion_tokens or 0
+        cache_hit = (
+            getattr(usage, "cache_read_input_tokens", None)
+            or getattr(usage, "prompt_cache_hit_tokens", None)
+            or 0
+        )
+        cache_write = getattr(usage, "cache_creation_input_tokens", None) or 0
+
+        if cache_hit_cost:
+            return (
+                cache_hit * cache_hit_cost
+                + (prompt - cache_hit) * input_cost
+                + completion * output_cost
+            )
+
+        if cache_hit or cache_write:
+            # Hard-coded Anthropic adjustments, no-ops for other providers
+            # since their cache fields are zero.
+            return (
+                cache_write * input_cost * 1.25
+                + cache_hit * input_cost * 0.10
+                + (prompt - cache_hit) * input_cost
+                + completion * output_cost
+            )
+
+        return prompt * input_cost + completion * output_cost
 
     # -- model metadata ---------------------------------------------------
 

@@ -28,6 +28,14 @@ PROVIDER_DEFAULTS: Dict[str, Dict[str, Any]] = {
     "github_copilot": {"api_base": "https://api.githubcopilot.com", "api_key_env": None},
     "meta": {"api_base": "https://api.meta.ai/v1", "api_key_env": "META_API_KEY"},
     "chutes": {"api_base": "https://llm.chutes.ai/v1/", "api_key_env": "CHUTES_API_KEY"},
+    "opencode-go": {
+        "api_base": "https://opencode.ai/zen/go/v1",
+        "api_key_env": "OPENCODE_GO_API_KEY",
+    },
+    "opencode-zen": {
+        "api_base": "https://opencode.ai/zen/zen/v1",
+        "api_key_env": "OPENCODE_ZEN_API_KEY",
+    },
 }
 
 
@@ -40,12 +48,39 @@ def resolve_model_config(model: str) -> Dict[str, Any]:
     cfg = get_default_config(model)
     llm_block = cfg.get("llm") or {}
     api_block = cfg.get("api") or {}
-    provider = llm_block.get("litellm_provider") or (
-        model.split("/", 1)[0] if "/" in model else None
-    )
+    agent_block = dict(cfg.get("agent") or {})
+    prefix = model.split("/", 1)[0] if "/" in model else None
+    provider = llm_block.get("litellm_provider") or prefix
     route = model.split("/", 1)[1] if "/" in model else model
+    is_claude = "claude" in route.lower()
 
     mpm = ModelProviderManager()
+
+    # Providers with dedicated routing semantics (authenticated session, AWS
+    # SigV4 signing, dedicated endpoint templates) win over the metadata
+    # record's ``litellm_provider`` for every model under their prefix, so a
+    # ``github_copilot/`` / ``bedrock/`` / ``bedrock_mantle/`` model never
+    # falls back to a bare (anthropic/openai) record (e.g.
+    # ``github_copilot/claude-sonnet-4-5`` resolving to the bare
+    # ``claude-sonnet-4-5`` anthropic entry).
+    if prefix in ("github_copilot", "bedrock", "bedrock_mantle"):
+        provider = prefix
+
+    # Anthropic models hosted by a third-party provider (openrouter, deepseek,
+    # ...) authenticate against THAT provider, not anthropic: ``{provider}/claude-*``
+    # must route through the provider prefix even when the record lookup lands
+    # on the bare anthropic entry (e.g. ``openrouter/claude-sonnet-5``).
+    elif prefix and prefix != "anthropic" and is_claude:
+        provider = prefix
+
+    # A configured provider (built-in providers.json entry or a user-defined
+    # ``model-providers`` entry such as ``bifrost``) wins over the metadata
+    # record's ``litellm_provider`` for every model under its prefix, so
+    # ``bifrost/gemini/gemini-2.5-pro`` routes through bifrost (its api_base)
+    # rather than falling back to the bare ``gemini/gemini-2.5-pro`` record.
+    elif prefix and provider != prefix and mpm.supports_provider(prefix):
+        provider = prefix
+
     pcfg = mpm.get_provider_config(provider) or {}
 
     env_base = os.environ.get(f"{provider.upper()}_API_BASE") if provider else None
@@ -88,6 +123,12 @@ def resolve_model_config(model: str) -> Dict[str, Any]:
         # Mantle is an OpenAI-compatible chat wire (SigV4-signed via the chat
         # family's signer hook); see providers/bedrock_mantle.py.
         family = "chat"
+    elif is_claude and provider != "anthropic":
+        # A claude model on a non-anthropic provider uses that provider's
+        # OpenAI-compatible chat completions wire (openrouter, deepseek,
+        # azure_ai, ...); only native anthropic (or copilot's anthropic-native
+        # /v1/messages proxy, handled above) speaks the messages API.
+        family = "chat"
     elif mode == "responses" or "/v1/responses" in endpoints:
         family = "responses"
     elif provider == "anthropic":
@@ -99,6 +140,14 @@ def resolve_model_config(model: str) -> Dict[str, Any]:
 
     extra_headers = dict(pcfg.get("default_headers") or {})
     extra_body = dict(api_block.get("extra_body") or {})
+
+    # Effective cache flags for the domain adapters. Anthropic messages-API
+    # models never cache "by default": prompt caching only happens when the
+    # request carries explicit ``cache_control`` breakpoints, so the messages
+    # domain injects them (agent.cache_control True + caches_by_default False).
+    if family == "messages":
+        agent_block["cache_control"] = True
+        agent_block["caches_by_default"] = False
 
     return {
         "model": model,
@@ -112,6 +161,7 @@ def resolve_model_config(model: str) -> Dict[str, Any]:
         "extra_query": dict(pcfg.get("extra_query") or {}),
         "api_block": api_block,
         "llm_block": llm_block,
+        "agent_block": agent_block,
     }
 
 

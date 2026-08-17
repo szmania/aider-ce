@@ -874,6 +874,13 @@ class TUI(App):
             self._switch_to_container(target_uuid)
             return
 
+        # Intercept /spawn-agent command to handle immediately without LLM
+        # processing so a new agent can be spawned even while the primary
+        # coder is generating.
+        if stripped == "/spawn-agent" or stripped.startswith("/spawn-agent "):
+            self._handle_spawn_agent_command(user_input, stripped)
+            return
+
         # Intercept queue management commands (/queue, /list-queue, /remove-queue)
         # to dispatch immediately without a full generation cycle - they only
         # modify the active coder's prompt_queue.
@@ -1040,6 +1047,38 @@ class TUI(App):
             self._get_visible_container().add_output(
                 f"Removed queued prompt {index}: {removed['text'][:80]}"
             )
+
+    def _handle_spawn_agent_command(self, user_input: str, stripped: str) -> None:
+        """Dispatch /spawn-agent immediately without a full generation cycle.
+
+        The spawn is scheduled on the worker's event loop so a new agent can
+        be started even while the primary coder is generating.
+        """
+        from cecli.commands.spawn_agent import SpawnAgentCommand
+
+        parts = stripped.split(maxsplit=1)
+        spawn_args = parts[1].strip() if len(parts) > 1 else ""
+
+        input_area = self.query_one("#input", InputArea)
+        input_area.value = ""
+
+        if not spawn_args:
+            self.show_error("Usage: /spawn-agent <name> [<prompt>]")
+            return
+
+        # Save to history and echo the command before dispatching
+        input_area.save_to_history(user_input)
+        self.add_user_message(user_input)
+
+        coder = self.worker.coder
+        if self.worker.loop is None:
+            self.show_error("Worker loop not available. Cannot spawn sub-agent.")
+            return
+
+        async def _run_spawn():
+            await SpawnAgentCommand.execute(coder.io, coder, spawn_args)
+
+        self.worker.loop.call_soon_threadsafe(lambda: self.worker.loop.create_task(_run_spawn()))
 
     def set_input_value(self, text) -> None:
         """Find the input widget and set focus to it."""

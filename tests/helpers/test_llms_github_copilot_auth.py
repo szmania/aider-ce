@@ -355,6 +355,32 @@ def test_resolve_model_config_claude_family_messages(auth, tmp_path):
     assert resolved["family"] == "messages"
 
 
+def test_resolve_model_config_hyphenated_claude_maps_to_copilot(auth, tmp_path):
+    """Hyphenated claude names without an exact copilot record must still
+    route through the copilot provider instead of falling back to the bare
+    anthropic record (e.g. ``github_copilot/claude-sonnet-4-5``)."""
+    _seed_api_key(tmp_path)
+
+    resolved = llms_config.resolve_model_config("github_copilot/claude-sonnet-4-5")
+
+    assert resolved["provider"] == "github_copilot"
+    assert resolved["family"] == "messages"
+    assert resolved["api_key_env"] is None
+
+
+def test_resolve_model_config_unlisted_copilot_model_maps_to_copilot(auth, tmp_path):
+    """Any ``github_copilot/``-prefixed model routes through the copilot
+    provider even when no copilot metadata record exists at all (e.g. a brand
+    new gpt model, so it must not fall back to the bare openai record)."""
+    _seed_api_key(tmp_path)
+
+    resolved = llms_config.resolve_model_config("github_copilot/o3")
+
+    assert resolved["provider"] == "github_copilot"
+    assert resolved["family"] == "responses"
+    assert resolved["api_key_env"] is None
+
+
 def test_get_api_key_wiring_uses_cached_token(auth, tmp_path):
     _seed_api_key(tmp_path)
     resolved = llms_config.resolve_model_config("github_copilot/gpt-5")

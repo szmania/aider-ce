@@ -367,6 +367,7 @@ class ConversationManager:
                 and coder.add_cache_headers
                 and hasattr(coder, "main_model")
                 and not coder.main_model.caches_by_default
+                and not getattr(coder.main_model, "uses_messages_api", False)
             ):
                 messages_dict = self._add_cache_control(messages_dict)
         return messages_dict

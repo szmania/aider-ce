@@ -304,3 +304,55 @@ def test_pipeline_bedrock_mantle_bearer_when_token_set(monkeypatch):
 def test_resolve_model_config_surfaces_extra_query():
     resolved = resolve_model_config("azure/sample-model")
     assert resolved["extra_query"] == {"api-version": "2024-10-21"}
+
+
+def test_resolve_model_config_bedrock_claude_maps_to_bedrock():
+    """Hyphenated/newer claude names under ``bedrock/`` must route through the
+    bedrock provider (SigV4 Converse wire) instead of falling back to the bare
+    anthropic record (e.g. ``bedrock/claude-sonnet-5``)."""
+    resolved = resolve_model_config("bedrock/claude-sonnet-5")
+
+    assert resolved["provider"] == "bedrock"
+    assert resolved["family"] == "bedrock"
+    assert resolved["api_key_env"] == "AWS_ACCESS_KEY_ID"
+
+
+def test_resolve_model_config_bedrock_mantle_claude_maps_to_bedrock_mantle():
+    """Newer claude names under ``bedrock_mantle/`` route through the mantle
+    provider (OpenAI-compatible chat wire with SigV4/Bearer) instead of the
+    bare anthropic record."""
+    resolved = resolve_model_config("bedrock_mantle/claude-sonnet-5")
+
+    assert resolved["provider"] == "bedrock_mantle"
+    assert resolved["family"] == "chat"
+    assert resolved["api_key_env"] == "BEDROCK_MANTLE_API_KEY"
+
+
+def test_resolve_model_config_openrouter_claude_maps_to_openrouter():
+    """Anthropic models hosted on a third-party backend authenticate against
+    THAT provider and speak its chat completions wire, not the anthropic
+    messages API (e.g. ``openrouter/claude-sonnet-5``)."""
+    resolved = resolve_model_config("openrouter/claude-sonnet-5")
+
+    assert resolved["provider"] == "openrouter"
+    assert resolved["family"] == "chat"
+    assert resolved["api_key_env"] == "OPENROUTER_API_KEY"
+
+
+def test_resolve_model_config_deepseek_claude_maps_to_deepseek():
+    """Same provider-sensitive claude rule for deepseek."""
+    resolved = resolve_model_config("deepseek/claude-sonnet-5")
+
+    assert resolved["provider"] == "deepseek"
+    assert resolved["family"] == "chat"
+    assert resolved["api_key_env"] == "DEEPSEEK_API_KEY"
+
+
+def test_resolve_model_config_anthropic_claude_stays_anthropic_messages():
+    """Native anthropic claude models keep the anthropic provider and the
+    /v1/messages wire (the override applies only to non-anthropic prefixes)."""
+    resolved = resolve_model_config("anthropic/claude-sonnet-5")
+
+    assert resolved["provider"] == "anthropic"
+    assert resolved["family"] == "messages"
+    assert resolved["api_key_env"] == "ANTHROPIC_API_KEY"
