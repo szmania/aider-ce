@@ -8,7 +8,9 @@
 
 ### Links
 
-[Documentation](https://cecli.dev/docs/) ● [Discord Chat](https://discord.gg/AX9ZEA7nJn) ● [Issue Queue](https://github.com/cecli-dev/cecli/issues)
+[Documentation](https://cecli.dev/docs/)
+[Discord Chat](https://discord.gg/AX9ZEA7nJn)
+[Issue Queue](https://github.com/cecli-dev/cecli/issues)
 
 
 ## Installation Instructions
@@ -55,57 +57,32 @@ Use the tool installation so cecli doesn't interfere with your development envir
 
 ## Features and Documentation:
 
-[Agent Mode](https://github.com/cecli-dev/cecli/blob/main/cecli/website/docs/config/agent-mode.md)
-
-[MCP Configuration](https://github.com/cecli-dev/cecli/blob/main/cecli/website/docs/config/mcp.md)
-
-[TUI Configuration](https://github.com/cecli-dev/cecli/blob/main/cecli/website/docs/config/tui.md)
-
-[Skills](https://github.com/cecli-dev/cecli/blob/main/cecli/website/docs/config/skills.md)
-
-[Subagents](https://github.com/cecli-dev/cecli/blob/main/cecli/website/docs/config/subagents.md)
-
-[Persistent Memory](https://github.com/cecli-dev/cecli/blob/main/cecli/website/docs/config/persistent-memory.md)
-
-[Session Management](https://github.com/cecli-dev/cecli/blob/main/cecli/website/docs/sessions.md)
-
-[Hooks](https://github.com/cecli-dev/cecli/blob/main/cecli/website/docs/config/hooks.md)
-
-[Agent Client Protocol (ACP)](https://github.com/cecli-dev/cecli/blob/main/cecli/website/docs/config/api.md)
-
-[Workspaces](https://github.com/cecli-dev/cecli/blob/main/cecli/website/docs/config/workspaces.md)
-
-[Custom Commands](https://github.com/cecli-dev/cecli/blob/main/cecli/website/docs/config/custom-commands.md)
-
-[Custom System Prompts](https://github.com/cecli-dev/cecli/blob/main/cecli/website/docs/config/custom-system-prompts.md)
-
-[Custom Tools](https://github.com/cecli-dev/cecli/blob/main/cecli/website/docs/config/agent-mode.md#creating-custom-tools)
-
-[Advanced Model Configuration](https://github.com/cecli-dev/cecli/blob/main/cecli/website/docs/config/model-aliases.md#advanced-model-settings)
-
-[Agent Mode](https://github.com/cecli-dev/cecli/blob/main/cecli/website/docs/config/agent-mode.md)
-
-[MCP Configuration](https://github.com/cecli-dev/cecli/blob/main/cecli/website/docs/config/mcp.md)
-
-[TUI Configuration](https://github.com/cecli-dev/cecli/blob/main/cecli/website/docs/config/tui.md)
-
-[Skills](https://github.com/cecli-dev/cecli/blob/main/cecli/website/docs/config/skills.md)
-
-[Subagents](https://github.com/cecli-dev/cecli/blob/main/cecli/website/docs/config/subagents.md)
-
-[Session Management](https://github.com/cecli-dev/cecli/blob/main/cecli/website/docs/sessions.md)
-
-[Hooks](https://github.com/cecli-dev/cecli/blob/main/cecli/website/docs/config/hooks.md)
-
-[Workspaces](https://github.com/cecli-dev/cecli/blob/main/cecli/website/docs/config/workspaces.md)
-
-[Custom Commands](https://github.com/cecli-dev/cecli/blob/main/cecli/website/docs/config/custom-commands.md)
-
-[Custom System Prompts](https://github.com/cecli-dev/cecli/blob/main/cecli/website/docs/config/custom-system-prompts.md)
-
-[Custom Tools](https://github.com/cecli-dev/cecli/blob/main/cecli/website/docs/config/agent-mode.md#creating-custom-tools)
-
-[Advanced Model Configuration](https://github.com/cecli-dev/cecli/blob/main/cecli/website/docs/config/model-aliases.md#advanced-model-settings)
+* [Agent Mode](https://github.com/cecli-dev/cecli/blob/main/cecli/website/docs/config/agent-mode.md)
+* [MCP Configuration](https://github.com/cecli-dev/cecli/blob/main/cecli/website/docs/config/mcp.md)
+* [TUI Configuration](https://github.com/cecli-dev/cecli/blob/main/cecli/website/docs/config/tui.md)
+* [Skills](https://github.com/cecli-dev/cecli/blob/main/cecli/website/docs/config/skills.md)
+* [Subagents](https://github.com/cecli-dev/cecli/blob/main/cecli/website/docs/config/subagents.md)
+* [Persistent Memory](https://github.com/cecli-dev/cecli/blob/main/cecli/website/docs/config/persistent-memory.md)
+* [Session Management](https://github.com/cecli-dev/cecli/blob/main/cecli/website/docs/sessions.md)
+* [Hooks](https://github.com/cecli-dev/cecli/blob/main/cecli/website/docs/config/hooks.md)
+* [Agent Client Protocol (ACP)](https://github.com/cecli-dev/cecli/blob/main/cecli/website/docs/config/api.md)
+* [Workspaces](https://github.com/cecli-dev/cecli/blob/main/cecli/website/docs/config/workspaces.md)
+* [Custom Commands](https://github.com/cecli-dev/cecli/blob/main/cecli/website/docs/config/custom-commands.md)
+* [Custom System Prompts](https://github.com/cecli-dev/cecli/blob/main/cecli/website/docs/config/custom-system-prompts.md)
+* [Custom Tools](https://github.com/cecli-dev/cecli/blob/main/cecli/website/docs/config/agent-mode.md#creating-custom-tools)
+* [Advanced Model Configuration](https://github.com/cecli-dev/cecli/blob/main/cecli/website/docs/config/model-aliases.md#advanced-model-settings)
+* [Agent Mode](https://github.com/cecli-dev/cecli/blob/main/cecli/website/docs/config/agent-mode.md)
+* [MCP Configuration](https://github.com/cecli-dev/cecli/blob/main/cecli/website/docs/config/mcp.md)
+* [TUI Configuration](https://github.com/cecli-dev/cecli/blob/main/cecli/website/docs/config/tui.md)
+* [Skills](https://github.com/cecli-dev/cecli/blob/main/cecli/website/docs/config/skills.md)
+* [Subagents](https://github.com/cecli-dev/cecli/blob/main/cecli/website/docs/config/subagents.md)
+* [Session Management](https://github.com/cecli-dev/cecli/blob/main/cecli/website/docs/sessions.md)
+* [Hooks](https://github.com/cecli-dev/cecli/blob/main/cecli/website/docs/config/hooks.md)
+* [Workspaces](https://github.com/cecli-dev/cecli/blob/main/cecli/website/docs/config/workspaces.md)
+* [Custom Commands](https://github.com/cecli-dev/cecli/blob/main/cecli/website/docs/config/custom-commands.md)
+* [Custom System Prompts](https://github.com/cecli-dev/cecli/blob/main/cecli/website/docs/config/custom-system-prompts.md)
+* [Custom Tools](https://github.com/cecli-dev/cecli/blob/main/cecli/website/docs/config/agent-mode.md#creating-custom-tools)
+* [Advanced Model Configuration](https://github.com/cecli-dev/cecli/blob/main/cecli/website/docs/config/model-aliases.md#advanced-model-settings)
 
 [Additional Documentation](https://cecli.dev/)
 
