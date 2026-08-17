@@ -45,9 +45,12 @@ def anthropic_payload(
     kwargs: Dict[str, Any],
 ) -> Dict[str, Any]:
     system = system_prompt(messages)
+    wire_messages = _coalesce_anthropic_messages(
+        [anthropic_message(m) for m in messages if m.get("role") != "system"]
+    )
     payload: Dict[str, Any] = {
         "model": resolved["route"],
-        "messages": [anthropic_message(m) for m in messages if m.get("role") != "system"],
+        "messages": wire_messages,
         "max_tokens": (
             kwargs.get("max_tokens") or resolved.get("llm_block", {}).get("max_tokens") or 4096
         ),
@@ -274,6 +277,7 @@ async def anthropic_stream(
                             "id": block.get("id", ""),
                             "name": block.get("name", ""),
                             "input": block.get("input") or {},
+                            "_input_raw": "",
                         }
 
                 elif evt == "content_block_delta":
@@ -291,7 +295,21 @@ async def anthropic_stream(
                         elif dtype == "signature_delta":
                             entry["signature"] = delta.get("signature")
 
+                        elif dtype == "input_json_delta":
+                            entry["_input_raw"] += delta.get("partial_json") or ""
+
                 elif evt == "content_block_stop":
+                    entry = blocks.get(current) if current is not None else None
+
+                    if entry is not None:
+                        raw = entry.pop("_input_raw", None)
+
+                        if raw is not None:
+                            try:
+                                entry["input"] = json.loads(raw)
+                            except json.JSONDecodeError:
+                                pass
+
                     current = None
 
                 chunk = parse_anthropic_chunk(json_obj)
@@ -741,6 +759,62 @@ def _is_tool_turn(msg: Dict[str, Any]) -> bool:
         isinstance(block, dict) and block.get("type") in ("tool_result", "tool_use")
         for block in content
     )
+
+
+def _coalesce_anthropic_messages(wire_messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Merge consecutive user turns into a single user message.
+
+    The conversation manager emits one user message per tool result and can
+    inject file-context text as its own user message directly after the
+    results, so the raw wire list can contain several ``user`` messages in a
+    row. The Messages API requires alternating roles and, per the tool-use
+    spec, ``tool_result`` blocks must come first in the user message that
+    follows an assistant ``tool_use`` turn. Text runs (across messages) are
+    concatenated with ``"\n---\n"`` separators.
+    """
+    result: List[Dict[str, Any]] = []
+    pending: List[Dict[str, Any]] = []
+
+    def flush() -> None:
+        if not pending:
+            return
+
+        tool_results = [b for b in pending if b.get("type") == "tool_result"]
+        others = [b for b in pending if b.get("type") != "tool_result"]
+        content: List[Dict[str, Any]] = list(tool_results)
+        text_parts: List[str] = []
+
+        for block in others:
+            if block.get("type") == "text":
+                text_parts.append(block.get("text") or "")
+
+                continue
+
+            if text_parts:
+                content.append({"type": "text", "text": "\n---\n".join(text_parts)})
+                text_parts = []
+
+            content.append(block)
+
+        if text_parts:
+            content.append({"type": "text", "text": "\n---\n".join(text_parts)})
+
+        result.append({"role": "user", "content": content})
+        pending.clear()
+
+    for msg in wire_messages:
+        if msg.get("role") != "user":
+            flush()
+            result.append(msg)
+            continue
+
+        content = msg.get("content")
+        blocks = content if isinstance(content, list) else [{"type": "text", "text": content}]
+        pending.extend(blocks)
+
+    flush()
+
+    return result
 
 
 __all__ = [
