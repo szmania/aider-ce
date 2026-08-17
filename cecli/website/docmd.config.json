@@ -176,6 +176,10 @@
           "path": "/llms/ollama/"
         },
         {
+          "title": "OpenCode Go",
+          "path": "/llms/opencode-go/"
+        },
+        {
           "title": "OpenAI compatible APIs",
           "path": "/llms/openai-compat/"
         },
