@@ -142,7 +142,6 @@ with importlib.resources.open_text("cecli.resources", "model-settings.yml") as f
 
 
 class ModelInfoManager:
-    MODEL_INFO_URL = "https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json"
     CACHE_TTL = 60 * 60 * 24
 
     def __init__(self):
@@ -177,28 +176,6 @@ class ModelInfoManager:
             pass
         self._cache_loaded = True
 
-    def _update_cache(self):
-        try:
-            import requests
-
-            response = requests.get(self.MODEL_INFO_URL, timeout=5, verify=self.verify_ssl)
-            if response.status_code == 200:
-                # Use json.dumps(response.json()) instead of response.text for
-                # compatibility with mocked responses in tests
-                parsed = response.json()
-                self._raw_content = json.dumps(parsed)
-                try:
-                    parsed = response.json()
-                    self.cache_file.write_text(json.dumps(parsed, indent=4))
-                except OSError:
-                    pass
-        except Exception as ex:
-            print(str(ex))
-            try:
-                self.cache_file.write_text("{}")
-            except OSError:
-                pass
-
     def _get_entry_from_raw(self, key):
         """Parse a single model entry from raw JSON string without loading the entire dict."""
         return get_entry_from_raw(self._raw_content, key)
@@ -208,8 +185,6 @@ class ModelInfoManager:
         if data:
             return data
         self._load_cache()
-        if not self._raw_content:
-            self._update_cache()
         if not self._raw_content:
             return dict()
         info = self._get_entry_from_raw(model)
