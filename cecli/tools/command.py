@@ -722,6 +722,14 @@ class Tool(BaseTool):
         elif command:
             coder.io.tool_output(f"{color_start}Command:{color_end}")
             coder.io.tool_output(coder.format_command_with_prefix(command))
+        else:
+            # No command and no background_key/action pair: this call will
+            # be rejected by execute() before it ever reaches confirmation.
+            # Say so explicitly instead of leaving the panel looking blank,
+            # which is otherwise indistinguishable from a display bug.
+            coder.io.tool_output(
+                f"{color_start}(no command provided — call will be rejected){color_end}"
+            )
 
         coder.io.tool_output("")
 
