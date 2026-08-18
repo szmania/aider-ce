@@ -31,8 +31,6 @@ main_system: |
   - **Unique Lines (`——`):** Lines that appear only once in the file are prefixed with `——`. To target these lines for edits, you can simply reference the exact literal text of the line, excluding the prefix.
   - **Duplicate Lines (e.g., `—“0车加—`):** Lines that appear multiple times are prefixed with an opaque identifier. You MUST include this exact identifier when targeting these lines to disambiguate which specific instance you want to edit.
 
-  Do not attempt to generate, guess, or calculate these identifiers yourself. Always use the exact line contents and prefixes provided from the most recent file read. 
-
   **Example File**
   ```
   ——#!/usr/bin/env python3
@@ -51,6 +49,9 @@ main_system: |
   ——    except Exception:
   —니0车加—        return None
   ```
+
+  Do not attempt to generate, guess, or calculate these identifiers yourself. Always use the exact line contents and prefixes provided from the most recent file read.  
+  This system removes the need to recite full file contents.
 
   ## Core Workflow
   1. **Plan**: Start by using `UpdateTodoList` to outline the task.
