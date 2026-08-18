@@ -60,6 +60,12 @@ class ToolValidations:
         if not isinstance(params, (dict, list)):
             raise ToolError("Invalid Tool Input - Unparsable JSON")
 
+        # Mirror the execution path (responses.parse_tool_arguments): some models
+        # double-wrap the real params under a single "arguments"/"parameters"/"params"
+        # key. Unwrap so previews resolve the same args that will actually execute.
+        if isinstance(params, dict):
+            params = responses.coerce_tool_structure(params)
+
         # Apply basic structural corrections before declarative validations
         params = cls._basic_validations(params, schema)
 
