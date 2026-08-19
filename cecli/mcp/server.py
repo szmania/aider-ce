@@ -54,7 +54,7 @@ class McpServer:
             verbose: Whether to output verbose logging
         """
         self.config = server_config
-        self.name = server_config.get("name", "unnamed-server")
+        self.name = str(server_config.get("name", "unnamed-server")).lower()
         self.io = io
         self.verbose = verbose
         self.session = None

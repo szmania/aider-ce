@@ -939,10 +939,10 @@ class Coder(metaclass=UsageMeta):
             for server_name, server_tools in self.mcp_tools:
                 if (
                     self.registered_servers["included"]
-                    and server_name.lower() not in self.registered_servers["included"]
+                    and server_name not in self.registered_servers["included"]
                 ):
                     continue
-                if server_name.lower() in self.registered_servers["excluded"]:
+                if server_name in self.registered_servers["excluded"]:
                     continue
                 mcp_servers.append(server_name)
             if mcp_servers:
@@ -3356,14 +3356,14 @@ class Coder(metaclass=UsageMeta):
                 # Apply per-instance server filtering
                 if (
                     self.registered_servers["included"]
-                    and server_name.lower() not in self.registered_servers["included"]
+                    and server_name not in self.registered_servers["included"]
                 ):
                     continue
-                if server_name.lower() in self.registered_servers["excluded"]:
+                if server_name in self.registered_servers["excluded"]:
                     continue
 
                 for tool in server_tools:
-                    if server_name == "Local":
+                    if server_name.lower() == "local":
                         # Apply per-instance tool name filtering
                         tool_name = tool.get("function", {}).get("name", "")
                         if (

@@ -199,15 +199,15 @@ class Tool(BaseTool):
         # included sets to explicit include lists.
         if load_mcp_servers and coder.mcp_manager:
             if isinstance(coder.mcp_manager.connected_servers, dict):
-                connected_names = set(coder.mcp_manager.connected_servers.keys())
+                connected_names = {k.lower() for k in coder.mcp_manager.connected_servers.keys()}
             else:
-                connected_names = {s.name for s in coder.mcp_manager.connected_servers}
+                connected_names = {s.name.lower() for s in coder.mcp_manager.connected_servers}
             if connected_names:
                 for c in iter_all_coders(coder):
                     if not c.registered_servers["included"]:
                         included = set(connected_names) - c.registered_servers["excluded"]
                         if c.edit_format in ("agent", "subagent"):
-                            included.add("Local")
+                            included.add("local")
                         c.registered_servers["included"] = included
 
         for f in create_files:
@@ -546,7 +546,7 @@ class Tool(BaseTool):
             if not coder.mcp_manager or not coder.mcp_manager.servers:
                 return "No MCP servers are configured."
 
-            if server_name == "Local":
+            if server_name.lower() == "local":
                 return "Cannot remove 'Local' server"
 
             server = coder.mcp_manager.get_server(server_name)
