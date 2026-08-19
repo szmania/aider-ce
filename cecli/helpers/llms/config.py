@@ -143,8 +143,8 @@ def resolve_model_config(model: str) -> Dict[str, Any]:
 
     # Effective cache flags for the domain adapters. Anthropic messages-API
     # models never cache "by default": prompt caching only happens when the
-    # request carries explicit ``cache_control`` breakpoints, so the messages
-    # domain injects them (agent.cache_control True + caches_by_default False).
+    # request asks for it, so the messages domain requests top-level automatic
+    # caching (agent.cache_control True + caches_by_default False).
     if family == "messages":
         agent_block["cache_control"] = True
         agent_block["caches_by_default"] = False
