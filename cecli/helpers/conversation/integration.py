@@ -1,5 +1,6 @@
 import json
 import random
+import time
 import weakref
 from typing import Any, Dict, List
 
@@ -959,13 +960,23 @@ class ConversationChunks:
         if not block:
             return
 
+        if not hasattr(coder, "_last_child_agent_hash") or not coder._last_child_agent_hash:
+            coder._last_child_agent_hash = ""
+
+        message_hash = xxhash.xxh3_128_hexdigest(block.encode("utf-8"))
+
+        if message_hash == coder._last_child_agent_hash:
+            return  # No change in sub-agent states, skip adding message
+
+        coder._last_child_agent_hash = message_hash
+
         ConversationService.get_manager(coder).add_message(
             message_dict={"role": "user", "content": block},
             tag=MessageTag.STATIC,
-            priority=DEFAULT_TAG_PRIORITY[MessageTag.REMINDER] + 25,  # After post_message blocks
-            mark_for_delete=0,
-            hash_key=("sub_agent_states",),
-            force=True,
+            priority=DEFAULT_TAG_PRIORITY[
+                MessageTag.CUR
+            ],  # Inject on change in normal message sequence
+            hash_key=("sub_agent_states", str(time.monotonic_ns())),
         )
 
     def defer_removal(self, file_path: str):
