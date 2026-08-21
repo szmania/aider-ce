@@ -1354,6 +1354,13 @@ async def main_async(
     except ValueError as err:
         pre_init_io.tool_error(str(err))
         return await graceful_exit(None, 1)
+
+    # The coder owns the MCP manager so graceful_exit can disconnect servers.
+    # If the coder never adopted it (e.g. mocked coders in tests), keep the
+    # reference so disconnect_all() still runs and MCP client tasks don't
+    # leak into asyncio.run() shutdown (which hangs with mcp 2.x stdio tasks).
+    coder.mcp_manager = mcp_manager
+
     if return_coder:
         return coder
     ignores = []

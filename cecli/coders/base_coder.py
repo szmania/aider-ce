@@ -3363,7 +3363,7 @@ class Coder(metaclass=UsageMeta):
                     continue
 
                 for tool in server_tools:
-                    if server_name == "Local":
+                    if server_name.lower() == "local":
                         # Apply per-instance tool name filtering
                         tool_name = tool.get("function", {}).get("name", "")
                         if (

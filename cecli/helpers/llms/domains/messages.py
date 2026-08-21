@@ -33,9 +33,6 @@ from ..utils import split_data_url, sse_json_lines, system_prompt
 
 DEFAULT_TIMEOUT = 120.0
 
-#: Anthropic allows at most 4 ``cache_control`` breakpoints per request.
-MAX_CACHE_BREAKPOINTS = 4
-
 
 def anthropic_payload(
     resolved: Dict[str, Any],
@@ -45,9 +42,12 @@ def anthropic_payload(
     kwargs: Dict[str, Any],
 ) -> Dict[str, Any]:
     system = system_prompt(messages)
+    wire_messages = _coalesce_anthropic_messages(
+        [anthropic_message(m) for m in messages if m.get("role") != "system"]
+    )
     payload: Dict[str, Any] = {
         "model": resolved["route"],
-        "messages": [anthropic_message(m) for m in messages if m.get("role") != "system"],
+        "messages": wire_messages,
         "max_tokens": (
             kwargs.get("max_tokens") or resolved.get("llm_block", {}).get("max_tokens") or 4096
         ),
@@ -95,14 +95,13 @@ def anthropic_payload(
     extra_body.pop("thinking", None)
     payload.update(extra_body)
 
-    # Anthropic prompt caching is a byte-exact prefix match: it only happens
-    # when the request carries explicit ``cache_control`` breakpoints. The
-    # model config flags messages-API models ``cache_control`` True and
-    # ``caches_by_default`` False (see config.resolve_model_config), so the
-    # messages domain owns the marking here rather than the conversation
-    # manager.
+    # Anthropic prompt caching: request automatic caching via the top-level
+    # ``cache_control`` field. The model config flags messages-API models
+    # ``cache_control`` True and ``caches_by_default`` False (see
+    # config.resolve_model_config), so the messages domain requests it here
+    # rather than managing explicit per-block breakpoints.
     if agent_block.get("cache_control") and not agent_block.get("caches_by_default"):
-        _apply_anthropic_cache_control(payload)
+        payload["cache_control"] = {"type": "ephemeral"}
 
     return payload
 
@@ -274,6 +273,7 @@ async def anthropic_stream(
                             "id": block.get("id", ""),
                             "name": block.get("name", ""),
                             "input": block.get("input") or {},
+                            "_input_raw": "",
                         }
 
                 elif evt == "content_block_delta":
@@ -291,7 +291,21 @@ async def anthropic_stream(
                         elif dtype == "signature_delta":
                             entry["signature"] = delta.get("signature")
 
+                        elif dtype == "input_json_delta":
+                            entry["_input_raw"] += delta.get("partial_json") or ""
+
                 elif evt == "content_block_stop":
+                    entry = blocks.get(current) if current is not None else None
+
+                    if entry is not None:
+                        raw = entry.pop("_input_raw", None)
+
+                        if raw is not None:
+                            try:
+                                entry["input"] = json.loads(raw)
+                            except json.JSONDecodeError:
+                                pass
+
                     current = None
 
                 chunk = parse_anthropic_chunk(json_obj)
@@ -609,138 +623,60 @@ def _anthropic_user_blocks(content: List[Dict[str, Any]]) -> List[Dict[str, Any]
     return blocks
 
 
-def _apply_anthropic_cache_control(payload: Dict[str, Any]) -> None:
-    """Attach ephemeral ``cache_control`` breakpoints to a copy of the stream.
+def _coalesce_anthropic_messages(wire_messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Merge consecutive user turns into a single user message.
 
-    Anthropic prompt caching is a byte-exact prefix match: a breakpoint on the
-    last content block of a message caches every token up to and including it.
-    Following the conversation manager's placement (``manager.py
-    _add_cache_control``), we mark the three stable boundaries of a multi-turn
-    exchange:
-
-    - the last system block at the start of the stream (which also covers the
-      tool definitions rendered before it), and
-    - the last content block of the two most recent non-tool user/assistant
-      turns.
-
-    The message stream is copied and only the key messages are replaced, so
-    caller-owned lists are never mutated. Anthropic allows at most
-    ``MAX_CACHE_BREAKPOINTS`` breakpoints per request, so the marking stops
-    early once that budget (including any caller-supplied markers) is
-    exhausted.
+    The conversation manager emits one user message per tool result and can
+    inject file-context text as its own user message directly after the
+    results, so the raw wire list can contain several ``user`` messages in a
+    row. The Messages API requires alternating roles and, per the tool-use
+    spec, ``tool_result`` blocks must come first in the user message that
+    follows an assistant ``tool_use`` turn. Text runs (across messages) are
+    concatenated with ``"\n---\n"`` separators.
     """
-    import copy
+    result: List[Dict[str, Any]] = []
+    pending: List[Dict[str, Any]] = []
 
-    budget = MAX_CACHE_BREAKPOINTS - _count_cache_breakpoints(payload)
+    def flush() -> None:
+        if not pending:
+            return
 
-    if budget <= 0:
-        return
+        tool_results = [b for b in pending if b.get("type") == "tool_result"]
+        others = [b for b in pending if b.get("type") != "tool_result"]
+        content: List[Dict[str, Any]] = list(tool_results)
+        text_parts: List[str] = []
 
-    system = payload.get("system")
+        for block in others:
+            if block.get("type") == "text":
+                text_parts.append(block.get("text") or "")
 
-    if isinstance(system, str):
-        payload["system"] = [
-            {"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}
-        ]
-        budget -= 1
+                continue
 
-    elif isinstance(system, list) and system:
-        system = list(system)
-        last = system[-1]
+            if text_parts:
+                content.append({"type": "text", "text": "\n---\n".join(text_parts)})
+                text_parts = []
 
-        if isinstance(last, dict):
-            last = copy.deepcopy(last)
-            system[-1] = last
+            content.append(block)
 
-        if _mark_cache_breakpoint(last):
-            budget -= 1
+        if text_parts:
+            content.append({"type": "text", "text": "\n---\n".join(text_parts)})
 
-        payload["system"] = system
+        result.append({"role": "user", "content": content})
+        pending.clear()
 
-    messages = payload.get("messages") or []
-    result = list(messages)
-    marked = 0
-
-    for i in range(len(result) - 1, -1, -1):
-        if marked >= 2 or budget <= 0:
-            break
-
-        msg = result[i]
-
-        if _is_tool_turn(msg):
+    for msg in wire_messages:
+        if msg.get("role") != "user":
+            flush()
+            result.append(msg)
             continue
 
         content = msg.get("content")
+        blocks = content if isinstance(content, list) else [{"type": "text", "text": content}]
+        pending.extend(blocks)
 
-        if isinstance(content, str):
-            msg = copy.deepcopy(msg)
-            msg["content"] = [
-                {"type": "text", "text": content, "cache_control": {"type": "ephemeral"}}
-            ]
-            result[i] = msg
-            marked += 1
-            budget -= 1
+    flush()
 
-        elif isinstance(content, list) and content:
-            msg = copy.deepcopy(msg)
-            blocks = list(msg["content"])
-
-            if _mark_cache_breakpoint(blocks[-1]):
-                marked += 1
-                budget -= 1
-
-            msg["content"] = blocks
-            result[i] = msg
-
-    payload["messages"] = result
-
-
-def _count_cache_breakpoints(payload: Dict[str, Any]) -> int:
-    """Count existing ``cache_control`` markers in a payload (system + messages)."""
-    count = 0
-    system = payload.get("system")
-
-    if isinstance(system, list):
-        count += sum(isinstance(block, dict) and "cache_control" in block for block in system)
-
-    for tool in payload.get("tools") or []:
-        if isinstance(tool, dict) and "cache_control" in tool:
-            count += 1
-
-    for msg in payload.get("messages") or []:
-        content = msg.get("content")
-
-        if isinstance(content, list):
-            count += sum(isinstance(block, dict) and "cache_control" in block for block in content)
-
-    return count
-
-
-def _mark_cache_breakpoint(block: Any) -> bool:
-    """Add an ephemeral breakpoint to ``block`` unless it already has one."""
-    if not isinstance(block, dict) or "cache_control" in block:
-        return False
-
-    block["cache_control"] = {"type": "ephemeral"}
-
-    return True
-
-
-def _is_tool_turn(msg: Dict[str, Any]) -> bool:
-    """True when a wire message is a tool turn (transient content).
-
-    Matches the conversation manager's placement, which skips tool messages
-    and assistant tool-call turns when choosing cache breakpoints.
-    """
-    content = msg.get("content")
-
-    if not isinstance(content, list) or not content:
-        return False
-
-    return any(
-        isinstance(block, dict) and block.get("type") in ("tool_result", "tool_use")
-        for block in content
-    )
+    return result
 
 
 __all__ = [

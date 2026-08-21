@@ -101,23 +101,28 @@ def coder_with_file(tmp_path):
     return coder, file_path
 
 
-def make_tool_response(edits):
+def make_tool_response(edits, wrap_arguments=False):
+    arguments = {"edits": edits}
+    if wrap_arguments:
+        # Some models mirror the OpenAI wire format and double-wrap the real
+        # params under a single top-level "arguments" key.
+        arguments = {"arguments": json.dumps(arguments)}
     return SimpleNamespace(
         id="test-id",
         type="function",
         function=SimpleNamespace(
             name="EditFile",
-            arguments=json.dumps({"edits": edits}),
+            arguments=json.dumps(arguments),
         ),
     )
 
 
-def preview_output(coder, edits):
+def preview_output(coder, edits, wrap_arguments=False):
     """Run format_output (as base_coder does before execute) and capture output."""
     edit_file.Tool.format_output(
         coder,
         mcp_server=SimpleNamespace(name="Local"),
-        tool_response=make_tool_response(edits),
+        tool_response=make_tool_response(edits, wrap_arguments=wrap_arguments),
     )
     return "\n".join(coder.io.outputs)
 
@@ -233,6 +238,32 @@ def test_format_output_mixed_selectors_in_batch(coder_with_file):
     output = preview_output(coder, edits)
     assert "Preview Unavailable" not in output
     assert output.count("@@") >= 2
+
+    result = edit_file.Tool.execute(coder, edits=edits)
+    assert result.to_dict()["errors"] == []
+
+
+def test_format_output_unwraps_double_wrapped_arguments(coder_with_file):
+    """Double-wrapped {"arguments": "{\"edits\": [...]}"} previews a real diff.
+
+    The execution path unwraps this via responses.parse_tool_arguments, so the
+    preview (format_output) must resolve the same edits instead of rendering
+    nothing.
+    """
+    coder, _ = coder_with_file
+    edits = [
+        {
+            "file_path": "example.txt",
+            "operation": "replace",
+            "start_line": "@L2",
+            "end_line": "@L3",
+            "text": '    print("hello")  # edited',
+        }
+    ]
+
+    output = preview_output(coder, edits, wrap_arguments=True)
+    assert "Preview Unavailable" not in output
+    assert "@@" in output, f"expected a unified diff in preview output:\n{output}"
 
     result = edit_file.Tool.execute(coder, edits=edits)
     assert result.to_dict()["errors"] == []

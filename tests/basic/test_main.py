@@ -60,7 +60,6 @@ def test_env(mocker, temp_cwd, temp_home):
     - Mocked user input and browser opening
     - Windows compatibility (USERPROFILE vs HOME)
 
-    All resources are automatically cleaned up by dependency fixtures and mocker.
     """
     test_env_vars = {
         "OPENAI_API_KEY": "deadbeef",

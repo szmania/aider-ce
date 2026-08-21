@@ -99,7 +99,7 @@ class McpServerManager:
             The server instance or None if not found
         """
         try:
-            return next(server for server in self._servers if server.name == name)
+            return next(server for server in self._servers if server.name.lower() == name.lower())
         except StopIteration:
             return None
 
@@ -254,7 +254,7 @@ class McpServerManager:
         """
         existing_server = self.get_server(server.name)
         if existing_server:
-            if server.name not in ["unnamed-server", "Local"]:
+            if server.name.lower() not in ["unnamed-server", "local"]:
                 self._log_warning(f"MCP server with name '{server.name}' already exists")
             return False
 
@@ -332,7 +332,7 @@ class McpServerManager:
 
         results = await asyncio.gather(*tasks)
         for server, did_connect in results:
-            if not did_connect and server.name not in ["unnamed-server", "Local"]:
+            if not did_connect and server.name.lower() not in ["unnamed-server", "local"]:
                 io.tool_warning(
                     f"MCP tool initialization failed after multiple retries: {server.name}"
                 )

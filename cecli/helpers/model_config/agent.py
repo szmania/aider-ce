@@ -57,9 +57,9 @@ def derive_agent_config(provider: Optional[str], route: str, record: Optional[Di
         # assuming caching support.
         #
         # Anthropic messages-API models never cache "by default": prompt
-        # caching only happens when the request carries explicit
-        # ``cache_control`` breakpoints (injected by the llms messages
-        # domain), so keep ``caches_by_default`` off for them.
+        # caching only happens when the request asks for it (the llms
+        # messages domain requests top-level automatic caching), so keep
+        # ``caches_by_default`` off for them.
         "caches_by_default": (
             not uses_messages_api
             and (bool(record.get("cache_read_input_token_cost")) if record else True)
