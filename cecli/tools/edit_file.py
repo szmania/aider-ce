@@ -29,6 +29,7 @@ OPERATION_NOUNS = {
 
 USER_EDIT_CATEGORIES = {
     "no_changes": "No Changes",
+    "not_applied": "Edit Not Applied",
     "syntax_errors": "Syntax Errors",
     "boundary_errors": "Boundary Resolution Error",
 }
@@ -234,11 +235,7 @@ class Tool(BaseTool):
                             # DEFENSIVE FALLBACKS
                             # ---------------------------------------------------------
 
-                            # 1. Handle missing text parameter by defaulting to empty string
-                            if edit_file_raw is None:
-                                edit_file_raw = ""
-
-                            # 2. Programmatically enforce @000 for empty files
+                            # 1. Programmatically enforce @000 for empty files
                             if not original_content or not original_content.strip():
                                 edit_start_line = "@000"
                                 edit_end_line = "@000"
@@ -272,12 +269,12 @@ class Tool(BaseTool):
                             edit_file = edit_file_raw
 
                             # Validate required fields based on operation type
-                            # (Note: The check for 'edit_file is None' will now be safely
-                            # bypassed because we defaulted it to "" above)
+                            # Missing text must not silently degrade into a delete
+                            # of the targeted range.
                             if operation in ("replace", "insert"):
-                                if edit_file is None:
+                                if edit_file_raw is None or edit_file_raw == "":
                                     raise ToolError(
-                                        f"Edit {edit_index + 1}: 'text' parameter is required for "
+                                        f"Edit {edit_index + 1}: non-empty 'text' parameter is required for "
                                         f"'{operation}' operation"
                                     )
                             if operation in ("replace", "delete"):
@@ -338,13 +335,24 @@ class Tool(BaseTool):
                         if new_content != original_content:
                             file_successful_edits += len(successful_ops)
                         else:
-                            # Be specific about why content didn't change
-                            if failed_ops:
+                            # Be specific about why content didn't change.
+                            # If no operation reached the apply stage, every edit
+                            # already failed validation and the per-edit failures
+                            # explain why; skip the generic no-change message.
+                            if operations and failed_ops:
+                                no_change_failures = all(
+                                    op.get("failure_type") == "no_change" for op in failed_ops
+                                )
+                                if no_change_failures:
+                                    raise ToolError(
+                                        "Invalid Edit - The requested edit matched the existing content; "
+                                        "no changes were applied. Adjust the replacement text or targeted range."
+                                    )
                                 error_details = "; ".join(op["error"] for op in failed_ops)
                                 raise ToolError(
                                     f"Invalid Edit - Review content ID bounds: {error_details}"
                                 )
-                            else:
+                            elif operations:
                                 raise ToolError(
                                     "Invalid Edit - Review content ID bounds - "
                                     "All edits resulted in unchanged content"
@@ -642,6 +650,13 @@ class Tool(BaseTool):
 
         if "syntax error" in error_lower or "introduces new syntax" in error_lower:
             return USER_EDIT_CATEGORIES["syntax_errors"]
+
+        elif (
+            "not applied" in error_lower
+            or "superseded" in error_lower
+            or "contained within" in error_lower
+        ):
+            return f"{USER_EDIT_CATEGORIES['not_applied']}: {error_msg}"
 
         elif "hash" in error_lower or "content id" in error_lower or "not found" in error_lower:
             # Append the actual error string so the LLM can self-correct its specific mistake

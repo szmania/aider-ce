@@ -264,3 +264,98 @@ def test_resolve_stripped_ambiguous_line_stays_unchanged_in_both_paths():
     assert successful == []
     assert len(failed) == 1
     assert new_content == original_content
+
+
+def test_noop_replace_last_line_without_trailing_newline_is_failed():
+    """An identical replacement of a final unterminated line is a no-op."""
+    original_content = "first\nlast"
+    _, last_line_id = resolve_content_to_hashline_ids(original_content, "last", "last")
+
+    new_content, successful, failed = apply_hashline_operations(
+        original_content,
+        [
+            {
+                "start_line_hash": last_line_id,
+                "end_line_hash": last_line_id,
+                "operation": "replace",
+                "text": "last",
+            }
+        ],
+    )
+
+    assert new_content == original_content
+    assert successful == []
+    assert failed[0]["failure_type"] == "no_change"
+
+
+def test_mixed_noop_and_real_replace_reports_only_real_success():
+    """A no-op in a batch must not be counted as a successful operation."""
+    original_content = "first\nmiddle\nlast"
+    first_id, _ = resolve_content_to_hashline_ids(original_content, "first", "first")
+    _, last_id = resolve_content_to_hashline_ids(original_content, "last", "last")
+    lines = [first_id, last_id]
+
+    new_content, successful, failed = apply_hashline_operations(
+        original_content,
+        [
+            {
+                "start_line_hash": lines[0],
+                "end_line_hash": lines[0],
+                "operation": "replace",
+                "text": "changed",
+            },
+            {
+                "start_line_hash": lines[1],
+                "end_line_hash": lines[1],
+                "operation": "replace",
+                "text": "last",
+            },
+        ],
+    )
+
+    assert new_content == "changed\nmiddle\nlast"
+    assert successful == [0]
+    assert [op["index"] for op in failed] == [1]
+    assert failed[0]["failure_type"] == "no_change"
+
+
+def test_insert_and_replace_same_anchor_are_both_applied():
+    """Insert and replace operations sharing an anchor remain independent."""
+    original_content = "anchor\nend\n"
+    anchor_id, _ = resolve_content_to_hashline_ids(original_content, "anchor", "anchor")
+
+    new_content, successful, failed = apply_hashline_operations(
+        original_content,
+        [
+            {
+                "start_line_hash": anchor_id,
+                "end_line_hash": anchor_id,
+                "operation": "replace",
+                "text": "replaced",
+            },
+            {
+                "start_line_hash": anchor_id,
+                "operation": "insert",
+                "text": "inserted",
+            },
+        ],
+    )
+
+    assert new_content == "replaced\ninserted\nend\n"
+    assert sorted(successful) == [0, 1]
+    assert failed == []
+
+
+def test_empty_insert_is_a_noop():
+    """An empty insert must not mutate content or anchor formatting."""
+    original_content = "anchor\n"
+    anchor_id, _ = resolve_content_to_hashline_ids(original_content, "anchor", "anchor")
+
+    new_content, successful, failed = apply_hashline_operations(
+        original_content,
+        [{"start_line_hash": anchor_id, "operation": "insert", "text": ""}],
+    )
+
+    assert new_content == original_content
+    assert successful == []
+    assert failed[0]["failure_type"] == "no_change"
