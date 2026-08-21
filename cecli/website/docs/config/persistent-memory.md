@@ -42,7 +42,7 @@ A virtual FTS5 table (`facts_fts`) is kept in sync automatically via SQL trigger
 
 ## How to Enable
 
-Agent Memory is **enabled by default** (`--auto-memory`). You can control it with the `--auto-memory` / `--no-auto-memory` flag:
+Agent Memory is **disabled by default** as it adds to overall system token usage. You can control it with the `--auto-memory` / `--no-auto-memory` flag:
 
 ```bash
 # Enable (default)
