@@ -32,6 +32,9 @@ class McpServerManager:
 
         self._server_tools: dict[str, list] = {}  # Maps server name to its tools
         self._connected_servers: set[McpServer] = set()
+        # Event loop that created the MCP connections (set by connect_all).
+        # Loop-bound MCP state must only be torn down on this loop.
+        self._connection_loop: asyncio.AbstractEventLoop | None = None
 
     def _log_verbose(self, message: str) -> None:
         """Log a verbose message if verbose mode is enabled and IO is available."""
@@ -85,8 +88,11 @@ class McpServerManager:
 
     @property
     def is_connected(self) -> bool:
-        """Check if any servers are connected."""
-        return len(self._connected_servers) > 0
+        """Check if any servers have a live session (including not-yet-registered ones)."""
+        if self._connected_servers:
+            return True
+
+        return any(server.is_connected for server in self._servers)
 
     def get_server(self, name: str) -> McpServer | None:
         """
@@ -104,8 +110,23 @@ class McpServerManager:
             return None
 
     async def disconnect_all(self) -> None:
-        """Disconnect from all MCP servers."""
-        if not self._connected_servers:
+        """
+        Disconnect from all MCP servers.
+
+        Connections are loop-bound: they must only be torn down on the loop that
+        created them (see connect_all). Callers on any other loop (e.g. the TUI
+        main loop during a reload) skip, because the owning loop's teardown owns
+        the cleanup and tearing down cross-loop would raise or leak transports.
+        """
+        current_loop = asyncio.get_running_loop()
+        if self._connection_loop is not None and self._connection_loop is not current_loop:
+            self._log_verbose("Skipping disconnect_all: MCP connections live on another event loop")
+            return
+
+        # Include servers with a live session that never made it into
+        # _connected_servers (e.g. connect_all was cancelled between
+        # server.connect() and registering the server).
+        if not self._connected_servers and not any(server.is_connected for server in self._servers):
             self._log_verbose("MCP servers already disconnected")
             return
 
@@ -127,8 +148,11 @@ class McpServerManager:
                 self._log_warning(f"Error disconnected from MCP server: {server.name}")
                 return (server, False)
 
-        # Create a copy to avoid modifying during iteration
-        servers_to_disconnect = list(self._connected_servers)
+        servers_to_disconnect = [
+            server
+            for server in self._servers
+            if server in self._connected_servers or server.is_connected
+        ]
         tasks = [disconnect_server(server) for server in servers_to_disconnect]
 
         try:
@@ -141,7 +165,7 @@ class McpServerManager:
 
         for server, success in results:
             if success:
-                self._connected_servers.remove(server)
+                self._connected_servers.discard(server)
 
     async def connect_server(self, name: str) -> bool:
         """
@@ -209,6 +233,10 @@ class McpServerManager:
                             f"Failed to connect to MCP server {name} "
                             f"after {max_retries} attempts: {e}"
                         )
+                    if server.is_connected:
+                        # Session was established but tool listing failed; tear
+                        # it down so the transport/subprocess doesn't leak.
+                        await server.disconnect()
                     return False
 
     async def disconnect_server(self, name: str) -> bool:
@@ -310,45 +338,54 @@ class McpServerManager:
         Create an MCP Server Manager from a list of servers it should manage.
         Automatically connects if the server is set to auto connect (by default it is)
         """
-        mcp_manager = cls(servers=[], io=io, verbose=verbose)
+        mcp_manager = cls(servers=servers, io=io, verbose=verbose)
+        await mcp_manager.connect_all()
 
-        async def add_server_with_retry(
-            server: McpServer, connect: bool = True, max_retries: int = 3
-        ) -> tuple[McpServer, bool]:
-            """Try to add and connect to a server with retries."""
-            if not connect:
-                success = await mcp_manager.add_server(server, connect=False)
-                return (server, success)
+        return mcp_manager
 
-            # connect_server now has built-in retry logic, so we only need
-            # a single call here — no separate retry loop needed.
-            success = await mcp_manager.add_server(server, connect=True)
-            return (server, success)
+    async def connect_all(self) -> None:
+        """
+        Connect all configured servers that are enabled (default) and populate their tools.
 
-        tasks = []
-        for server in servers:
-            auto_connect = server.config.get("enabled", True)
-            tasks.append(add_server_with_retry(server, connect=auto_connect))
+        Runs on whatever event loop calls it. In TUI mode the coder runs on the worker
+        thread's event loop (CoderWorker), so callers should invoke this from the coder's
+        loop — otherwise loop-bound MCP state (sessions, asyncio locks, keepalive tasks)
+        is created on one loop and migrated to another on first use, which can raise or
+        hang.
+        """
+        self._connection_loop = asyncio.get_running_loop()
 
-        results = await asyncio.gather(*tasks)
-        for server, did_connect in results:
-            if not did_connect and server.name.lower() not in ["unnamed-server", "local"]:
-                io.tool_warning(
+        async def _connect(server: McpServer) -> tuple[McpServer, bool, bool]:
+            if not server.config.get("enabled", True):
+                # Disabled servers are registered but intentionally not connected.
+                return (server, False, False)
+
+            success = await self.connect_server(server.name)
+
+            return (server, success, True)
+
+        results = await asyncio.gather(*(_connect(server) for server in self._servers))
+
+        for server, did_connect, attempted in results:
+            if (
+                attempted
+                and not did_connect
+                and server.name.lower() not in ["unnamed-server", "local"]
+            ):
+                self._log_warning(
                     f"MCP tool initialization failed after multiple retries: {server.name}"
                 )
 
-        if verbose:
-            io.tool_output("MCP servers configured:")
+        if self.verbose and self.io:
+            self.io.tool_output("MCP servers configured:")
 
-            for server, _ in results:
-                io.tool_output(f"  - {server.name}")
+            for server, _did_connect, _attempted in results:
+                self.io.tool_output(f"  - {server.name}")
 
-                for tool in mcp_manager.get_server_tools(server.name):
+                for tool in self.get_server_tools(server.name):
                     tool_name = tool.get("function", {}).get("name", "unknown")
                     tool_desc = tool.get("function", {}).get("description", "").split("\n")[0]
-                    io.tool_output(f"    - {tool_name}: {tool_desc}")
-
-        return mcp_manager
+                    self.io.tool_output(f"    - {tool_name}: {tool_desc}")
 
 
 def get_local_tool_schemas():

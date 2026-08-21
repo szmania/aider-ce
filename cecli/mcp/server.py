@@ -2,6 +2,7 @@ import asyncio
 import logging
 import os
 import random
+import threading
 import webbrowser
 from contextlib import AsyncExitStack
 from enum import Enum, auto
@@ -59,7 +60,14 @@ class McpServer:
         self.verbose = verbose
         self.session = None
         self._connection_loop: asyncio.AbstractEventLoop | None = None
-        self._cleanup_lock: asyncio.Lock = asyncio.Lock()
+        # threading.Lock (not asyncio.Lock): disconnect can be reached from a
+        # different event loop than the one that created the connection (TUI
+        # worker thread, ReloadProgramSignal), and asyncio.Lock is loop-bound
+        # and raises RuntimeError on a different loop. The lock only guards the
+        # short _disconnecting check-and-set below (no awaits while held), so a
+        # concurrent disconnect on the same loop never blocks the loop thread.
+        self._cleanup_lock: threading.Lock = threading.Lock()
+        self._disconnecting = False
         self.exit_stack = AsyncExitStack()
 
     @property
@@ -121,18 +129,30 @@ class McpServer:
             raise
 
     async def disconnect(self):
-        """Disconnect from the MCP server and clean up resources."""
-        async with self._cleanup_lock:
-            try:
-                await self.exit_stack.aclose()
-            except (asyncio.CancelledError, RuntimeError, GeneratorExit):
-                # Expected during shutdown - anyio cancel scopes don't play
-                # well with asyncio teardown. Resources are still cleaned up.
-                pass
-            except Exception as e:
-                logging.error(f"Error during cleanup of server {self.name}: {e}")
-            finally:
+        """
+        Disconnect from the MCP server and clean up resources.
+
+        Idempotent and safe to call from any task or thread: only one caller
+        performs the teardown; concurrent callers (possibly on another event
+        loop) return immediately once the session is marked gone.
+        """
+        with self._cleanup_lock:
+            if self._disconnecting:
                 self.session = None
+                return
+            self._disconnecting = True
+
+        try:
+            await self.exit_stack.aclose()
+        except (asyncio.CancelledError, RuntimeError, GeneratorExit):
+            # Expected during shutdown - anyio cancel scopes don't play
+            # well with asyncio teardown. Resources are still cleaned up.
+            pass
+        except Exception as e:
+            logging.error(f"Error during cleanup of server {self.name}: {e}")
+        finally:
+            self.session = None
+            self._disconnecting = False
 
     async def reconnect(self):
         """Disconnect and reconnect, establishing a fresh session.
@@ -440,28 +460,40 @@ class HttpBasedMcpServer(McpServer):
                     )
 
     async def disconnect(self, cancel_keepalive: bool = True):
-        """Disconnect from the MCP server and clean up resources."""
-        async with self._cleanup_lock:
-            try:
-                if cancel_keepalive and self._keepalive_task:
-                    self._keepalive_task.cancel()
-                    try:
-                        await asyncio.wait_for(self._keepalive_task, timeout=15)
-                    except asyncio.CancelledError:
-                        pass
-                    logger.info(f"Keepalive task stopped for {self.name}")
-                if hasattr(self, "_oauth_shutdown"):
-                    self._oauth_shutdown()
-                await self.exit_stack.aclose()
-            except (asyncio.CancelledError, RuntimeError, GeneratorExit):
-                # Expected during shutdown - anyio cancel scopes don't play
-                # well with asyncio teardown. Resources are still cleaned up.
-                pass
-            except Exception as e:
-                logging.error(f"Error during cleanup of server {self.name}: {e}")
-            finally:
+        """
+        Disconnect from the MCP server and clean up resources.
+
+        Idempotent and safe to call from any task or thread: only one caller
+        performs the teardown; concurrent callers (possibly on another event
+        loop) return immediately once the session is marked gone.
+        """
+        with self._cleanup_lock:
+            if self._disconnecting:
                 self.session = None
-                self._http_client = None
+                return
+            self._disconnecting = True
+
+        try:
+            if cancel_keepalive and self._keepalive_task:
+                self._keepalive_task.cancel()
+                try:
+                    await asyncio.wait_for(self._keepalive_task, timeout=15)
+                except asyncio.CancelledError:
+                    pass
+                logger.info(f"Keepalive task stopped for {self.name}")
+            if hasattr(self, "_oauth_shutdown"):
+                self._oauth_shutdown()
+            await self.exit_stack.aclose()
+        except (asyncio.CancelledError, RuntimeError, GeneratorExit):
+            # Expected during shutdown - anyio cancel scopes don't play
+            # well with asyncio teardown. Resources are still cleaned up.
+            pass
+        except Exception as e:
+            logging.error(f"Error during cleanup of server {self.name}: {e}")
+        finally:
+            self.session = None
+            self._http_client = None
+            self._disconnecting = False
 
 
 class HttpStreamingServer(HttpBasedMcpServer):
