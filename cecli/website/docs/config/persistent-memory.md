@@ -45,10 +45,10 @@ A virtual FTS5 table (`facts_fts`) is kept in sync automatically via SQL trigger
 Agent Memory is **disabled by default** as it adds to overall system token usage. You can control it with the `--auto-memory` / `--no-auto-memory` flag:
 
 ```bash
-# Enable (default)
+# Enable
 cecli --auto-memory
 
-# Disable
+# Disable (default)
 cecli --no-auto-memory
 ```
 
