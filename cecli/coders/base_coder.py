@@ -4134,18 +4134,24 @@ class Coder(metaclass=UsageMeta):
         return response, func_err, content_err
 
     def _build_tool_calls_from_chunks(self):
-        """Rebuild tool calls from the raw streaming chunks, keyed by delta index.
+        """Rebuild tool calls from the raw streaming chunks.
 
-        Streaming deltas for parallel tool calls arrive interleaved and may start
-        at any index (not necessarily 0).  Indexing into a dict by the delta's
-        tool-call ``index`` before converting it back to a list ensures every
-        parallel call is preserved, correctly ordered, and keeps its
-        provider-specific fields (e.g. thought signatures) attached.
+        Parallel tool calls arrive interleaved and may start at any index.
+        Most providers key fragments by a per-call ``index`` (openai / anthropic /
+        gemini), but some (e.g. deepseek) reuse index0 for every call and only
+        distinguish them by the ``id`` announced on the first fragment.  Keying
+        by id when present -- and remembering the index -> key mapping so later
+        id-less fragments resolve to the right call -- preserves every parallel
+        call instead of collapsing them onto one, keeps them ordered by first
+        appearance, and retains provider-specific fields (e.g. thought
+        signatures) attached.
         """
         ChatCompletionMessageToolCall = litellm.types.utils.ChatCompletionMessageToolCall
         Function = litellm.types.utils.Function
 
         tool_calls_dict = {}
+        index_lookup = {}
+        last_key = None
 
         for chunk in self.partial_response_chunks:
             try:
@@ -4160,22 +4166,39 @@ class Coder(metaclass=UsageMeta):
                     if nested.getter(tool_call, "function") is None:
                         continue
 
+                    tool_id = nested.getter(tool_call, "id") or ""
                     index = nested.getter(tool_call, "index")
-                    if index is None:
-                        index = len(tool_calls_dict)
+
+                    if tool_id:
+                        key = ("id", tool_id)
+
+                        if index is not None:
+                            index_lookup[index] = key
+
+                        last_key = key
+                    elif index is not None and index in index_lookup:
+                        key = index_lookup[index]
+                    elif index is not None:
+                        key = ("index", index)
+                        index_lookup[index] = key
+                    elif last_key is not None:
+                        key = last_key
+                    else:
+                        key = ("slot", len(tool_calls_dict))
 
                     entry = tool_calls_dict.setdefault(
-                        index,
+                        key,
                         {
                             "id": None,
                             "name": None,
                             "type": "function",
                             "arguments": [],
                             "provider_specific_fields": {},
+                            "_order": len(tool_calls_dict),
                         },
                     )
 
-                    entry["id"] = nested.getter(tool_call, "id") or entry["id"]
+                    entry["id"] = tool_id or entry["id"]
                     entry["type"] = nested.getter(tool_call, "type") or entry["type"]
                     entry["name"] = nested.getter(tool_call, "function.name") or entry["name"]
 
@@ -4192,8 +4215,8 @@ class Coder(metaclass=UsageMeta):
                 continue
 
         tool_calls = []
-        for index in sorted(tool_calls_dict.keys()):
-            data = tool_calls_dict[index]
+        for key in sorted(tool_calls_dict.keys(), key=lambda k: tool_calls_dict[k]["_order"]):
+            data = tool_calls_dict[key]
             if not (data["id"] and data["name"]):
                 continue
 

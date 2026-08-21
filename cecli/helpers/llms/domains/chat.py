@@ -274,14 +274,18 @@ def parse_chat_chunk(data: Dict[str, Any]) -> Optional[CompletionChunk]:
 
     # Tool-call deltas arrive as fragments keyed by provider ``index``: the
     # first fragment carries id+name, later fragments only argument deltas.
-    # Preserve that contract -- consumers (base_coder / stream_chunk_builder)
-    # merge fragments by index and concatenate the ``_fragment`` JSON.
+    # Preserve the raw index AND the id -- consumers (base_coder /
+    # stream_chunk_builder) key by id when present and fall back to the index,
+    # so parallel calls that reuse index0 (e.g. deepseek) are not collapsed.
     for tc in delta.get("tool_calls") or []:
         fn = tc.get("function") or {}
         args_raw = fn.get("arguments") or ""
         tool_calls.append(
             ToolCall(
-                id=tc.get("id", ""), name=fn.get("name", ""), arguments={"_fragment": args_raw}
+                id=tc.get("id", ""),
+                name=fn.get("name", ""),
+                index=tc.get("index"),
+                arguments={"_fragment": args_raw},
             )
         )
 
