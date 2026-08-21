@@ -189,6 +189,7 @@ class Tool(BaseTool):
             # 3. Process each file
             all_results = []
             all_failed_edits = []
+            skipped_file_failures = []
             total_successful_edits = 0
             files_processed = 0
 
@@ -365,6 +366,8 @@ class Tool(BaseTool):
 
                     # Check if any changes were made for this file
                     if original_content == new_content or file_successful_edits == 0:
+                        if file_failed_edits:
+                            skipped_file_failures.append((file_path_key, file_failed_edits))
                         continue
 
                     # Handle dry run
@@ -413,21 +416,30 @@ class Tool(BaseTool):
                         }
                     )
                     total_successful_edits += file_successful_edits
-                    all_failed_edits.extend(file_failed_edits)
                     files_processed += 1
 
                 except Exception as e:
                     # Record all edits for this file as failed
+                    file_errors = []
+
                     for edit_index, _ in file_edits:
-                        all_failed_edits.append(
-                            f"Edit {edit_index + 1} - {cls._categorize_edit_error(str(e))}"
-                        )
+                        error_msg = f"Edit {edit_index + 1} - {cls._categorize_edit_error(str(e))}"
+                        file_errors.append(error_msg)
+                        all_failed_edits.append(error_msg)
+
+                    if file_errors:
+                        skipped_file_failures.append((file_path_key, file_errors))
                     continue
 
             # If dry run, return all results
             if dry_run:
                 dry_run_messages = "\n".join(r.get("dry_run_message", "") for r in all_results)
                 response.append_result(dry_run_messages or "Dry run: No changes would be made")
+
+                for file_path_key, failures in skipped_file_failures:
+                    response.append_error(
+                        f"Edits to {file_path_key} were not applied:\n" + "\n".join(failures)
+                    )
                 return response
 
             # 4. Check if any edits succeeded overall
@@ -479,6 +491,13 @@ class Tool(BaseTool):
                             "failed_edits": result.get("failed_edits", []),
                         },
                     )
+
+            # Surface failures from files whose edits were not applied at all,
+            # even when other files in the batch succeeded.
+            for file_path_key, failures in skipped_file_failures:
+                response.append_error(
+                    f"Edits to {file_path_key} were not applied:\n" + "\n".join(failures)
+                )
 
             return response
 
