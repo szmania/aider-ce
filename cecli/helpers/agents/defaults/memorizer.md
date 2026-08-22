@@ -21,7 +21,7 @@ agent-config:
     - directory_structure
     - environment_info
     - git_status
-    - symbol_outli",
+    - symbol_outline
     - todo_list
     - sub_agents
     - skills
