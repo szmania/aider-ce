@@ -9,6 +9,7 @@ pexpect>=4.9.0
 psutil>=7.0.0
 watchfiles>=1.1.0
 charset-normalizer>=3.4.7
+
 # git
 GitPython>=3.1.45
 pathspec>=0.12.1
@@ -43,6 +44,7 @@ tomlkit>=0.14.0
 
 # search & replace in legacy modes
 diff-match-patch>=20241021
+tqdm>3.0.0
 
 # copying and pasting
 pyperclip>=1.9.0
