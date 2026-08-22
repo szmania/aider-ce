@@ -220,15 +220,19 @@ def _choice_to_dict(choice: Choices) -> Dict[str, Any]:
 
 
 def _message_to_dict(message: Message) -> Dict[str, Any]:
-    return {
+    res = {
         "role": message.role,
         "content": message.content,
         "tool_calls": [_tool_call_to_dict(tc) for tc in message.tool_calls] or None,
         "function_call": _function_to_dict(message.function_call),
         "reasoning_content": message.reasoning_content,
-        "reasoning_redacted": message.reasoning_redacted,
         "provider_specific_fields": message.provider_specific_fields,
     }
+
+    if getattr(message, "reasoning_redacted", None):
+        res["reasoning_redacted"] = message.reasoning_redacted
+
+    return res
 
 
 def _tool_call_to_dict(tc: ChatCompletionMessageToolCall) -> Dict[str, Any]:
