@@ -1,3 +1,4 @@
+from cecli.helpers import nested
 from cecli.helpers.hashline import (
     HASH_DELIMITER,
     UNIQUE_HASH_DELIMITER,
@@ -228,8 +229,12 @@ class Tool(BaseTool):
                                 )
 
                             edit_file_raw = edit.get("text")
-                            edit_start_line = edit.get("start_line")
-                            edit_end_line = edit.get("end_line")
+                            edit_start_line = nested.getter(
+                                edit, ["start_line", "range_start", "line_start", "start"]
+                            )
+                            edit_end_line = nested.getter(
+                                edit, ["end_line", "range_end", "line_end", "end"]
+                            )
 
                             # ---------------------------------------------------------
                             # DEFENSIVE FALLBACKS
@@ -561,8 +566,10 @@ class Tool(BaseTool):
                     coder.io.tool_output(f"{color_start}{OPERATION_NOUNS[operation]}:{color_end}")
 
                 text = strip_hashline(edit.get("text", ""))
-                start_line = edit.get("start_line")
-                end_line = edit.get("end_line")
+                start_line = nested.getter(
+                    edit, ["start_line", "range_start", "line_start", "start"]
+                )
+                end_line = nested.getter(edit, ["end_line", "range_end", "line_end", "end"])
                 # Show output based on operation type
                 if operation in ("replace", "delete"):
                     # Show diff for replace operations
