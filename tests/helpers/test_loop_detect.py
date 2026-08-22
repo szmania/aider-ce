@@ -7,7 +7,7 @@ character, a single word, or a whole sentence). These tests cover:
 * what the detector can and cannot catch from LLM / small-language-model output,
 * the bounded-LRU behaviour of the sentence cache,
 * the ``show_send_output_stream`` integration that stops streaming early,
-* the ``send``-level handling that marks the turn as ``[OUTPUT LOOP DETECTED]``
+* the ``send``-level handling that marks the turn as ``[SYSTEM CANCEL: OUTPUT LOOP DETECTED]``
   and drops any pending tool calls so they are never executed.
 """
 
@@ -336,18 +336,18 @@ def test_consolidate_chunks_applies_marker_and_clears_tool_calls():
     response, func_err, content_err = coder.consolidate_chunks()
 
     assert func_err is None
-    assert "[OUTPUT LOOP DETECTED]" in coder.partial_response_content
+    assert "[SYSTEM CANCEL: OUTPUT LOOP DETECTED]" in coder.partial_response_content
     assert coder.partial_response_tool_calls == []
     assert coder.partial_response_function_call == dict()
 
     # The marker must also be written into the response message so it actually
     # reaches the assistant message / conversation (which is built via model_dump).
     msg = response.choices[0].message
-    assert "[OUTPUT LOOP DETECTED]" in (msg.content or "")
+    assert "[SYSTEM CANCEL: OUTPUT LOOP DETECTED]" in (msg.content or "")
     assert msg.tool_calls == []
 
     dumped = response.model_dump()["choices"][0]["message"]
-    assert "[OUTPUT LOOP DETECTED]" in (dumped.get("content") or "")
+    assert "[SYSTEM CANCEL: OUTPUT LOOP DETECTED]" in (dumped.get("content") or "")
 
 
 def test_consolidate_chunks_propagates_marker_onto_existing_content():
@@ -362,7 +362,7 @@ def test_consolidate_chunks_propagates_marker_onto_existing_content():
 
     assert func_err is None
     msg = response.choices[0].message
-    assert "[OUTPUT LOOP DETECTED]" in msg.content
+    assert "[SYSTEM CANCEL: OUTPUT LOOP DETECTED]" in msg.content
     assert "The quick brown fox jumps over the lazy dog." in msg.content
 
 
@@ -373,7 +373,7 @@ def test_consolidate_chunks_leaves_normal_stream_untouched():
     response, func_err, content_err = coder.consolidate_chunks()
 
     assert func_err is None
-    assert "[OUTPUT LOOP DETECTED]" not in coder.partial_response_content
+    assert "[SYSTEM CANCEL: OUTPUT LOOP DETECTED]" not in coder.partial_response_content
     assert coder.partial_response_tool_calls == []
 
 
@@ -411,7 +411,7 @@ async def test_send_appends_marker_and_clears_tool_calls_on_content_loop():
         pass
 
     assert coder._output_loop_detected is True
-    assert "[OUTPUT LOOP DETECTED]" in coder.partial_response_content
+    assert "[SYSTEM CANCEL: OUTPUT LOOP DETECTED]" in coder.partial_response_content
     assert coder.partial_response_tool_calls == []
 
 
@@ -425,6 +425,6 @@ async def test_send_appends_marker_and_clears_tool_calls_on_tool_loop():
         pass
 
     assert coder._output_loop_detected is True
-    assert "[OUTPUT LOOP DETECTED]" in coder.partial_response_content
+    assert "[SYSTEM CANCEL: OUTPUT LOOP DETECTED]" in coder.partial_response_content
     assert coder.partial_response_tool_calls == []
     assert coder.partial_response_function_call == dict()
