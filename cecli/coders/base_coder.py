@@ -354,6 +354,23 @@ class Coder(metaclass=UsageMeta):
                 if from_coder.tui:
                     res.tui = from_coder.tui
 
+                # Sub-agents get a dedicated, independent MCP manager so they
+                # can rebuild a custom tool list (their own LocalServer tools /
+                # filters) and be disconnected independently from the parent.
+                # The parent's server configs are copied into a fresh manager
+                # whose connections are created on this loop; the Local server
+                # is left to initialize_mcp_tools() so it is recreated from the
+                # sub-agent's filters.
+                if (
+                    from_coder.mcp_manager
+                    and res.uuid
+                    and res.parent_uuid
+                    and res.parent_uuid != res.uuid
+                ):
+                    res.mcp_manager = await from_coder.mcp_manager.spawn_child(
+                        io=IOProxy.unwrap(res.io)
+                    )
+
                 if res.mcp_manager:
                     # When switching to a non-agent coder, disconnect the "Local" MCP server
                     # (which provides agent-only tools like tool calling and file editing)

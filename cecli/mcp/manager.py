@@ -387,6 +387,46 @@ class McpServerManager:
                     tool_desc = tool.get("function", {}).get("description", "").split("\n")[0]
                     self.io.tool_output(f"    - {tool_name}: {tool_desc}")
 
+    async def spawn_child(self, io=None) -> "McpServerManager":
+        """Create a new, independent manager for a sub-agent.
+
+        Rebuilds fresh McpServer instances from this manager's server configs
+        so the sub-agent sees the same full set of servers it can include or
+        exclude (via registered_servers), but with its own connections that
+        can be torn down together with the sub-agent instead of being shared
+        with the parent. The "Local" server is deliberately left out so
+        AgentCoder.initialize_mcp_tools() can create and connect its own
+        instance and rebuild the tool list from the sub-agent's own filters
+        (the parent may exclude tools a child opts into).
+        """
+        server_io = io if io is not None else self.io
+        servers = [
+            _recreate_server(server, io=server_io, verbose=self.verbose)
+            for server in self._servers
+            if not isinstance(server, LocalServer)
+        ]
+
+        child = McpServerManager(servers=servers, io=server_io, verbose=self.verbose)
+        child._connection_loop = asyncio.get_running_loop()
+
+        # Mirror the parent's connected set, but with independent connections so
+        # the child can be disconnected without affecting the parent.
+        connected_names = {
+            server.name
+            for server in self._servers
+            if server in self._connected_servers or server.is_connected
+        }
+        for server in servers:
+            if server.name in connected_names:
+                try:
+                    await child.connect_server(server.name)
+                except Exception as exc:
+                    child._log_warning(
+                        f"Failed to connect MCP server {server.name} for sub-agent: {exc}"
+                    )
+
+        return child
+
 
 def get_local_tool_schemas():
     """Returns the JSON schemas for all local tools using the tool registry."""
@@ -449,3 +489,11 @@ def _mcp_tools_to_openai_tools(tools):
         }
         for tool in tools
     ]
+
+
+def _recreate_server(server, io=None, verbose=False):
+    """Rebuild a fresh McpServer of the same type/config as an existing one."""
+    import copy
+
+    config = copy.deepcopy(server.config)
+    return type(server)(config, io=io, verbose=verbose)
