@@ -84,14 +84,15 @@ class Tool(BaseTool):
                             "When True, runs the command interactively using a "
                             "pseudo-terminal (PTY), allowing the user to provide "
                             "inputs like passwords or navigate terminal interfaces. "
-                            "Handles TUI suspension automatically."
                         ),
                         "default": False,
                     },
                     "timeout": {
                         "type": "integer",
                         "description": (
-                            "Timeout in seconds for command execution. " "Default is 30 seconds."
+                            "Timeout in seconds for command execution. "
+                            "Default is 30 seconds. Maximum 300 seconds. "
+                            "If the command exceeds this time, it will continue in the background."
                         ),
                         "default": 30,
                     },

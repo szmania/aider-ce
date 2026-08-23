@@ -220,15 +220,19 @@ def _choice_to_dict(choice: Choices) -> Dict[str, Any]:
 
 
 def _message_to_dict(message: Message) -> Dict[str, Any]:
-    return {
+    res = {
         "role": message.role,
         "content": message.content,
         "tool_calls": [_tool_call_to_dict(tc) for tc in message.tool_calls] or None,
         "function_call": _function_to_dict(message.function_call),
         "reasoning_content": message.reasoning_content,
-        "reasoning_redacted": message.reasoning_redacted,
         "provider_specific_fields": message.provider_specific_fields,
     }
+
+    if getattr(message, "reasoning_redacted", None):
+        res["reasoning_redacted"] = message.reasoning_redacted
+
+    return res
 
 
 def _tool_call_to_dict(tc: ChatCompletionMessageToolCall) -> Dict[str, Any]:
@@ -627,27 +631,60 @@ def _chunk_shim(chunk: Any, model: Optional[str] = None) -> StreamChunk:
 
 
 def _accumulate_tool_call(
-    tool_calls_dict: Dict[int, Dict[str, Any]], tc: Optional[ChatCompletionMessageToolCall]
+    tool_calls_dict: Dict[Any, Dict[str, Any]],
+    tc: Optional[ChatCompletionMessageToolCall],
+    state: Optional[Dict[str, Any]] = None,
 ) -> None:
-    """Merge one delta tool-call into an index-keyed accumulation dict."""
+    """Merge one delta tool-call into a keyed accumulation dict.
+
+    Parallel tool calls are keyed by their ``id`` when the provider supplies one
+    (OpenAI / Responses style), falling back to the delta ``index`` for providers
+    that only increment a per-event index (anthropic / gemini).  Some providers
+    (e.g. deepseek) reuse index0 across parallel calls and only distinguish them
+    by the id announced on the first fragment, so the index -> key mapping in
+    ``state`` lets later id-less fragments resolve to the right bucket instead of
+    collapsing onto one call.
+    """
     if tc is None:
         return
+
     function = tc.function
     if function is None:
         return
 
+    if state is None:
+        state = {}
+
+    index_lookup = state.setdefault("index_lookup", {})
+    last_key = state.get("last_key")
     index = tc.index
-    if index is None:
-        index = len(tool_calls_dict)
+
+    if tc.id:
+        key = ("id", tc.id)
+
+        if index is not None:
+            index_lookup[index] = key
+
+        state["last_key"] = key
+    elif index is not None and index in index_lookup:
+        key = index_lookup[index]
+    elif index is not None:
+        key = ("index", index)
+        index_lookup[index] = key
+    elif last_key is not None:
+        key = last_key
+    else:
+        key = ("slot", len(tool_calls_dict))
 
     entry = tool_calls_dict.setdefault(
-        index,
+        key,
         {
             "id": None,
             "name": None,
             "type": "function",
             "arguments": [],
             "provider_specific_fields": {},
+            "_order": len(tool_calls_dict),
         },
     )
     entry["id"] = tc.id or entry["id"]
@@ -664,12 +701,16 @@ def _accumulate_tool_call(
 
 
 def _finalize_tool_calls(
-    tool_calls_dict: Dict[int, Dict[str, Any]],
+    tool_calls_dict: Dict[Any, Dict[str, Any]],
 ) -> List[ChatCompletionMessageToolCall]:
-    """Build final tool-call shims from an index-keyed accumulation dict."""
+    """Build final tool-call shims from a keyed accumulation dict.
+
+    Entries are ordered by first appearance (``_order``) so parallel calls keep
+    the stream order even when their keys are ids rather than indices.
+    """
     tool_calls: List[ChatCompletionMessageToolCall] = []
-    for index in sorted(tool_calls_dict.keys()):
-        data = tool_calls_dict[index]
+    for key in sorted(tool_calls_dict.keys(), key=lambda k: tool_calls_dict[k]["_order"]):
+        data = tool_calls_dict[key]
         if not (data["id"] and data["name"]):
             continue
         function = Function(arguments="".join(data["arguments"]) or "{}", name=data["name"])
@@ -839,12 +880,13 @@ class _LiteLLMFacade:
         """Reassemble streaming chunks into a single litellm-shaped response.
 
         Mirrors ``litellm.stream_chunk_builder``: text/reasoning are joined,
-        tool calls are accumulated per delta index, and finish_reason/usage
+        tool calls are accumulated per call id (falling back to delta index), and finish_reason/usage
         come from the last chunk that carried them.
         """
         content_parts: List[str] = []
         reasoning_parts: List[str] = []
-        tool_calls_dict: Dict[int, Dict[str, Any]] = {}
+        tool_calls_dict: Dict[Any, Dict[str, Any]] = {}
+        tool_state: Dict[str, Any] = {}
         finish_reason: Optional[str] = None
         usage: Optional[Usage] = None
         response_id: Optional[str] = None
@@ -883,7 +925,7 @@ class _LiteLLMFacade:
                     if reasoning_msg:
                         reasoning_parts.append(reasoning_msg)
                     for tc in getattr(message, "tool_calls", None) or []:
-                        _accumulate_tool_call(tool_calls_dict, tc)
+                        _accumulate_tool_call(tool_calls_dict, tc, tool_state)
                 continue
 
             if getattr(delta, "content", None):
@@ -894,7 +936,7 @@ class _LiteLLMFacade:
             if reasoning_delta:
                 reasoning_parts.append(reasoning_delta)
             for tc in getattr(delta, "tool_calls", None) or []:
-                _accumulate_tool_call(tool_calls_dict, tc)
+                _accumulate_tool_call(tool_calls_dict, tc, tool_state)
 
             delta_psf = getattr(delta, "provider_specific_fields", None)
             if delta_psf:

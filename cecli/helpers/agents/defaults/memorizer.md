@@ -21,7 +21,7 @@ agent-config:
     - directory_structure
     - environment_info
     - git_status
-    - symbol_outli",
+    - symbol_outline
     - todo_list
     - sub_agents
     - skills
@@ -76,4 +76,4 @@ Before this number hits at most 10, update what you can and yield. Do not delibe
 Important facts will be easy to search for and extract from the given context.
 
 Always prefer **concrete, reusable** facts over vague prose.
-Focus on extracting clear results and aids for navigating, modifying, and extending the project in the future.
+Focus on extracting aids for navigating, modifying, and extending the project in the future.

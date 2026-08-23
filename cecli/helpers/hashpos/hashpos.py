@@ -76,7 +76,7 @@ class HashPos:
 
     # Loose prefix for robust stripping: Matches a tilde-wrapped 4-char string containing non-ASCII
     _LOOSE_PREFIX_RE = re.compile(
-        rf"^{HASH_DELIMITER}(?=.{{0,3}}[^\x00-\x7f]).{{4}}{HASH_DELIMITER}"
+        rf"^[{HASH_DELIMITER}]?(?=.{{0,3}}[^\x00-\x7f]).{{4}}{HASH_DELIMITER}"
     )
 
     def __init__(self, source_text: str = ""):

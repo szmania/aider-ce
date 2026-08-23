@@ -1,3 +1,4 @@
+from cecli.helpers import nested
 from cecli.helpers.hashline import (
     HASH_DELIMITER,
     UNIQUE_HASH_DELIMITER,
@@ -29,6 +30,7 @@ OPERATION_NOUNS = {
 
 USER_EDIT_CATEGORIES = {
     "no_changes": "No Changes",
+    "not_applied": "Edit Not Applied",
     "syntax_errors": "Syntax Errors",
     "boundary_errors": "Boundary Resolution Error",
 }
@@ -189,6 +191,7 @@ class Tool(BaseTool):
             # 3. Process each file
             all_results = []
             all_failed_edits = []
+            skipped_file_failures = []
             total_successful_edits = 0
             files_processed = 0
 
@@ -226,18 +229,18 @@ class Tool(BaseTool):
                                 )
 
                             edit_file_raw = edit.get("text")
-                            edit_start_line = edit.get("start_line")
-                            edit_end_line = edit.get("end_line")
+                            edit_start_line = nested.getter(
+                                edit, ["start_line", "range_start", "line_start", "start"]
+                            )
+                            edit_end_line = nested.getter(
+                                edit, ["end_line", "range_end", "line_end", "end"]
+                            )
 
                             # ---------------------------------------------------------
                             # DEFENSIVE FALLBACKS
                             # ---------------------------------------------------------
 
-                            # 1. Handle missing text parameter by defaulting to empty string
-                            if edit_file_raw is None:
-                                edit_file_raw = ""
-
-                            # 2. Programmatically enforce @000 for empty files
+                            # 1. Programmatically enforce @000 for empty files
                             if not original_content or not original_content.strip():
                                 edit_start_line = "@000"
                                 edit_end_line = "@000"
@@ -271,12 +274,12 @@ class Tool(BaseTool):
                             edit_file = edit_file_raw
 
                             # Validate required fields based on operation type
-                            # (Note: The check for 'edit_file is None' will now be safely
-                            # bypassed because we defaulted it to "" above)
+                            # Missing text must not silently degrade into a delete
+                            # of the targeted range.
                             if operation in ("replace", "insert"):
-                                if edit_file is None:
+                                if edit_file_raw is None or edit_file_raw == "":
                                     raise ToolError(
-                                        f"Edit {edit_index + 1}: 'text' parameter is required for "
+                                        f"Edit {edit_index + 1}: non-empty 'text' parameter is required for "
                                         f"'{operation}' operation"
                                     )
                             if operation in ("replace", "delete"):
@@ -337,13 +340,24 @@ class Tool(BaseTool):
                         if new_content != original_content:
                             file_successful_edits += len(successful_ops)
                         else:
-                            # Be specific about why content didn't change
-                            if failed_ops:
+                            # Be specific about why content didn't change.
+                            # If no operation reached the apply stage, every edit
+                            # already failed validation and the per-edit failures
+                            # explain why; skip the generic no-change message.
+                            if operations and failed_ops:
+                                no_change_failures = all(
+                                    op.get("failure_type") == "no_change" for op in failed_ops
+                                )
+                                if no_change_failures:
+                                    raise ToolError(
+                                        "Invalid Edit - The requested edit matched the existing content; "
+                                        "no changes were applied. Adjust the replacement text or targeted range."
+                                    )
                                 error_details = "; ".join(op["error"] for op in failed_ops)
                                 raise ToolError(
                                     f"Invalid Edit - Review content ID bounds: {error_details}"
                                 )
-                            else:
+                            elif operations:
                                 raise ToolError(
                                     "Invalid Edit - Review content ID bounds - "
                                     "All edits resulted in unchanged content"
@@ -365,6 +379,8 @@ class Tool(BaseTool):
 
                     # Check if any changes were made for this file
                     if original_content == new_content or file_successful_edits == 0:
+                        if file_failed_edits:
+                            skipped_file_failures.append((file_path_key, file_failed_edits))
                         continue
 
                     # Handle dry run
@@ -413,21 +429,30 @@ class Tool(BaseTool):
                         }
                     )
                     total_successful_edits += file_successful_edits
-                    all_failed_edits.extend(file_failed_edits)
                     files_processed += 1
 
                 except Exception as e:
                     # Record all edits for this file as failed
+                    file_errors = []
+
                     for edit_index, _ in file_edits:
-                        all_failed_edits.append(
-                            f"Edit {edit_index + 1} - {cls._categorize_edit_error(str(e))}"
-                        )
+                        error_msg = f"Edit {edit_index + 1} - {cls._categorize_edit_error(str(e))}"
+                        file_errors.append(error_msg)
+                        all_failed_edits.append(error_msg)
+
+                    if file_errors:
+                        skipped_file_failures.append((file_path_key, file_errors))
                     continue
 
             # If dry run, return all results
             if dry_run:
                 dry_run_messages = "\n".join(r.get("dry_run_message", "") for r in all_results)
                 response.append_result(dry_run_messages or "Dry run: No changes would be made")
+
+                for file_path_key, failures in skipped_file_failures:
+                    response.append_error(
+                        f"Edits to {file_path_key} were not applied:\n" + "\n".join(failures)
+                    )
                 return response
 
             # 4. Check if any edits succeeded overall
@@ -479,6 +504,13 @@ class Tool(BaseTool):
                             "failed_edits": result.get("failed_edits", []),
                         },
                     )
+
+            # Surface failures from files whose edits were not applied at all,
+            # even when other files in the batch succeeded.
+            for file_path_key, failures in skipped_file_failures:
+                response.append_error(
+                    f"Edits to {file_path_key} were not applied:\n" + "\n".join(failures)
+                )
 
             return response
 
@@ -534,8 +566,10 @@ class Tool(BaseTool):
                     coder.io.tool_output(f"{color_start}{OPERATION_NOUNS[operation]}:{color_end}")
 
                 text = strip_hashline(edit.get("text", ""))
-                start_line = edit.get("start_line")
-                end_line = edit.get("end_line")
+                start_line = nested.getter(
+                    edit, ["start_line", "range_start", "line_start", "start"]
+                )
+                end_line = nested.getter(edit, ["end_line", "range_end", "line_end", "end"])
                 # Show output based on operation type
                 if operation in ("replace", "delete"):
                     # Show diff for replace operations
@@ -623,6 +657,13 @@ class Tool(BaseTool):
 
         if "syntax error" in error_lower or "introduces new syntax" in error_lower:
             return USER_EDIT_CATEGORIES["syntax_errors"]
+
+        elif (
+            "not applied" in error_lower
+            or "superseded" in error_lower
+            or "contained within" in error_lower
+        ):
+            return f"{USER_EDIT_CATEGORIES['not_applied']}: {error_msg}"
 
         elif "hash" in error_lower or "content id" in error_lower or "not found" in error_lower:
             # Append the actual error string so the LLM can self-correct its specific mistake

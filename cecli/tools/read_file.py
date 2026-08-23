@@ -2,6 +2,7 @@ import json
 import os
 from typing import Dict, List
 
+from cecli.helpers import nested
 from cecli.helpers.hashline import hashline_formatted, strip_hashline
 from cecli.helpers.hashpos.transformations import (
     apply_contextual_marker,
@@ -138,8 +139,10 @@ class Tool(BaseTool):
             for read_index, read_op in enumerate(read):
                 # Extract parameters for this read operation
                 file_path = read_op.get("file_path")
-                range_start = read_op.get("range_start")
-                range_end = read_op.get("range_end")
+                range_start = nested.getter(
+                    read_op, ["range_start", "start_line", "line_start", "start"]
+                )
+                range_end = nested.getter(read_op, ["range_end", "end_line", "line_end", "end"])
                 padding = 0
 
                 if file_path is None:
@@ -888,8 +891,12 @@ class Tool(BaseTool):
             coder.io.tool_output("")
             for i, read_op in enumerate(read_ops):
                 file_path = read_op.get("file_path", "")
-                range_start = strip_hashline(read_op.get("range_start", "")).strip()
-                range_end = strip_hashline(read_op.get("range_end", "")).strip()
+                range_start = strip_hashline(
+                    nested.getter(read_op, ["range_start", "start_line", "line_start", "start"])
+                ).strip()
+                range_end = strip_hashline(
+                    nested.getter(read_op, ["range_end", "end_line", "line_end", "end"])
+                ).strip()
 
                 # Format as "read: • file_path • range_start • range_end • padding"
                 formatted_query = (

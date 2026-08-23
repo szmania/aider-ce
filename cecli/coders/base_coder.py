@@ -42,6 +42,7 @@ from cecli.helpers import command_parser, command_queue, coroutines, nested, res
 from cecli.helpers.conversation import ConversationService, MessageTag
 from cecli.helpers.file_system import FileSystemService
 from cecli.helpers.io_proxy import IOProxy
+from cecli.helpers.loop_detect import LoopDetectedError, LoopDetector
 from cecli.helpers.memory_control import trim_memory
 from cecli.helpers.observations.service import ObservationService
 from cecli.helpers.profiler import TokenProfiler
@@ -250,6 +251,8 @@ class Coder(metaclass=UsageMeta):
     cost_multiplier = 1
     stop_on_empty = True
     error_code = None
+    _output_loop_detected = False
+    _output_loop_message = ""
 
     # Task coordination state variables
     input_running = False
@@ -3649,6 +3652,8 @@ class Coder(metaclass=UsageMeta):
         self.got_reasoning_content = False
         self.ended_reasoning_content = False
         self.empty_response = False
+        self._output_loop_detected = False
+        self._output_loop_message = ""
 
         self._streaming_buffer_length = 0
         self.io.reset_streaming_response()
@@ -3857,11 +3862,14 @@ class Coder(metaclass=UsageMeta):
     async def show_send_output_stream(self, completion):
         received_content = False
         chunk_index = 0
+        content_detector = LoopDetector()
+        tool_detector = LoopDetector()
+        loop_detected = False
+
+        stream = coroutines.interruptible_async_generator(completion, self.interrupt_event)
 
         try:
-            async for chunk in coroutines.interruptible_async_generator(
-                completion, self.interrupt_event
-            ):
+            async for chunk in stream:
                 if self.args.debug:
                     with safe_open(".cecli/logs/chunks.log", "a") as f:
                         print(chunk, file=f)
@@ -3901,6 +3909,8 @@ class Coder(metaclass=UsageMeta):
                                         self.io.update_spinner_suffix(
                                             tool_call_chunk.function.arguments
                                         )
+
+                                        tool_detector.push(tool_call_chunk.function.arguments)
 
                     except (AttributeError, IndexError):
                         # Handle cases where the response structure doesn't match expectations
@@ -3965,6 +3975,9 @@ class Coder(metaclass=UsageMeta):
                 chunk._hidden_params["created_at"] = chunk_index
                 self.partial_response_chunks.append(chunk)
 
+                if text:
+                    content_detector.push(text)
+
                 if self.show_pretty():
                     # Use simplified streaming - just call the method with full content
                     content_to_show = self.live_incremental_response(False)
@@ -3984,6 +3997,30 @@ class Coder(metaclass=UsageMeta):
                     yield text
         except (asyncio.CancelledError, KeyboardInterrupt):
             raise KeyboardInterrupt
+
+        except LoopDetectedError as e:
+            self._output_loop_detected = True
+            self._output_loop_message = str(e)
+            loop_detected = True
+
+        if loop_detected:
+            self.io.tool_warning(
+                f"Output loop detected while streaming: {self._output_loop_message}"
+            )
+            # Explicitly close the async generators so the wrapper's interrupt
+            # task and the underlying provider generator are cleaned up instead
+            # of being left suspended after we stop consuming them.
+            if hasattr(stream, "aclose"):
+                try:
+                    await stream.aclose()
+                except Exception:
+                    pass
+            if hasattr(completion, "aclose"):
+                try:
+                    await completion.aclose()
+                except Exception:
+                    pass
+            return
 
         if (
             self.show_pretty()
@@ -4130,22 +4167,45 @@ class Coder(metaclass=UsageMeta):
                 self.tool_reflection = True
                 self.partial_response_tool_calls = extracted_calls
 
+        if self._output_loop_detected:
+            # A repeating output loop was caught while streaming; turn it into an
+            # assistant message so the model can adjust and drop any tool calls.
+            marker = "\n\n[SYSTEM CANCEL: OUTPUT LOOP DETECTED]\n"
+            self.partial_response_content += marker
+            self.partial_response_tool_calls = []
+            self.partial_response_function_call = dict()
+
+            # The assistant message stored in the conversation is built from the
+            # response object (via model_dump()), so the marker has to be written
+            # there too, otherwise it never reaches the model to react to.
+            message = response.choices[0].message
+            message.content = (message.content or "") + marker
+            message.tool_calls = []
+            if hasattr(message, "function_call"):
+                message.function_call = None
+
         self.partial_response_consolidated = (response, func_err, content_err)
         return response, func_err, content_err
 
     def _build_tool_calls_from_chunks(self):
-        """Rebuild tool calls from the raw streaming chunks, keyed by delta index.
+        """Rebuild tool calls from the raw streaming chunks.
 
-        Streaming deltas for parallel tool calls arrive interleaved and may start
-        at any index (not necessarily 0).  Indexing into a dict by the delta's
-        tool-call ``index`` before converting it back to a list ensures every
-        parallel call is preserved, correctly ordered, and keeps its
-        provider-specific fields (e.g. thought signatures) attached.
+        Parallel tool calls arrive interleaved and may start at any index.
+        Most providers key fragments by a per-call ``index`` (openai / anthropic /
+        gemini), but some (e.g. deepseek) reuse index0 for every call and only
+        distinguish them by the ``id`` announced on the first fragment.  Keying
+        by id when present -- and remembering the index -> key mapping so later
+        id-less fragments resolve to the right call -- preserves every parallel
+        call instead of collapsing them onto one, keeps them ordered by first
+        appearance, and retains provider-specific fields (e.g. thought
+        signatures) attached.
         """
         ChatCompletionMessageToolCall = litellm.types.utils.ChatCompletionMessageToolCall
         Function = litellm.types.utils.Function
 
         tool_calls_dict = {}
+        index_lookup = {}
+        last_key = None
 
         for chunk in self.partial_response_chunks:
             try:
@@ -4160,22 +4220,39 @@ class Coder(metaclass=UsageMeta):
                     if nested.getter(tool_call, "function") is None:
                         continue
 
+                    tool_id = nested.getter(tool_call, "id") or ""
                     index = nested.getter(tool_call, "index")
-                    if index is None:
-                        index = len(tool_calls_dict)
+
+                    if tool_id:
+                        key = ("id", tool_id)
+
+                        if index is not None:
+                            index_lookup[index] = key
+
+                        last_key = key
+                    elif index is not None and index in index_lookup:
+                        key = index_lookup[index]
+                    elif index is not None:
+                        key = ("index", index)
+                        index_lookup[index] = key
+                    elif last_key is not None:
+                        key = last_key
+                    else:
+                        key = ("slot", len(tool_calls_dict))
 
                     entry = tool_calls_dict.setdefault(
-                        index,
+                        key,
                         {
                             "id": None,
                             "name": None,
                             "type": "function",
                             "arguments": [],
                             "provider_specific_fields": {},
+                            "_order": len(tool_calls_dict),
                         },
                     )
 
-                    entry["id"] = nested.getter(tool_call, "id") or entry["id"]
+                    entry["id"] = tool_id or entry["id"]
                     entry["type"] = nested.getter(tool_call, "type") or entry["type"]
                     entry["name"] = nested.getter(tool_call, "function.name") or entry["name"]
 
@@ -4192,8 +4269,8 @@ class Coder(metaclass=UsageMeta):
                 continue
 
         tool_calls = []
-        for index in sorted(tool_calls_dict.keys()):
-            data = tool_calls_dict[index]
+        for key in sorted(tool_calls_dict.keys(), key=lambda k: tool_calls_dict[k]["_order"]):
+            data = tool_calls_dict[key]
             if not (data["id"] and data["name"]):
                 continue
 

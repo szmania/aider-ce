@@ -1262,7 +1262,11 @@ async def main_async(
         mcp_servers = load_mcp_servers(
             args.mcp_servers, args.mcp_servers_files, io, args.verbose, args.mcp_transport
         )
-        mcp_manager = await McpServerManager.from_servers(mcp_servers, io, args.verbose)
+        # Create the manager without connecting. Connections are established
+        # later on the coder's event loop (connect_all below for CLI mode, or
+        # CoderWorker._async_run for TUI mode) so loop-bound MCP state stays
+        # on the loop the coder actually runs on.
+        mcp_manager = McpServerManager(mcp_servers, io=io, verbose=args.verbose)
 
         if from_coder:
             from_coder.tui = None
@@ -1327,6 +1331,14 @@ async def main_async(
                     f"Loaded {len(loaded_hooks)} hooks from --hooks config:"
                     f" {', '.join(loaded_hooks)}"
                 )
+
+        # Connect MCP servers on the coder's event loop so loop-bound MCP
+        # state (sessions, locks, keepalive tasks) is created where the coder
+        # runs. In TUI mode the coder runs on the worker thread's loop and
+        # CoderWorker connects there; connecting here on the main loop would
+        # migrate the connections across loops on first use.
+        if not args.tui:
+            await mcp_manager.connect_all()
 
         if args.show_model_warnings and not suppress_pre_init:
             problem = await models.sanity_check_models(pre_init_io, main_model)

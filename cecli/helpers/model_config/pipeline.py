@@ -4,14 +4,17 @@ This module mirrors the request pipeline in ``cecli/helpers/requests.py``:
 ``get_default_config`` feeds a small context dict through a chain of step
 functions, each of which transforms the context and returns it.
 
-Like ``cecli/models.py``, large metadata files are scanned as raw JSON strings
-(one entry at a time) instead of being ``json.loads``-ed wholesale, so a model
-lookup never materializes the full metadata dict in memory.
+Like ``cecli/models.py``, user-supplied metadata files are scanned as raw
+JSON strings (one entry at a time) instead of being ``json.loads``-ed
+wholesale, so a lookup never materializes a large metadata dict in memory.
+The small bundled ``model-metadata.json`` default is parsed once and cached
+so lookups against it are O(1) rather than re-scanning the raw text per key.
 """
 
 from __future__ import annotations
 
 import importlib.resources as importlib_resources
+import json
 import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
@@ -36,6 +39,10 @@ _TRAILING_SEGMENT_RE = re.compile(r"[-.][^.-]+$")
 
 #: Lazily loaded raw text of the bundled metadata file (never json.loads-ed).
 _BUNDLED_RAW_CACHE: Optional[str] = None
+
+#: Parsed bundled metadata dict, cached once so bundled lookups are O(1)
+#: instead of re-scanning the raw JSON text for each candidate key.
+_BUNDLED_JSON_CACHE: Optional[Dict[str, Any]] = None
 
 MetadataSource = Union[str, Path, Dict[str, Any]]
 
@@ -102,7 +109,7 @@ def _load_metadata(context):
     files = context["metadata_files"]
 
     if files is None:
-        context["sources"] = [{"kind": "raw", "text": _bundled_metadata_raw()}]
+        context["sources"] = [{"kind": "dict", "data": _bundled_metadata()}]
         return context
 
     context["sources"] = [_normalize_source(source) for source in _as_list(files)]
@@ -172,6 +179,26 @@ def _bundled_metadata_raw() -> str:
     return _BUNDLED_RAW_CACHE
 
 
+def _bundled_metadata() -> Dict[str, Any]:
+    """Return the parsed bundled metadata dict, cached after the first load.
+
+    The raw text is kept for callers that only need a single record; the
+    parsed dict makes lookups against the bundled default O(1) instead of
+    re-scanning the raw JSON string once per candidate key.
+    """
+    global _BUNDLED_JSON_CACHE
+
+    if _BUNDLED_JSON_CACHE is None:
+        try:
+            parsed = json.loads(_bundled_metadata_raw())
+            _BUNDLED_JSON_CACHE = parsed if isinstance(parsed, dict) else {}
+
+        except (ValueError, TypeError):
+            _BUNDLED_JSON_CACHE = {}
+
+    return _BUNDLED_JSON_CACHE
+
+
 def _as_list(value):
     """Normalize a single source or a list of sources into a list."""
     if isinstance(value, (list, tuple)):
@@ -191,7 +218,7 @@ def _normalize_source(source):
         if _path_exists(path):
             try:
                 if path.name == RESOURCE_FILE:
-                    return {"kind": "raw", "text": _bundled_metadata_raw()}
+                    return {"kind": "dict", "data": _bundled_metadata()}
 
                 return {"kind": "raw", "text": path.read_text()}
 
