@@ -4,6 +4,7 @@ import os
 import platform
 import shlex
 import shutil
+import ssl
 import subprocess
 import sys
 import tempfile
@@ -387,11 +388,20 @@ def touch_file(fname):
 
 async def check_pip_install_extra(io, module, prompt, pip_install_cmd, self_update=False):
     if module:
-        try:
-            __import__(module)
-            return True
-        except (ImportError, ModuleNotFoundError, RuntimeError):
-            pass
+        for _attempt in range(2):
+            try:
+                __import__(module)
+                return True
+            except ssl.SSLError:
+                # OpenSSL CONF module lazy-init flake (WSL2 + OpenSSL 3.5 + Py3.14):
+                # the very first SSL context creation can fail with
+                # ``[CONF: MODULE_INITIALIZATION_ERROR]`` / "unknown error (0x0)",
+                # and a second attempt succeeds. Mirrors llms.runtime.make_client.
+                if _attempt == 0:
+                    continue
+                raise
+            except (ImportError, ModuleNotFoundError, RuntimeError):
+                break
 
     cmd = get_pip_install(pip_install_cmd)
 

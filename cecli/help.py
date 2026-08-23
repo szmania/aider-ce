@@ -1,15 +1,11 @@
-import json
 import os
-import shutil
 import warnings
 from pathlib import Path
 
 import importlib_resources
 
 from cecli import __version__, utils
-from cecli.dump import dump  # noqa
 from cecli.help_pats import exclude_website_pats
-from cecli.helpers.file_searcher import handle_core_files
 
 warnings.simplefilter("ignore", category=FutureWarning)
 
@@ -20,162 +16,148 @@ os.environ["TOKENIZERS_PARALLELISM"] = "true"
 
 
 async def install_help_extra(io):
+    """Ensure the local chromadb backend is installed for interactive /help.
+
+    The previous dependency chain (``llama_index.embeddings.huggingface`` ->
+    ``sentence_transformers`` -> ``datasets``) crashed on the WSL2 + OpenSSL 3.5 +
+    Python 3.14 lazy-init flake and on a ``datasets`` circular import. Chroma's
+    default ONNX embedding needs neither, so it is what ``Help`` uses.
+    """
     pip_install_cmd = [
         "cecli-dev[help]",
         "--extra-index-url",
         "https://download.pytorch.org/whl/cpu",
     ]
-    res = await utils.check_pip_install_extra(
+    return await utils.check_pip_install_extra(
         io,
-        "llama_index.embeddings.huggingface",
+        "chromadb",
         "To use interactive /help you need to install the help extras",
         pip_install_cmd,
     )
-    return res
 
 
 def get_package_files():
-    for path in importlib_resources.files("cecli.website").iterdir():
-        if path.is_file():
-            yield path
-        elif path.is_dir():
-            for subpath in path.rglob("*.md"):
-                yield subpath
+    docs = importlib_resources.files("cecli.website") / "docs"
+    for path in docs.rglob("*.md"):
+        yield path
 
 
 def fname_to_url(filepath):
+    """Map a file path in the website package to its published URL.
+
+    Doc sources live under ``website/docs/`` and docmd renders each ``<name>.md``
+    to ``<name>/index.html``, so ``docs/<path>/page.md`` becomes
+    ``https://cecli.dev/docs/<path>/page/``. Top-level site files (``index.html``)
+    publish to the site root. Everything else — build artifacts, ``_includes``
+    partials, okf sources — is not a published page and returns ``""``.
+    """
     website = "website"
+    docs = "docs"
     index = "index.md"
     md = ".md"
+
     filepath = filepath.replace("\\", "/")
-    path = Path(filepath)
-    parts = path.parts
+    parts = Path(filepath).parts
+
     try:
         website_index = [p.lower() for p in parts].index(website.lower())
     except ValueError:
         return ""
+
     relevant_parts = parts[website_index + 1 :]
-    if relevant_parts and relevant_parts[0].lower() == "_includes":
+    if not relevant_parts:
         return ""
-    url_path = "/".join(relevant_parts)
 
-    # docmd renders each .md source to <path>/index.html, so the published
-    # URLs are directory-style (e.g. /docs/usage/) rather than .html files.
-    is_doc = False
-    if url_path.lower().endswith(index.lower()):
-        url_path = url_path[: -len(index)]
-        is_doc = True
-    elif url_path.lower().endswith(md.lower()):
-        url_path = url_path[: -len(md)]
-        is_doc = True
+    # Doc pages live under website/docs/ and publish to /docs/<path>/.
+    if relevant_parts[0].lower() == docs:
+        url_path = _strip_doc_suffix("/".join(relevant_parts[1:]), index, md)
+        return _format_docs_url(url_path)
 
-    url_path = url_path.strip("/")
-    if not url_path:
-        return "https://cecli.dev/"
-    if is_doc:
-        return f"https://cecli.dev/{url_path}/"
-    return f"https://cecli.dev/{url_path}"
+    # Only top-level site files publish to the site root; anything nested
+    # (_includes, _site, .docmd-*, share, etc.) is not a page.
+    if len(relevant_parts) == 1:
+        return f"https://cecli.dev/{relevant_parts[0].lstrip('/')}"
+
+    return ""
 
 
 def get_index(coder=None):
-    from llama_index.core import (
-        Document,
-        StorageContext,
-        VectorStoreIndex,
-        load_index_from_storage,
+    """Build a local chromadb vector index over the bundled help docs.
+
+    Chroma's default ONNX embedding needs no ``sentence_transformers`` or
+    ``datasets``, so it avoids the WSL2 + OpenSSL 3.5 + Python 3.14 lazy-init
+    flake and the ``datasets`` circular import that broke ``/help <question>``.
+    Returns the chromadb collection ready for text queries.
+    """
+    import chromadb
+    from chromadb.utils.embedding_functions import DefaultEmbeddingFunction
+
+    dname = Path.home() / ".cecli" / "caches" / ("help." + __version__)
+    dname.parent.mkdir(parents=True, exist_ok=True)
+
+    client = chromadb.PersistentClient(path=str(dname))
+    collection = client.get_or_create_collection(
+        "help", embedding_function=DefaultEmbeddingFunction()
     )
-    from llama_index.core.node_parser import MarkdownNodeParser
 
-    dname = handle_core_files(Path.home() / ".cecli" / "caches" / ("help." + __version__))
-    index = None
-    try:
-        if dname.exists():
-            storage_context = StorageContext.from_defaults(persist_dir=dname)
-            index = load_index_from_storage(storage_context)
-    except (OSError, json.JSONDecodeError):
-        shutil.rmtree(dname)
-    if index is None:
-        io = getattr(coder, "io", None) if coder is not None else None
-        in_tui = io is not None and _in_tui(coder)
+    if collection.count() == 0:
+        documents = []
+        ids = []
+        metadatas = []
+        for fname in get_package_files():
+            fname = Path(fname)
+            if any(fname.match(pat) for pat in exclude_website_pats):
+                continue
+            documents.append(fname.read_text(encoding="utf-8"))
+            ids.append(str(fname))
+            metadatas.append(dict(filename=fname.name, url=fname_to_url(str(fname))))
 
-        # Inside the Textual TUI, stdout/stderr are redirected to streams whose
-        # fileno() == -1, so tqdm's lazily-created multiprocessing.RLock crashes
-        # with "bad value(s) in fds_to_keep". Use coder.io spinner states instead
-        # of tqdm there; keep the tqdm progress bar everywhere else.
-        if in_tui:
-            io.start_spinner("Parsing help docs...")
-        try:
-            parser = MarkdownNodeParser()
-            nodes = []
-            for fname in get_package_files():
-                fname = Path(fname)
-                if any(fname.match(pat) for pat in exclude_website_pats):
-                    continue
-                doc = Document(
-                    text=importlib_resources.files("cecli.website")
-                    .joinpath(fname)
-                    .read_text(encoding="utf-8"),
-                    metadata=dict(
-                        filename=fname.name, extension=fname.suffix, url=fname_to_url(str(fname))
-                    ),
-                )
-                nodes += parser.get_nodes_from_documents([doc])
+        if documents:
+            collection.add(ids=ids, documents=documents, metadatas=metadatas)
 
-            if in_tui:
-                io.update_spinner("Embedding help docs...")
-            index = VectorStoreIndex(nodes, show_progress=not in_tui)
-            dname.parent.mkdir(parents=True, exist_ok=True)
-            index.storage_context.persist(dname)
-        finally:
-            if in_tui:
-                io.stop_spinner()
-    return index
+    return collection
 
 
 class Help:
+    """Vector retriever over the bundled help docs using a local chromadb store."""
+
     def __init__(self, coder=None):
-        from huggingface_hub.utils import disable_progress_bars
-        from llama_index.core import Settings
-        from llama_index.embeddings.huggingface import HuggingFaceEmbedding
-        from transformers import logging
-
-        disable_progress_bars()
-        logging.set_verbosity_error()
-
-        Settings.embed_model = HuggingFaceEmbedding(model_name="BAAI/bge-small-en-v1.5")
-        index = get_index(coder=coder)
-        self.retriever = index.as_retriever(similarity_top_k=20)
+        self.collection = get_index(coder=coder)
 
     def ask(self, question):
-        nodes = self.retriever.retrieve(question)
+        results = self.collection.query(
+            query_texts=[question],
+            n_results=20,
+            include=["documents", "metadatas"],
+        )
+        documents = results.get("documents", [[]])[0]
+        metadatas = results.get("metadatas", [[]])[0]
+
         context = f"# Question: {question}\n\n# Relevant docs:\n\n"
-        for node in nodes:
-            url = node.metadata.get("url", "")
+        for doc, meta in zip(documents, metadatas):
+            url = (meta or {}).get("url", "")
             if url:
                 url = f' from_url="{url}"'
             context += f"<doc{url}>\n"
-            context += node.text
+            context += doc
             context += "\n</doc>\n\n"
         return context
 
 
-def _in_tui(coder):
-    """Return True if coder is attached to a live TUI app.
+def _strip_doc_suffix(url_path, index, md):
+    if url_path.lower().endswith(index.lower()):
+        return url_path[: -len(index)]
 
-    The TUI stores itself on coders as a weakref (``coder.tui = weakref.ref(app)``),
-    so we dereference it (``tui()``) to confirm the app is alive — mirroring the
-    ``if coder.tui and coder.tui():`` idiom used across the codebase.
-    """
-    try:
-        import weakref
+    if url_path.lower().endswith(md.lower()):
+        return url_path[: -len(md)]
 
-        tui_ref = getattr(coder, "tui", None)
-        if tui_ref is None:
-            return False
+    return url_path
 
-        if isinstance(tui_ref, weakref.ref):
-            return tui_ref() is not None
 
-        return bool(tui_ref)
-    except Exception:
-        return False
+def _format_docs_url(url_path):
+    url_path = url_path.strip("/")
+
+    if not url_path:
+        return "https://cecli.dev/docs/"
+
+    return f"https://cecli.dev/docs/{url_path}/"

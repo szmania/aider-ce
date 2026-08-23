@@ -23,7 +23,6 @@ cogapp==3.6.0
     #   -r requirements/requirements-dev.in
 colorama==0.4.6 ; os_name == 'nt' or sys_platform == 'win32'
     # via
-    #   -c requirements/common-constraints.txt
     #   build
     #   click
     #   pytest
