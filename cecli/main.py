@@ -1004,7 +1004,7 @@ async def main_async(
             return await main_async(argv, input, output, right_repo_root, return_coder=return_coder)
 
     if (args.check_update or args.upgrade) and not args.just_check_update and not suppress_pre_init:
-        await check_version(pre_init_io, verbose=args.verbose)
+        await check_version(pre_init_io, verbose=args.verbose, upgrade=args.upgrade)
     elif args.just_check_update:
         update_available = await check_version(pre_init_io, just_check=True, verbose=args.verbose)
         return await graceful_exit(None, 0 if not update_available else 1)
