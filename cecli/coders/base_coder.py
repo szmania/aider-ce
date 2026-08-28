@@ -520,6 +520,7 @@ class Coder(metaclass=UsageMeta):
         self.max_compaction_retries = max_compaction_retries
 
         self.max_reflections = nested.getter(self.args, "max_reflections", 3)
+        self.max_tool_calls = nested.getter(self.args, "max_tool_calls", 25)
 
         if not fnames:
             fnames = []

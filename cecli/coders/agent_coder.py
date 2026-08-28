@@ -133,6 +133,8 @@ class AgentCoder(Coder):
             self.io.tool_warning(err)
 
         self.start_up_errors = []
+        # Preserve the original 10000 setting now that max tool calls is configurable
+        self.max_tool_calls = self.max_tool_calls * 400
 
     def _setup_agent(self):
         os.makedirs(".cecli/temp", exist_ok=True)
