@@ -1223,15 +1223,6 @@ class AgentCoder(Coder):
         for i, tool in enumerate(recent_history, 1):
             context_parts.append(f"{i}. {tool}")
 
-        if not self.edit_allowed:
-            context_parts.append("\n\n")
-            context_parts.append("## File Editing Tools Disabled")
-            context_parts.append(
-                "File editing tools are currently disabled. Use `ReadFile` to determine the"
-                " current content ID prefixes needed to perform an edit and activate them when"
-                " you are ready to edit a file."
-            )
-
         context_parts.append("\n\n")
         repetition_warning = None
 

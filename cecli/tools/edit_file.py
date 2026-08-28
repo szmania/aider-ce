@@ -61,8 +61,8 @@ class Tool(BaseTool):
                 f"duplicate lines by their hashed prefix (e.g., '{HASH_DELIMITER}WecX{HASH_DELIMITER}'); use "
                 "'@000' for empty files. Identifiers track content, so edits can re-prefix identical lines "
                 "elsewhere — re-read the file after editing for fresh identifiers. Multiple edits to one "
-                "file are applied bottom-to-top; overlapping or contained ranges are merged or rejected "
-                "automatically."
+                "file are applied bottom-to-top automatically; overlapping or contained ranges are merged "
+                "or rejected automatically."
             ),
             "parameters": {
                 "type": "object",
@@ -94,7 +94,7 @@ class Tool(BaseTool):
                                     "type": "string",
                                     "description": (
                                         "The replacement text for 'replace'. "
-                                        "For 'delete' leave this empty (\"\"). "
+                                        "For 'delete' leave this as an empty string (\"\"). "
                                         "Supplied as-is; do not include identifier prefixes."
                                     ),
                                 },

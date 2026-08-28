@@ -10,13 +10,8 @@ and region_resolver.py.
 from __future__ import annotations
 
 import re
-from typing import TYPE_CHECKING
 
-from cecli.helpers.hashpos.hashpos import UNIQUE_HASH_DELIMITER
-
-if TYPE_CHECKING:
-    from cecli.helpers.hashpos.hashpos import HashPos
-
+from cecli.helpers.hashpos.hashpos import UNIQUE_HASH_DELIMITER, HashPos
 
 # ────────────────────────────────────────────────────────────
 # Pattern Matching
@@ -432,9 +427,24 @@ def reposition_indices(
 
 def strip_hashline_prefix(value: str) -> str:
     """Strip the virtual prefix from a ReadFile output line reference."""
+    if not isinstance(value, str):
+        return value
 
-    if isinstance(value, str) and value.startswith(UNIQUE_HASH_DELIMITER):
-        return value[len(UNIQUE_HASH_DELIMITER) :].lstrip()
+    # Unique-line delimiter (——): not spatially resolvable, so strip it and match
+    # the remaining content as text.
+    if value.startswith(UNIQUE_HASH_DELIMITER):
+        return value[len(UNIQUE_HASH_DELIMITER) :]
+
+    # Valid canonical duplicate content ID (—XXXX—): keep it intact so that
+    # resolve_content_to_hashline_ids() can target a specific occurrence.
+    if HashPos.HASH_PREFIX_RE.match(value):
+        return value
+
+    # Malformed marker: a short string immediately followed by an em-dash (e.g.
+    # 'о‘星—'). This is not a valid content ID, so strip it.
+    stripped = HashPos._LOOSE_PREFIX_RE.sub("", value, count=1)
+    if stripped != value:
+        return stripped
 
     return value
 
