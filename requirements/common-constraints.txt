@@ -48,7 +48,9 @@ charset-normalizer==3.4.9
     #   -r requirements/requirements.in
     #   requests
 chromadb==1.5.9
-    # via -r requirements/requirements-help.in
+    # via
+    #   -r requirements/requirements-help.in
+    #   -r requirements/requirements.in
 click==8.3.1
     # via
     #   pip-tools

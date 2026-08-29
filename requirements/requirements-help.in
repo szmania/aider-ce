@@ -1,4 +1,4 @@
-chromadb
+chromadb>=1.5.9
 
 # numpy is pulled in by chromadb's onnxruntime embedding stack
 numpy>=1.26.4
