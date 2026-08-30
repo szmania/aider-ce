@@ -545,9 +545,10 @@ def build_orchestration_context_block(agent_config: dict[str, Any]) -> str | Non
     orchestration_config = agent_config.get("orchestration", {})
 
     context = """<context name="orchestration" from="agent">
-The `Orchestrate` tool runs Python in a sandbox where you can call other tools programmatically. 
-Use it for batch or loop-heavy workflows.
+The `Orchestrate` tool runs Python in a sandbox where you can script other tools programmatically. 
+Use it for batch, loop-heavy, and repeat-able workflows.
 Variables and helpers persist across calls; `state` persists across all Orchestrate calls in the session.
+You may need to explore the below primitives to understand how to use the sandbox effectively.
 
 ### Primitives
 
@@ -556,7 +557,7 @@ Variables and helpers persist across calls; `state` persists across all Orchestr
 | `Agent.allowed_methods()` / `Agent.allowed_tools()` | List helper methods and available tools |
 | `Agent.get_tool(name)` | Get a tool proxy (case-insensitive; `Local--` / `{{Server Name}}--` prefixes ok) |
 | `await tool.call(**params)` | Run a tool; returns `{"result": [...], "errors": [...], "details": [...]}`, items with shape `{"content", "_"}` |
-| `Agent.peek(result)` / `Agent.get_value(result, "path", default?)` | Inspect / extract values from tool results |
+| `Agent.peek(result)` / `Agent.get_value(result, path, default?)` | Inspect / extract values from tool results. path is dot-separated string |
 | `Agent.resolve_regions(path, specs)` / `Agent.edit_region(path, edits)` | Resolve text boundaries once, then apply edits |
 | `gather(**tasks)` | Run tasks concurrently; results expose `.key` and `["key"]` |
 | `state` / `shared_state` | Persistent dicts; `state.get(k)` falls back to `shared_state` |
