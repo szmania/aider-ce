@@ -52,7 +52,7 @@ class SkillsManager:
         include_list: Optional[List[str]] = None,
         exclude_list: Optional[List[str]] = None,
         initialize_list: Optional[List[str]] = None,
-        git_root: Optional[str] = None,
+        root: Optional[str] = None,
         coder=None,
     ):
         """
@@ -63,7 +63,7 @@ class SkillsManager:
             include_list: Optional list of skill names to include (whitelist)
             exclude_list: Optional list of skill names to exclude (blacklist)
             initialize_list: Optional list of skill names to load and include on startup
-            git_root: Optional git root directory for relative path resolution
+            root: Optional base root directory for relative path resolution
             coder: Optional reference to the coder instance (weak reference)
         """
         # Always include the default skills directory in the user's home
@@ -71,12 +71,29 @@ class SkillsManager:
         if default_skill_dir not in directory_paths:
             directory_paths = [default_skill_dir] + list(directory_paths)
 
-        # Resolve every path and drop exact directory duplicates.
+        # Local path resolution base: use root so sub-agents with an overridden
+        # local root still resolve project skills relative to the primary
+        # workspace (instead of the working directory).
+        local_anchor = Path(root).expanduser().resolve() if root else Path.cwd()
+
+        # Also include the local default skills directory under the coder root
+        # so project-scoped skills can live in {root}/.cecli/skills alongside the
+        # global ~/.cecli/skills default.
+        if root:
+            local_default_skill_dir = str(local_anchor / ".cecli" / "skills")
+            if local_default_skill_dir not in directory_paths:
+                directory_paths.append(local_default_skill_dir)
+
+        # Resolve every path relative to local_anchor and drop exact duplicates.
         resolved_paths = []
         seen_paths = set()
         for p in directory_paths:
             try:
-                path = Path(p).expanduser().resolve()
+                candidate = Path(p).expanduser()
+                if candidate.is_absolute():
+                    path = candidate.resolve()
+                else:
+                    path = (local_anchor / candidate).resolve()
             except Exception:
                 continue
             if path in seen_paths:
@@ -85,18 +102,17 @@ class SkillsManager:
             resolved_paths.append(path)
 
         # Order paths: local project dirs first, then configured, home dirs last.
-        git_root_path = Path(git_root).expanduser().resolve() if git_root else None
         ordered = sorted(
             enumerate(resolved_paths),
             key=lambda item: (
-                self._directory_priority(item[1], git_root_path),
+                self._directory_priority(item[1], local_anchor),
                 item[0],
             ),
         )
         self.directory_paths = [path for _, path in ordered]
         self.include_list = set(include_list) if include_list else None
         self.exclude_list = set(exclude_list) if exclude_list else set()
-        self.git_root = Path(git_root).expanduser().resolve() if git_root else None
+        self.root = Path(root).expanduser().resolve() if root else None
         self._coder_ref = weakref.ref(coder) if coder else None  # Weak reference to coder instance
 
         # Cache for loaded skills
@@ -134,12 +150,12 @@ class SkillsManager:
             # Save initial state from config
 
     @staticmethod
-    def _directory_priority(path: Path, git_root: Optional[Path] = None) -> int:
+    def _directory_priority(path: Path, root: Optional[Path] = None) -> int:
         """Return the ordering priority of a skill directory.
 
         Lower values are scanned first and therefore win by-name conflicts:
 
-        0 - local project directory (under the git root or working directory)
+        0 - local project directory (under the root or working directory)
         1 - any other configured directory
         2 - a home directory (including the implicit ``~/.cecli/skills`` default)
         """
@@ -149,7 +165,7 @@ class SkillsManager:
         if path == (home / ".cecli" / "skills"):
             return 2
 
-        local_anchor = git_root if git_root is not None else Path.cwd()
+        local_anchor = root if root is not None else Path.cwd()
         try:
             path.relative_to(local_anchor)
             return 0
@@ -834,7 +850,7 @@ class SkillsManager:
         directory_paths: List[str],
         include_list: Optional[List[str]] = None,
         exclude_list: Optional[List[str]] = None,
-        git_root: Optional[str] = None,
+        root: Optional[str] = None,
     ) -> str:
         """
         High-level function to load and summarize all available skills.
@@ -843,12 +859,12 @@ class SkillsManager:
             directory_paths: List of directory paths to search for skills
             include_list: Optional list of skill names to include (whitelist)
             exclude_list: Optional list of skill names to exclude (blacklist)
-            git_root: Optional git root directory for relative path resolution
+            root: Optional base root directory for relative path resolution
 
         Returns:
             Formatted summary of all available skills
         """
-        manager = cls(directory_paths, include_list, exclude_list, git_root)
+        manager = cls(directory_paths, include_list, exclude_list, root)
         summaries = manager.get_all_skill_summaries()
 
         if not summaries:
@@ -862,15 +878,13 @@ class SkillsManager:
         return result
 
     @staticmethod
-    def resolve_skill_directories(
-        base_paths: List[str], git_root: Optional[str] = None
-    ) -> List[Path]:
+    def resolve_skill_directories(base_paths: List[str], root: Optional[str] = None) -> List[Path]:
         """
         Resolve skill directory paths relative to various locations.
 
         Args:
             base_paths: List of base directory paths
-            git_root: Optional git root directory
+            root: Optional base root directory
 
         Returns:
             List of resolved Path objects
@@ -878,9 +892,9 @@ class SkillsManager:
         resolved_paths = []
 
         for base_path in base_paths:
-            # Try to resolve relative to git root first
-            if git_root and not Path(base_path).is_absolute():
-                git_path = Path(git_root) / base_path
+            # Try to resolve relative to root first
+            if root and not Path(base_path).is_absolute():
+                git_path = Path(root) / base_path
                 if git_path.exists():
                     resolved_paths.append(git_path.resolve())
                     continue

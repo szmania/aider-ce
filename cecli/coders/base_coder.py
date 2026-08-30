@@ -60,7 +60,7 @@ from cecli.reasoning_tags import (
     remove_reasoning_content,
     replace_reasoning_tags,
 )
-from cecli.repo import ANY_GIT_ERROR, GitRepo, GitRepoProxy
+from cecli.repo import ANY_GIT_ERROR, GitRepoProxy
 from cecli.repomap import RepoMap
 from cecli.report import update_error_prefix
 from cecli.run_cmd import run_cmd_async
@@ -193,6 +193,8 @@ class Coder(metaclass=UsageMeta):
     abs_read_only_stubs_fnames = None
     abs_rules_fnames = None
     repo = None
+    root = "."
+    primary_root = None
     last_coder_commit_hash = None
     coder_edited_files = None
     last_asked_for_commit_time = 0
@@ -327,6 +329,7 @@ class Coder(metaclass=UsageMeta):
                 uuid=from_coder.uuid,
                 parent_uuid=from_coder.parent_uuid,
                 repo=from_coder.repo,
+                primary_root=from_coder.primary_root,
                 summarizer=from_coder.summarizer,
             )
             use_kwargs.update(update)  # override to complete the switch
@@ -451,6 +454,8 @@ class Coder(metaclass=UsageMeta):
         registered_servers=None,
         uuid: str = "",
         parent_uuid: str = "",
+        root=None,
+        primary_root=None,
         init_metadata={},
     ):
         from cecli.helpers.agents.service import AgentService
@@ -622,13 +627,12 @@ class Coder(metaclass=UsageMeta):
         self.repo = repo
         if use_git and self.repo is None:
             try:
-                self.repo = GitRepoProxy(
-                    GitRepo(
-                        self.io,
-                        fnames,
-                        None,
-                        models=main_model.commit_message_models(),
-                    )
+                self.repo = GitRepoProxy.for_root(
+                    None,
+                    self.io,
+                    fnames=fnames,
+                    git_dname=None,
+                    models=main_model.commit_message_models(),
                 )
             except FileNotFoundError:
                 pass
@@ -665,11 +669,46 @@ class Coder(metaclass=UsageMeta):
         if not self.repo:
             self.root = utils.find_common_root(self.abs_fnames)
 
-        # Initialize the FileSystemService singleton for all agents
-        FileSystemService.get_instance(
+        # Allow sub-agent classes to override the working root (multi-project workspaces).
+        if root is not None:
+            self.root = os.path.normpath(os.path.abspath(root))
+
+        # A sub-agent may operate on a different base path than its parent. In
+        # that case its repo must be scoped to *this* root (per-base-path),
+        # rather than inheriting the parent's repo, so the coder's repo/fs match
+        # its own root.
+        if use_git and self.repo is not None and os.path.normpath(self.repo.root) != self.root:
+            try:
+                self.repo = GitRepoProxy.for_root(
+                    self.root,
+                    self.io,
+                    fnames=[self.root],
+                    git_dname=None,
+                    models=main_model.commit_message_models(),
+                )
+            except FileNotFoundError:
+                self.repo = None
+
+        # Store the root of the primary coder so skills files, custom tools, and
+        # sub-agent paths can be resolved relative to the primary workspace even
+        # when this coder operates on a different base path.
+        self.primary_root = (
+            primary_root
+            if primary_root is not None
+            else getattr(self, "primary_root", None) or self.root
+        )
+
+        # Initialize the per-base-path FileSystemService for this coder
+        self.fs = FileSystemService.for_root(
             root=self.root if hasattr(self, "root") else ".",
             repo=self.repo if hasattr(self, "repo") else None,
         )
+
+        # Auto-return the per-root service (and its git repo) when the last
+        # coder sharing this base path is destroyed.
+        _fs_key = FileSystemService._normalize_root(self.root if hasattr(self, "root") else ".")
+        FileSystemService._inc_ref(_fs_key)
+        weakref.finalize(self, FileSystemService._release, _fs_key)
 
         if read_only_fnames:
             self.abs_read_only_fnames = set()
@@ -711,11 +750,7 @@ class Coder(metaclass=UsageMeta):
         has_map_prompt = nested.getter(self, "gpt_prompts.repo_content_prefix")
 
         if use_repo_map and self.repo and has_map_prompt:
-            repo_root = (
-                self.repo.workspace_path
-                if (self.repo and getattr(self.repo, "workspace_path", None))
-                else self.root
-            )
+            repo_root = self.root
             self.repo_map = RepoMap(
                 map_tokens,
                 self.map_cache_dir,
@@ -1048,6 +1083,20 @@ class Coder(metaclass=UsageMeta):
 
     fences = all_fences
     fence = fences[0]
+
+    def resolve_relative_to_primary_root(self, path: str) -> str:
+        """Resolve a path relative to the primary coder's root (falling back to self.root).
+
+        Used for skills files, custom tools, and sub-agent paths that are defined
+        relative to the primary workspace even when this coder operates on a
+        different base path.
+        """
+        if not path:
+            return path
+        if os.path.isabs(path):
+            return os.path.normpath(path)
+        base = self.primary_root or self.root
+        return os.path.normpath(os.path.join(base, path))
 
     def show_pretty(self):
         if not self.pretty:
@@ -4568,8 +4617,8 @@ class Coder(metaclass=UsageMeta):
             return
 
     def get_all_relative_files(self):
-        """Get all files known to the file service singleton."""
-        fs = FileSystemService.get_instance()
+        """Get all files known to the file service for this coder's base path."""
+        fs = getattr(self, "fs", None) or FileSystemService.get_instance()
         if fs.trie:
             # Auto-rebuild if the repository state has changed
             # (e.g., new commits, staged files, or HEAD change)

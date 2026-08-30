@@ -14,6 +14,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from uuid import uuid4
 
 import cecli.models as models
+from cecli.helpers import nested
 from cecli.helpers.coroutines import fire_and_forget
 
 logger = logging.getLogger(__name__)
@@ -186,7 +187,7 @@ class AgentService:
                     return
 
     @classmethod
-    def build_registry(cls, paths: List[str]) -> None:
+    def build_registry(cls, paths: List[str], root: Optional[str] = None) -> None:
         """Scan directories for .md sub-agent definition files and load them.
 
         Each .md file should contain YAML front matter with:
@@ -204,15 +205,44 @@ class AgentService:
             ``<agent_model>``  - The parent coder's agent model
             ``<main_model>``   - The parent coder's main model
             ``<current>``      - The currently active (foreground) coder's main model
+
+        Args:
+            paths: Directories to scan for sub-agent ``.md`` definition files.
+            root: Optional base directory used to resolve relative ``paths``
+                (e.g. the workspace or project root in multi-project workspaces).
         """
         from pathlib import Path
 
         from .config import parse_subagent_file
 
+        # Resolve relative sub-agent directories against ``root`` so
+        # multi-project workspaces can reference local sub-agent definitions
+        # relative to their project/workspace root. Absolute and ``~`` paths
+        # are left untouched.
+        base = Path(root).expanduser().resolve() if root else None
+
+        def _resolve(directory: str) -> str:
+            raw = Path(directory).expanduser()
+            if raw.is_absolute():
+                return str(raw)
+            if base is not None:
+                return str((base / raw).resolve())
+            return str(raw)
+
+        paths = [_resolve(directory) for directory in paths]
+
         # Always check the default sub-agents directory in the user's home
         default_dir = str(Path.home() / ".cecli" / "subagents")
         if default_dir not in paths:
             paths = [default_dir] + list(paths)
+
+        # Also check the local default sub-agents directory under the given root
+        # (e.g. {root}/.cecli/subagents) before the user-configured paths so
+        # project-scoped sub-agents take precedence over the global default.
+        if base is not None:
+            local_default_dir = str(base / ".cecli" / "subagents")
+            if local_default_dir not in paths:
+                paths.insert(1, local_default_dir)
 
         # Also scan the built-in defaults directory for .yml definitions
         import cecli.helpers.agents.defaults as _defaults_pkg
@@ -553,6 +583,22 @@ class AgentService:
         metadata = getattr(config, "metadata", {}).copy()
         agent_config = metadata.get("agent-config", {})
 
+        # Optional per-sub-agent root override for multi-project workspaces.
+        configured_root = metadata.get("root")
+        if not configured_root and isinstance(agent_config, dict):
+            configured_root = agent_config.get("root")
+
+        # Workspace sub-agents (ws:*) inherit the parent/primary coder's
+        # agent_config as their default and additionally enable nested
+        # delegation so they can themselves serve as delegation bases. The
+        # ws-agent's own metadata agent-config is merged on top.
+        if name.startswith("ws:"):
+            inherited = dict(nested.getter(parent_coder, "agent_config", {}) or {})
+            incoming = dict(agent_config)
+            inherited.update(incoming)
+            inherited["allow_nested_delegation"] = True
+            agent_config = inherited
+
         kwargs = dict(
             io=parent_coder.io,
             from_coder=parent_coder,
@@ -563,6 +609,8 @@ class AgentService:
             map_tokens=0,
             init_metadata={"agent_config": agent_config},
         )
+        if configured_root:
+            kwargs["root"] = configured_root
 
         if agent_config:
             # Reset the per-instance tool/server filters so AgentCoder.post_init()

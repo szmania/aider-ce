@@ -159,7 +159,7 @@ def get_file_completions(
     root = Path(coder.root) if hasattr(coder, "root") else Path.cwd()
 
     # Try using FileSystemService for efficient lookups
-    fs = FileSystemService.get_instance()
+    fs = getattr(coder, "fs", None) or FileSystemService.get_instance()
     fs_available = fs.trie is not None or fs.ngram is not None
 
     if completion_type == "glob":

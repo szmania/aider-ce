@@ -105,8 +105,27 @@ class AgentCoder(Coder):
         self.sub_agent_paths = self.agent_config.get("subagent_paths", [])
         self._setup_agent()
 
-        AgentService.build_registry(self.sub_agent_paths)
-        ToolRegistry.build_registry(agent_config=self.agent_config)
+        # primary_root is needed early so the skills and tool registries can
+        # resolve relative paths against the primary workspace root rather than
+        # this coder's (possibly overridden) local root. base_coder re-affirms
+        # and keeps this value in super().__init__().
+        self.primary_root = kwargs.get("primary_root") or getattr(self, "primary_root", None)
+
+        # Allow a sub-agent to target a different working root (multi-project workspace).
+        if not kwargs.get("root"):
+            configured_root = self.agent_config.get("root")
+            if configured_root:
+                kwargs["root"] = configured_root
+
+        self._initialize_skills_manager(
+            self.agent_config, root=kwargs.get("root", self.primary_root)
+        )
+        AgentService.build_registry(
+            self.sub_agent_paths, root=kwargs.get("root", self.primary_root)
+        )
+        ToolRegistry.build_registry(
+            agent_config=self.agent_config, root=kwargs.get("root", self.primary_root)
+        )
 
         self.loaded_custom_tools = ToolRegistry.loaded_custom_tools
         super().__init__(*args, **kwargs)
@@ -292,21 +311,19 @@ class AgentCoder(Coder):
             config["tools_excludelist"].append("loadskill")
             config["tools_excludelist"].append("removeskill")
 
-        self._initialize_skills_manager(config)
         return config
 
-    def _initialize_skills_manager(self, config):
+    def _initialize_skills_manager(self, config, root=None):
         """
         Initialize the skills manager with the configured directory paths and filters.
         """
         try:
-            git_root = str(self.repo.root) if self.repo else None
             self.skills_manager = SkillsManager(
                 directory_paths=config.get("skills_paths", []),
                 include_list=config.get("skills_includelist", []),
                 exclude_list=config.get("skills_excludelist", []),
                 initialize_list=config.get("skills_init", []),
-                git_root=git_root,
+                root=root or self.root or self.primary_root,
                 coder=self,
             )
         except Exception as e:
