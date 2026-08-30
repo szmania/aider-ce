@@ -61,7 +61,9 @@ class Tool(BaseTool):
                 active_tasks = [
                     info.generate_task
                     for info in children
-                    if info.generate_task is not None and not info.generate_task.done()
+                    if not info.independent
+                    and info.generate_task is not None
+                    and not info.generate_task.done()
                 ]
 
                 if active_tasks:
