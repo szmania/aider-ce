@@ -22,8 +22,11 @@ Because `ws:{name}` agents are registered with the sub-agent registry, they are 
 
 - The `Delegate` tool (from a primary agent)
 - `/spawn-agent ws:{name}` (interactively)
+- `/open <name> <path>` (ad-hoc, no config file required)
 
 You can find the agent name reported by `/workspace` (e.g. `ws:app`).
+
+`/open app /path/to/app` opens a `ws:app` sub-agent rooted at the given path without needing a `.cecli.workspaces.yml` file. The path must be an existing git root; the agent is registered immediately and becomes the foreground agent.
 
 Each project may carry a `metadata` block that configures its `ws:{name}` agent the same way a sub-agent `.md` front-matter does: `model`, `hooks` and `auto_reap` map to the config fields, and any other key (e.g. `agent-config`) is merged into the agent's metadata. `root`, `name` and `description` are always derived from the project definition and cannot be overridden by `metadata`.
 
