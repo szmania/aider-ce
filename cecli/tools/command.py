@@ -226,7 +226,7 @@ class Tool(BaseTool):
                 return True  # Previously approved for session
             # Previously declined - skip session question, continue to normal confirmation
 
-        if coder.skip_cli_confirmations:
+        if coder.skip_cli_confirmations or getattr(coder.args, "yes_always_commands", False):
             return True
 
         # Check if command matches any allowed_commands patterns
