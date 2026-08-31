@@ -1,5 +1,5 @@
-import os
 import base64
+import os
 import re
 import shutil
 from pathlib import Path
@@ -339,8 +339,12 @@ def _parse_select_string_output(output, repo_root):
             continue
 
         filepath = m.group(1)
-        abs_path = filepath if os.path.isabs(filepath) else os.path.normpath(os.path.join(repo_root, filepath))
-        rebuilt = prefix + abs_path + rest[len(filepath):]
+        abs_path = (
+            filepath
+            if os.path.isabs(filepath)
+            else os.path.normpath(os.path.join(repo_root, filepath))
+        )
+        rebuilt = prefix + abs_path + rest[len(filepath) :]
 
         if current_file is None:
             current_file = abs_path
