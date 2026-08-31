@@ -194,7 +194,7 @@ async def gemini_complete(
     url = f"{resolved['api_base']}/v1beta/models/{resolved['route']}:generateContent"
     payload = gemini_payload(resolved, messages, tools, kwargs)
     hdrs = {"Content-Type": "application/json", **headers}
-    params = {"key": key} if key else {}
+    params: Dict[str, str] = {}
 
     async with make_client(timeout=DEFAULT_TIMEOUT, verify=VERIFY_SSL) as client:
         resp = await client.post(url, json=payload, headers=hdrs, params=params)
@@ -215,7 +215,7 @@ async def gemini_stream(
     url = f"{resolved['api_base']}/v1beta/models/{resolved['route']}:streamGenerateContent"
     payload = gemini_payload(resolved, messages, tools, kwargs)
     hdrs = {"Content-Type": "application/json", **headers}
-    params = {"key": key, "alt": "sse"} if key else {"alt": "sse"}
+    params = {"alt": "sse"}
     has_seen_tool_calls = False
     _stream_state["tool_indices"] = {}
 
