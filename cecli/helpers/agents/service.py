@@ -807,6 +807,53 @@ class AgentService:
         )
         return task
 
+    def wake_primary(self, primary_coder: Any, message: str) -> str:
+        """Wake the primary coder so it processes *message*.
+
+        Unlike sub-agents, the primary coder does not use the
+        ``start_generate_task`` architecture; when it is idle its input loop
+        blocks in ``wait_for_input()``. Preserving the behaviour of
+        ``on_input_area_submit()``, we wake it by pushing the message onto its
+        per-coder input queue. If the primary is already generating, the
+        message is queued into its conversation instead so the running
+        ``generate`` loop picks it up.
+
+        Args:
+            primary_coder: The primary coder instance (``service.coder``).
+            message: The message text to deliver to the primary.
+
+        Returns:
+            A short mode string describing delivery: ``queued`` when the
+            primary is actively generating (message queued into its
+            conversation), ``started`` when the primary was idle and woken via
+            its input queue.
+        """
+        from cecli.helpers import queues
+        from cecli.helpers.conversation.service import ConversationService
+        from cecli.helpers.conversation.tags import MessageTag
+        from cecli.helpers.coroutines import is_active
+
+        def _queue_to_conversation() -> None:
+            ConversationService.get_manager(primary_coder).queue_message(
+                message_dict={"role": "user", "content": message},
+                tag=MessageTag.CUR,
+                hash_key=("broadcast", str(primary_coder.uuid), str(time.monotonic_ns())),
+            )
+
+        if is_active(getattr(primary_coder.io, "output_task", None)):
+            _queue_to_conversation()
+            return "queued"
+
+        delivered = queues.push_coder_input(
+            str(primary_coder.uuid),
+            {"text": message, "coder_uuid": str(primary_coder.uuid)},
+        )
+        if not delivered:
+            _queue_to_conversation()
+            return "queued"
+
+        return "started"
+
     async def _inject_sub_agent_result(self, info: SubAgentInfo) -> None:
         """Inject the sub-agent's result (summary/error) into the parent's conversation.
 

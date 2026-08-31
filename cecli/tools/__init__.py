@@ -3,6 +3,7 @@
 
 from . import (
     _yield,
+    broadcast,
     command,
     delegate,
     edit_file,
@@ -32,6 +33,7 @@ TOOL_MODULES = [
     edit_file,
     explore_code,
     _yield,
+    broadcast,
     git_branch,
     git_diff,
     git_log,

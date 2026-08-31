@@ -750,7 +750,8 @@ class AgentCoder(Coder):
     def get_environment_info(self):
         """
         Generate an environment information context block with key system details.
-        Returns formatted string with working directory, platform, date, and other relevant environment details.
+        Returns formatted string with working directory, platform, date, and other relevant environment details,
+        including the agent's own identity and the primary agent's UUID.
         """
         if not self.use_enhanced_context:
             return None
@@ -764,6 +765,17 @@ class AgentCoder(Coder):
             result += f"- Current date: {current_date}\n"
             result += f"- Platform: {platform_info}\n"
             result += f"- Language preference: {language}\n"
+
+            # Agent identity so the model can recognise itself and the primary
+            # agent. Kept here (a static context block) rather than in the
+            # sub-agent states block to avoid re-injecting an agent's own
+            # identity whenever sub-agent state changes mid-conversation.
+            service = AgentService.get_instance(self)
+            self_uuid = str(self.uuid)
+            primary_uuid = str(service.coder.uuid)
+            self_name = service.get_agent_name(self) or "primary"
+            result += f"- Agent: {self_name} ({self_uuid}) [self]\n"
+            result += f"- Primary agent: primary ({primary_uuid})\n"
             if self.repo:
                 try:
                     rel_repo_dir = self.repo.get_rel_repo_dir()
@@ -1716,7 +1728,7 @@ Todo list does not exist. Please update it with the `UpdateTodoList` tool.</cont
 
             result = '<context name="sub_agents" from="agent">\n'
             result += "## Available Sub-Agents\n\n"
-            result += f"Found {len(registry)} registered sub-agent(s):\n\n"
+            result += f"Found {len(registry)} registered sub-agent(s) types:\n\n"
 
             for name, config in sorted(registry.items()):
                 result += f"**{name}**:\n"
@@ -1725,57 +1737,107 @@ Todo list does not exist. Please update it with the `UpdateTodoList` tool.</cont
                     result += f"{desc}\n"
                 result += "\n"
 
-            result += "Use the `Delegate` tool with the sub-agent name to delegate tasks.\n"
-            result += "Use the `Yield` tool to wait for responses for all active sub agents.\n"
+            result += "Use the `Delegate` tool with the sub-agent type to delegate tasks.\n"
+            result += "Use the `Yield` tool to wait for responses for all child sub agents.\n"
             result += "</context>"
             return result
         except Exception as e:
             self.io.tool_error(f"Error generating sub-agents context: {str(e)}")
             return None
 
-    def get_child_agent_states(self):
-        """Get the state of all active child sub-agents.
+    def get_sub_agent_states(self):
+        """Get the state of all active sub-agents.
 
-        Returns a formatted context block with each child sub-agent's name,
-        UUID, and current status, or None if no children exist.
+        Returns a formatted context block listing each active sub-agent as
+        ``{name} ({uuid}, {status})`` bullets, for both dependent children and
+        independent sub-agents. The independent ones are those reachable via
+        the ``Broadcast`` tool.
+
+        Finished/errored sub-agents are excluded. Returns None if there are no
+        active sub-agents, if enhanced context is disabled, or if the caller is
+        a sub-agent without nested delegation enabled.
+
+        The primary agent and calling agent's own identity are deliberately not
+        included here — they live in ``get_environment_info()`` (a static block)
+        so they don't re-inject and churn the conversation when sub-agent state
+        changes.
+
         This is used by ConversationChunks.add_sub_agent_states() to provide
         the model with visibility into active sub-agent states.
         """
         if not self.use_enhanced_context:
             return None
 
-        # Sub-agents should only see child states when nested delegation is enabled
+        # Sub-agents should only see sub-agent states when nested delegation is enabled
         if hasattr(self, "parent_uuid") and self.parent_uuid:
             if not self.agent_config.get("allow_nested_delegation", False):
                 return None
 
         try:
             service = AgentService.get_instance(self)
+
+            from cecli.helpers.agents.service import SubAgentStatus
+
+            originator_uuid = str(self.uuid)
+
+            # Dependent children are the coder's direct children.
             children = service.get_children(self)
-            if not children:
-                return None
+            dependent_children = [
+                info
+                for info in children
+                if not info.independent
+                and info.status not in (SubAgentStatus.FINISHED, SubAgentStatus.ERROR)
+            ]
 
-            # Filter to non-independent children only
-            dependent_children = [info for info in children if not info.independent]
+            # Independent agents aren't all direct children, so iterate over
+            # every active sub-agent reachable via the Broadcast tool and dedupe
+            # against the dependent children already captured above.
+            dependent_uuids = {info.coder.uuid for info in dependent_children}
+            independent_agents = []
+            seen = set()
+            for info in service.sub_agents.values():
+                if (
+                    info.independent
+                    and str(info.coder.uuid) != originator_uuid
+                    and info.status not in (SubAgentStatus.ERROR,)
+                    and info.coder.uuid not in dependent_uuids
+                    and info.coder.uuid not in seen
+                ):
+                    seen.add(info.coder.uuid)
+                    independent_agents.append(info)
 
-            if not dependent_children:
+            if not dependent_children and not independent_agents:
                 return None
 
             result = '<context name="sub_agent_states" from="agent">\n'
-            result += "## Active Sub-Agent States\n\n"
-            result += f"Found {len(dependent_children)} active child sub-agent(s):\n\n"
+            result += "## Active Sub-Agent Instances\n\n"
+            result += f"Found {len(dependent_children) + len(independent_agents)} active sub-agent(s):\n\n"
 
-            for info in dependent_children:
-                result += f"**{info.name}**:\n"
-                result += f"  - UUID: `{info.coder.uuid}`\n"
-                result += f"  - Status: {info.status.value}\n"
-                if info.error:
-                    result += f"  - Error: {info.error}\n"
-                result += "\n"
+            if dependent_children:
+                for info in dependent_children:
+                    line = f"- {info.name} ({info.coder.uuid}, {info.status.value})"
+                    if info.error:
+                        line += f" - Error: {info.error}"
+                    result += line + "\n"
+
+            if independent_agents:
+                result += "## Independent Sub-Agent Instances\n"
+                result += (
+                    "Communicate bi-directionally with these sub-agents using the "
+                    "`Broadcast` tool:\n\n"
+                )
+
+                for info in independent_agents:
+                    line = f"- {info.name} ({info.coder.uuid}, {info.status.value})"
+                    if info.error:
+                        line += f" - Error: {info.error}"
+                    result += line + "\n"
+
             result += "</context>"
             return result
+
         except Exception as e:
-            self.io.tool_error(f"Error generating child agent states: {str(e)}")
+            self.io.tool_error(f"Error generating sub-agent states: {str(e)}")
             return None
 
     def get_background_command_output(self):

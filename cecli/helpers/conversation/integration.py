@@ -967,10 +967,10 @@ class ConversationChunks:
         if not hasattr(coder, "use_enhanced_context") or not coder.use_enhanced_context:
             return
 
-        if not hasattr(coder, "get_child_agent_states"):
+        if not hasattr(coder, "get_sub_agent_states"):
             return
 
-        block = coder.get_child_agent_states()
+        block = coder.get_sub_agent_states()
         if not block:
             return
 
