@@ -1456,10 +1456,15 @@ class Model(ModelSettings):
                 if ex_info.name == "ServiceUnavailableError":
                     should_retry = should_retry or self.retry_on_unavailable
 
-                if should_retry:
+                custom_retry_delay = self._extract_gemini_retry_delay(err)
+                if custom_retry_delay is not None:
+                    retry_delay = custom_retry_delay
+                    should_retry = True
+                elif should_retry:
                     retry_delay *= self.retry_backoff_factor
-                    if retry_delay > self.retry_timeout:
-                        should_retry = False
+
+                if retry_delay > self.retry_timeout:
+                    should_retry = False
 
                 # Check for non-retryable RateLimitError within ServiceUnavailableError
                 if (
@@ -1550,7 +1555,11 @@ class Model(ModelSettings):
                 if ex_info.description:
                     print(ex_info.description)
                 should_retry = ex_info.retry
-                if should_retry:
+                custom_retry_delay = self._extract_gemini_retry_delay(err)
+                if custom_retry_delay is not None:
+                    retry_delay = custom_retry_delay
+                    should_retry = True
+                elif should_retry:
                     retry_delay *= 2
                     if retry_delay > RETRY_TIMEOUT:
                         should_retry = False
@@ -1583,6 +1592,88 @@ class Model(ModelSettings):
 
     async def model_error_response_stream(self):
         yield self.model_error_response()
+
+    def _extract_gemini_retry_delay(self, err):
+        """
+        Extract retry delay in seconds from a 429 error response payload (e.g., Gemini), if present.
+        """
+        status_code = getattr(err, "status_code", None)
+
+        payload = None
+        response = getattr(err, "response", None)
+        if response is not None:
+            if hasattr(response, "json") and callable(response.json):
+                try:
+                    payload = response.json()
+                except Exception:
+                    pass
+            if payload is None and hasattr(response, "text") and isinstance(response.text, str):
+                try:
+                    payload = json.loads(response.text)
+                except Exception:
+                    pass
+            if (
+                payload is None
+                and hasattr(response, "content")
+                and isinstance(response.content, (str, bytes))
+            ):
+                try:
+                    payload = json.loads(response.content)
+                except Exception:
+                    pass
+
+        if payload is None:
+            for attr in ("message", "body", "error", "raw_response"):
+                val = getattr(err, attr, None)
+                if isinstance(val, dict):
+                    payload = val
+                    break
+                elif isinstance(val, str):
+                    try:
+                        payload = json.loads(val)
+                        break
+                    except Exception:
+                        pass
+
+        if payload is None and isinstance(err, Exception):
+            err_str = str(err)
+            if "{" in err_str and "}" in err_str:
+                start = err_str.find("{")
+                end = err_str.rfind("}") + 1
+                try:
+                    payload = json.loads(err_str[start:end])
+                except Exception:
+                    pass
+
+        if not isinstance(payload, dict):
+            return None
+
+        error_obj = payload.get("error")
+        if not isinstance(error_obj, dict):
+            return None
+
+        error_code = error_obj.get("code")
+        if error_code != 429:
+            return None
+
+        if status_code is not None and status_code != 429:
+            return None
+
+        details = error_obj.get("details")
+        if not isinstance(details, list):
+            return None
+
+        for item in details:
+            if isinstance(item, dict) and "retryDelay" in item:
+                delay_str = str(item["retryDelay"])
+                if delay_str.endswith("s"):
+                    delay_str = delay_str[:-1]
+                try:
+                    return float(delay_str)
+                except (ValueError, TypeError):
+                    pass
+
+        return None
 
     def _log_messages(self, messages, name="message"):
         """

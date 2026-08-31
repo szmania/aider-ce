@@ -1,0 +1,5 @@
+feat: parse Gemini retryDelay backoff interval on 429 rate limit errors
+
+- Add `_extract_gemini_retry_delay` helper to `Model` class in `cecli/models.py` to extract suggested `retryDelay` (in seconds) from 429 error response payloads.
+- Update `send_completion()` and `simple_send_with_retries()` to prioritize Gemini's suggested retry delay over blind unilateral backoff multipliers when available.
+- Add unit tests in `tests/unit/test_gemini_retry_backoff.py` covering valid retryDelay extraction, JSON string payloads, non-429 responses, and missing details fields.
