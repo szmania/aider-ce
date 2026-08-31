@@ -1,6 +1,7 @@
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from pathlib import Path
 
 from cecli.commands.open import OpenCommand
 
@@ -40,8 +41,9 @@ class TestOpenCommand:
         with patch("cecli.commands.open.register_workspace_subagents", return_value=[]):
             await OpenCommand.execute(mock_io, mock_coder, "app /no/such/path")
 
+        open_path = Path("/no/such/path").expanduser()
         mock_io.tool_error.assert_called_once_with(
-            "Error: '/no/such/path' is not a valid git repository or does not exist."
+            f"Error: '{open_path}' is not a valid git repository or does not exist."
         )
 
     @pytest.mark.asyncio

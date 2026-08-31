@@ -72,7 +72,7 @@ def project_path(workspace_root: Path, project: dict[str, Any], *, layout: str) 
                 ["git", "-C", str(clone_root), "rev-parse", "--show-toplevel"],
                 stderr=subprocess.DEVNULL,
             )
-            return clone_root
+            return clone_root.resolve()
         except Exception:
             return None
 

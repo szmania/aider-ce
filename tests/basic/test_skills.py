@@ -55,8 +55,8 @@ class TestSkills:
         )
         # "/tmp/test" + local default + default home dir = 3 paths
         assert len(manager.directory_paths) == 3
-        assert "/tmp/test" in [str(p) for p in manager.directory_paths]
-        assert Path("/tmp") / ".cecli" / "skills" in manager.directory_paths
+        assert Path("/tmp/test").resolve() in manager.directory_paths
+        assert (Path("/tmp") / ".cecli" / "skills").resolve() in manager.directory_paths
         assert manager.include_list == {"skill1", "skill2"}
         assert manager.exclude_list == {"skill3"}
         assert manager.root == Path("/tmp").expanduser().resolve()
@@ -67,7 +67,7 @@ class TestSkills:
         manager = SkillsManager([], root="/tmp/local-root")
 
         paths = [str(p) for p in manager.directory_paths]
-        assert str(Path("/tmp/local-root") / ".cecli" / "skills") in paths
+        assert (Path("/tmp/local-root") / ".cecli" / "skills").resolve() in manager.directory_paths
         assert str(Path.home() / ".cecli" / "skills") in paths
 
     def test_create_and_parse_skill(self):

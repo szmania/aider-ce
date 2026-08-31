@@ -1093,6 +1093,11 @@ class Coder(metaclass=UsageMeta):
         """
         if not path:
             return path
+        if path.startswith("/"):
+            # POSIX-style absolute path (e.g. "/tmp/foo"). os.path.isabs()
+            # returns False for "/"-rooted paths on Windows, so guard here
+            # to avoid re-anchoring them onto the primary root.
+            return path
         if os.path.isabs(path):
             return os.path.normpath(path)
         base = self.primary_root or self.root
