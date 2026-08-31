@@ -102,6 +102,7 @@ def test_extract_gemini_retry_delay_missing_details():
 def test_retry_fallback_to_unilateral_backoff_when_no_retry_delay():
     async def run_test():
         model = Model("gemini/gemini-2.5-flash")
+        model.caches_by_default = False
 
         rate_limit_err = litellm.RateLimitError(
             message="Rate limit exceeded",
@@ -134,7 +135,7 @@ def test_retry_fallback_to_unilateral_backoff_when_no_retry_delay():
             )
 
         # Initial retry_delay is 0.125, multiplied by retry_backoff_factor (1.5) = 0.1875
-        assert len(slept_delays) >= 1
+        assert len(slept_delays) == 1
         assert pytest.approx(slept_delays[0]) == 0.125 * 1.5
 
     asyncio.run(run_test())
