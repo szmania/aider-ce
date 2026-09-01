@@ -1636,7 +1636,7 @@ class TUI(App):
             tuple[list[str], set[str]]: A tuple of (ordered_list, fast_lookup_set)
                 containing the matched path completions.
         """
-        coder = self.worker.coder
+        coder = AgentService.get_instance(self.worker.coder).foreground_coder
         root = Path(coder.root) if hasattr(coder, "root") else Path.cwd()
 
         # Try FileSystemService first for efficient lookups
