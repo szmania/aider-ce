@@ -164,7 +164,7 @@ You are a code review specialist.
 ```
 
 - **`/spawn-agent`** always spawns sub-agents with `auto_reap=false` — since these agents are created manually by the user, they should persist until explicitly reaped with `/reap-agent`.
-- **`Delegate` tool** uses the sub-agent's configured `auto_reap` value from its definition. If not set in the `.md` front matter, it defaults to `true`.
+- **`Delegate` tool** uses the sub-agent's configured `auto_reap` value from its definition. If not set in the `.md` front matter, it defaults to `true`. A delegation may set `persist: true` to keep that sub-agent alive by passing `auto_reap: false`; by default `persist` is `false`, deferring to the sub-agent's configured behavior.
 
 Sub-agents with `auto_reap: true` that finish their work are candidates for automatic cleanup when the agent limit is reached. Sub-agents with `auto_reap: false` are never automatically reaped and must be cleaned up manually.
 
