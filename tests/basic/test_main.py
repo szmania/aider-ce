@@ -372,6 +372,38 @@ def test_main_exit_calls_version_check(dummy_io, git_temp_dir, mocker):
     mock_input_output.assert_called_once()
 
 
+def test_suppress_release_notes_prompt_with_yes_always(dummy_io, git_temp_dir, mocker):
+    mock_input_output = mocker.patch("cecli.io.InputOutput")
+    mock_input_output.return_value.confirm_ask = AsyncMock(return_value=True)
+    mock_input_output.return_value.offer_url = AsyncMock()
+    mocker.patch("cecli.main.is_first_run_of_new_version", return_value=True)
+    
+    main(["--exit", "--yes-always"], **dummy_io)
+    mock_input_output.return_value.offer_url.assert_not_called()
+
+
+def test_shows_release_notes_prompt_on_first_run(dummy_io, git_temp_dir, mocker):
+    mock_input_output = mocker.patch("cecli.io.InputOutput")
+    mock_input_output.return_value.confirm_ask = AsyncMock(return_value=True)
+    mock_input_output.return_value.offer_url = AsyncMock()
+    mocker.patch("cecli.main.is_first_run_of_new_version", return_value=True)
+    
+    main(["--exit"], **dummy_io)
+    mock_input_output.return_value.offer_url.assert_called_once()
+
+
+def test_explicit_show_release_notes_with_yes_always(dummy_io, git_temp_dir, mocker):
+    mock_input_output = mocker.patch("cecli.io.InputOutput")
+    mock_input_output.return_value.confirm_ask = AsyncMock(return_value=True)
+    mock_input_output.return_value.offer_url = AsyncMock()
+    mocker.patch("cecli.main.is_first_run_of_new_version", return_value=True)
+    mocker.patch("webbrowser.open")
+    
+    main(["--exit", "--yes-always", "--show-release-notes"], **dummy_io)
+    # The explicit --show-release-notes code path uses webbrowser.open directly, not offer_url
+    mock_input_output.return_value.offer_url.assert_not_called()
+
+
 def test_main_message_adds_to_input_history(dummy_io, mocker):
     mocker.patch("cecli.coders.base_coder.Coder.run")
     MockInputOutput = mocker.patch("cecli.io.InputOutput", autospec=True)
