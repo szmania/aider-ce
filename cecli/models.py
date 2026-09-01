@@ -1483,7 +1483,7 @@ class Model(ModelSettings):
                 if ex_info.name == "ServiceUnavailableError":
                     should_retry = should_retry or self.retry_on_unavailable
 
-                custom_retry_delay = self._extract_gemini_retry_delay(err)
+                custom_retry_delay = self._extract_retry_delay(err)
                 if custom_retry_delay is not None:
                     retry_delay = custom_retry_delay
                     should_retry = True
@@ -1582,7 +1582,7 @@ class Model(ModelSettings):
                 if ex_info.description:
                     print(ex_info.description)
                 should_retry = ex_info.retry
-                custom_retry_delay = self._extract_gemini_retry_delay(err)
+                custom_retry_delay = self._extract_retry_delay(err)
                 if custom_retry_delay is not None:
                     retry_delay = custom_retry_delay
                     should_retry = True
@@ -1622,7 +1622,7 @@ class Model(ModelSettings):
     async def model_error_response_stream(self):
         yield self.model_error_response()
 
-    def _extract_gemini_retry_delay(self, err):
+    def _extract_retry_delay(self, err):
         """
         Extract suggested retry delay (in seconds) from a 429 rate-limit error.
 

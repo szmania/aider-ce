@@ -8,7 +8,7 @@ from cecli.llm import litellm
 from cecli.models import Model
 
 
-def test_extract_gemini_retry_delay_valid():
+def test_extract_retry_delay_valid():
     model = Model("gemini/gemini-2.5-flash")
 
     payload = {
@@ -38,11 +38,11 @@ def test_extract_gemini_retry_delay_valid():
     mock_resp.json.return_value = payload
     err.response = mock_resp
 
-    delay = model._extract_gemini_retry_delay(err)
+    delay = model._extract_retry_delay(err)
     assert delay == 15.2
 
 
-def test_extract_gemini_retry_delay_json_in_message():
+def test_extract_retry_delay_json_in_message():
     model = Model("gemini/gemini-2.5-flash")
 
     payload = {
@@ -54,11 +54,11 @@ def test_extract_gemini_retry_delay_json_in_message():
     }
 
     err = Exception(f"APIError: 429 {json.dumps(payload)}")
-    delay = model._extract_gemini_retry_delay(err)
+    delay = model._extract_retry_delay(err)
     assert delay == 8.5
 
 
-def test_extract_gemini_retry_delay_non_429():
+def test_extract_retry_delay_non_429():
     model = Model("gemini/gemini-2.5-flash")
 
     payload = {
@@ -75,11 +75,11 @@ def test_extract_gemini_retry_delay_non_429():
     mock_resp.json.return_value = payload
     err.response = mock_resp
 
-    delay = model._extract_gemini_retry_delay(err)
+    delay = model._extract_retry_delay(err)
     assert delay is None
 
 
-def test_extract_gemini_retry_delay_missing_details():
+def test_extract_retry_delay_missing_details():
     model = Model("gemini/gemini-2.5-flash")
 
     payload = {
@@ -95,11 +95,11 @@ def test_extract_gemini_retry_delay_missing_details():
     mock_resp.json.return_value = payload
     err.response = mock_resp
 
-    delay = model._extract_gemini_retry_delay(err)
+    delay = model._extract_retry_delay(err)
     assert delay is None
 
 
-def test_extract_gemini_retry_delay_headers_fallback():
+def test_extract_retry_delay_headers_fallback():
     model = Model("gemini/gemini-2.5-flash")
 
     # Standard retry-after header (seconds)
@@ -109,7 +109,7 @@ def test_extract_gemini_retry_delay_headers_fallback():
     mock_resp1.json.return_value = {}
     mock_resp1.headers = {"retry-after": "6.5"}
     err1.response = mock_resp1
-    assert model._extract_gemini_retry_delay(err1) == 6.5
+    assert model._extract_retry_delay(err1) == 6.5
 
     # Standard retry-after-ms header (milliseconds)
     err2 = Exception("Rate limit")
@@ -118,7 +118,7 @@ def test_extract_gemini_retry_delay_headers_fallback():
     mock_resp2.json.return_value = {}
     mock_resp2.headers = {"retry-after-ms": "2500"}
     err2.response = mock_resp2
-    assert model._extract_gemini_retry_delay(err2) == 2.5
+    assert model._extract_retry_delay(err2) == 2.5
 
 
 def test_extract_retry_delay_direct_err_headers():
@@ -128,12 +128,12 @@ def test_extract_retry_delay_direct_err_headers():
     err = Exception("Rate limit")
     err.status_code = 429
     err.headers = {"retry-after": "3.5"}
-    assert model._extract_gemini_retry_delay(err) == 3.5
+    assert model._extract_retry_delay(err) == 3.5
 
     err_ms = Exception("Rate limit")
     err_ms.status_code = 429
     err_ms.headers = {"retry-after-ms": "4500"}
-    assert model._extract_gemini_retry_delay(err_ms) == 4.5
+    assert model._extract_retry_delay(err_ms) == 4.5
 
 
 def test_extract_retry_delay_malformed_headers():
@@ -146,14 +146,14 @@ def test_extract_retry_delay_malformed_headers():
     mock_resp.json.return_value = {}
     mock_resp.headers = {"retry-after": "Wed, 21 Oct 2026 07:28:00 GMT"}
     err.response = mock_resp
-    assert model._extract_gemini_retry_delay(err) is None
+    assert model._extract_retry_delay(err) is None
 
     # Garbage string header value
     mock_resp.headers = {"retry-after": "invalid"}
-    assert model._extract_gemini_retry_delay(err) is None
+    assert model._extract_retry_delay(err) is None
 
 
-def test_extract_gemini_retry_delay_bytes_payload():
+def test_extract_retry_delay_bytes_payload():
     model = Model("gemini/gemini-2.5-flash")
 
     payload_bytes = json.dumps(
@@ -173,7 +173,7 @@ def test_extract_gemini_retry_delay_bytes_payload():
     mock_resp.text = payload_bytes
     err.response = mock_resp
 
-    assert model._extract_gemini_retry_delay(err) == 4.0
+    assert model._extract_retry_delay(err) == 4.0
 
 
 def test_retry_fallback_to_unilateral_backoff_when_no_retry_delay():
