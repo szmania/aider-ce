@@ -1424,7 +1424,10 @@ async def main_async(
         pre_init_io.tool_output()
         webbrowser.open(urls.release_notes)
         return await graceful_exit(coder)
-    elif args.show_release_notes is None and is_first_run:
+    elif args.show_release_notes is None and is_first_run and not args.yes_always:
+        # Suppress the first-run release-notes prompt when --yes-always is set,
+        # so automated/headless runs don't have the browser hijacked by an
+        # auto-confirmed offer_url. Explicit --show-release-notes still opens.
         pre_init_io.tool_output()
         await pre_init_io.offer_url(
             urls.release_notes,
