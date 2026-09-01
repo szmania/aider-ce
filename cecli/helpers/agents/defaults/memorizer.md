@@ -16,6 +16,8 @@ agent-config:
     - gitremote
     - gitshow
     - gitstatus
+  servers_includelist:
+    - local
   exclude_context_blocks:
     - context_summary
     - directory_structure

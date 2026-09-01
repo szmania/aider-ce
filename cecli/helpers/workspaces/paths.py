@@ -1,18 +1,11 @@
-"""
-Repo-local multi-project workspaces (``path:`` git roots).
+"""Path helpers for local and clone workspaces.
 
-Cecli already supports **clone** workspaces under ``~/.cecli/workspaces/`` with
-``repo:`` URLs and paths like ``{project}/main/{file}``. This module adds
-**local** layout: projects point at existing directories on disk, and tracked
-paths are prefixed as ``{project}/{file}`` (no ``/main/`` segment).
+A workspace lists projects that are either:
 
-Config file names (at the workspace root — usually the primary project directory):
-
-- ``.cecli.workspaces.yml``
-- ``.cecli.workspaces.yaml``
-
-Each project must have exactly one of ``path`` (absolute local git root) or
-``repo`` (clone URL; handled by existing clone workspace code).
+- **local** — an existing git root referenced by an absolute ``path:``; tracked
+  paths are prefixed ``{project}/{file}``.
+- **clone** — a remote ``repo:`` URL cloned under ``~/.cecli/workspaces/``;
+  tracked paths are prefixed ``{project}/main/{file}``.
 """
 
 from __future__ import annotations
@@ -20,7 +13,7 @@ from __future__ import annotations
 import json
 import subprocess
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import yaml
 
@@ -61,32 +54,42 @@ def primary_project(config: dict[str, Any]) -> dict[str, Any] | None:
     for proj in projects:
         if proj.get("primary"):
             return proj
-    if len(projects) == 1:
-        return projects[0]
     return projects[0] if projects else None
 
 
-def project_git_root(workspace_root: Path, project: dict[str, Any], *, layout: str) -> Path | None:
+def project_path(workspace_root: Path, project: dict[str, Any], *, layout: str) -> Path | None:
+    """Resolve a project's on-disk git root for the given layout, or None."""
     name = project.get("name")
     if not name:
         return None
-    path_val = project.get("path")
-    if path_val:
-        root = Path(str(path_val)).expanduser().resolve()
-        if not root.is_dir():
+
+    if layout == "clone":
+        clone_root = workspace_root / name / "main"
+        if not clone_root.is_dir():
             return None
         try:
             subprocess.check_output(
-                ["git", "-C", str(root), "rev-parse", "--show-toplevel"],
+                ["git", "-C", str(clone_root), "rev-parse", "--show-toplevel"],
                 stderr=subprocess.DEVNULL,
             )
-            return root
+            return clone_root.resolve()
         except Exception:
             return None
-    if layout != "clone":
+
+    path_val = project.get("path")
+    if not path_val:
         return None
-    clone_root = workspace_root / name / "main"
-    return clone_root if clone_root.is_dir() else None
+    root = Path(str(path_val)).expanduser().resolve()
+    if not root.is_dir():
+        return None
+    try:
+        subprocess.check_output(
+            ["git", "-C", str(root), "rev-parse", "--show-toplevel"],
+            stderr=subprocess.DEVNULL,
+        )
+        return root
+    except Exception:
+        return None
 
 
 def project_path_prefix(project: dict[str, Any], *, layout: str) -> str:
@@ -103,15 +106,19 @@ def resolve_workspace_file_path(
     *,
     layout: str,
 ) -> tuple[Path, Path, str] | None:
-    """
-    Map a workspace-relative path to ``(project_git_root, absolute_file, path_in_project_repo)``.
+    """Map a workspace-relative path to ``(project_git_root, abs_file, path_in_repo)``.
+
+    ``workspace_rel`` is ``{project}/{file}`` (local) or ``{project}/main/{file}``
+    (clone). If the leading segment is not a project name, it resolves against
+    the primary project.
     """
     rel = workspace_rel.replace("\\", "/").lstrip("/")
     if not rel:
         return None
-    parts = Path(rel).parts
+    parts = rel.split("/")
     if not parts:
         return None
+
     projects = config.get("projects") or []
     by_name = {str(p.get("name")): p for p in projects if p.get("name")}
 
@@ -120,17 +127,17 @@ def resolve_workspace_file_path(
         proj = by_name.get(parts[0])
         if not proj:
             return None
-        git_root = project_git_root(workspace_root, proj, layout=layout)
+        git_root = project_path(workspace_root, proj, layout=layout)
         if not git_root:
             return None
         in_repo = "/".join(parts[2:]) if len(parts) > 2 else ""
         abs_path = git_root / in_repo if in_repo else git_root
         return git_root, abs_path, in_repo
 
-    # Local layout: name/rest or bare path under primary-only tree
+    # name/rest for local, or name/main/rest handled above
     if parts[0] in by_name:
         proj = by_name[parts[0]]
-        git_root = project_git_root(workspace_root, proj, layout=layout)
+        git_root = project_path(workspace_root, proj, layout=layout)
         if not git_root:
             return None
         in_repo = "/".join(parts[1:]) if len(parts) > 1 else ""
@@ -139,10 +146,9 @@ def resolve_workspace_file_path(
 
     primary = primary_project(config)
     if primary:
-        git_root = project_git_root(workspace_root, primary, layout=layout)
+        git_root = project_path(workspace_root, primary, layout=layout)
         if git_root:
-            in_repo = rel
-            return git_root, git_root / in_repo, in_repo
+            return git_root, git_root / rel, rel
     return None
 
 
@@ -151,15 +157,15 @@ def union_tracked_files(
     config: dict[str, Any],
     *,
     layout: str,
-    ignored_file=None,
+    ignored_file: Callable[[str], bool] | None = None,
 ) -> list[str]:
-    """All tracked files as workspace-relative paths."""
+    """All tracked files as workspace-relative paths for the given layout."""
     out: list[str] = []
     for proj in config.get("projects") or []:
         name = proj.get("name")
         if not name:
             continue
-        git_root = project_git_root(workspace_root, proj, layout=layout)
+        git_root = project_path(workspace_root, proj, layout=layout)
         if not git_root:
             continue
         prefix = project_path_prefix(proj, layout=layout)
@@ -174,7 +180,7 @@ def union_tracked_files(
         for line in lines:
             if not line.strip():
                 continue
-            rel = f"{prefix}/{line}" if prefix else line
+            rel = f"{prefix}/{line}"
             rel = rel.replace("\\", "/")
             if ignored_file and ignored_file(rel):
                 continue
@@ -193,7 +199,7 @@ def project_head_shas(
         name = proj.get("name")
         if not name:
             continue
-        git_root = project_git_root(workspace_root, proj, layout=layout)
+        git_root = project_path(workspace_root, proj, layout=layout)
         if not git_root:
             shas.append(f"{name}:unknown")
             continue
@@ -209,25 +215,22 @@ def project_head_shas(
     return shas
 
 
-def write_workspace_metadata(workspace_root: Path, config: dict[str, Any], *, layout: str) -> None:
+def write_workspace_metadata(workspace_root: Path, config: dict[str, Any]) -> None:
     meta_dir = workspace_root / ".cecli"
     meta_dir.mkdir(parents=True, exist_ok=True)
-    payload = {**config, "_layout": layout}
     (meta_dir / ".workspace-meta.json").write_text(
-        json.dumps(payload, indent=2),
+        json.dumps(config, indent=2),
         encoding="utf-8",
     )
 
 
-def read_workspace_metadata(workspace_root: Path) -> tuple[dict[str, Any], str] | None:
-    legacy = workspace_root / ".cecli-workspace.json"
+def read_workspace_metadata(workspace_root: Path) -> dict[str, Any] | None:
     modern = workspace_root / METADATA_NAME
+    legacy = workspace_root / ".cecli-workspace.json"
     path = modern if modern.is_file() else legacy if legacy.is_file() else None
     if not path:
         return None
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-        layout = data.pop("_layout", "clone")
-        return data, layout
+        return json.loads(path.read_text(encoding="utf-8"))
     except Exception:
         return None

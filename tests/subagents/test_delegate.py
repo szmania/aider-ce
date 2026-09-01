@@ -62,7 +62,7 @@ class TestDelegateTool:
 
             MockService.get_instance.assert_called_once_with(mock_coder)
             mock_instance.spawn.assert_called_once_with(
-                "reviewer", "review this", parent=mock_coder
+                "reviewer", "review this", parent=mock_coder, auto_reap=None
             )
             assert "agent started with id" in str(result)
             assert "child-uuid-123" in str(result)
@@ -77,7 +77,7 @@ class TestDelegateTool:
         with patch("cecli.helpers.agents.service.AgentService") as MockService:
             mock_instance = MagicMock()
 
-            async def spawn_side_effect(name, prompt, parent=None):
+            async def spawn_side_effect(name, prompt, parent=None, auto_reap=None):
                 mock_info = MagicMock()
                 mock_info.coder.uuid = f"{name}-uuid"
                 return MagicMock(), mock_info
@@ -143,3 +143,53 @@ class TestDelegateTool:
             )
             errors = result.to_dict()["result"]
             assert errors
+
+    @pytest.mark.asyncio
+    async def test_persist_true_sets_auto_reap_false_spawn(self):
+        """persist=True passes auto_reap=False to spawn for async delegations."""
+        from cecli.tools.delegate import Tool
+
+        mock_coder = MagicMock()
+        mock_coder.uuid = "parent-uuid"
+
+        with patch("cecli.helpers.agents.service.AgentService") as MockService:
+            mock_instance = MagicMock()
+            mock_info = MagicMock()
+            mock_info.coder.uuid = "child-uuid-persist"
+            mock_instance.spawn = AsyncMock(return_value=(MagicMock(), mock_info))
+            MockService.get_instance.return_value = mock_instance
+
+            result = await Tool.execute(
+                mock_coder,
+                delegations=[{"name": "reviewer", "prompt": "keep me", "persist": True}],
+            )
+
+            mock_instance.spawn.assert_called_once_with(
+                "reviewer", "keep me", parent=mock_coder, auto_reap=False
+            )
+            assert "agent started with id" in str(result)
+
+    @pytest.mark.asyncio
+    async def test_persist_true_sets_auto_reap_false_invoke(self):
+        """persist=True passes auto_reap=False to invoke for sync delegations."""
+        from cecli.tools.delegate import Tool
+
+        mock_coder = MagicMock()
+        mock_coder.uuid = "parent-uuid"
+
+        with patch("cecli.helpers.agents.service.AgentService") as MockService:
+            mock_instance = MagicMock()
+            mock_instance.invoke = AsyncMock(return_value="done")
+            MockService.get_instance.return_value = mock_instance
+
+            result = await Tool.execute(
+                mock_coder,
+                delegations=[
+                    {"name": "reviewer", "prompt": "blocking", "persist": True, "async": False}
+                ],
+            )
+
+            mock_instance.invoke.assert_called_once_with(
+                "reviewer", "blocking", parent=mock_coder, auto_reap=False
+            )
+            assert "agent completed" in str(result)

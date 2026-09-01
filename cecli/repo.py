@@ -56,6 +56,20 @@ def set_git_env(var_name, value, original_value):
             del os.environ[var_name]
 
 
+def _close_git_repo(repo: "GitRepo") -> None:
+    """Safely close a GitRepo that was just opened but will not be used.
+
+    Prevents leaking the underlying ``git.Repo`` file handle when
+    ``GitRepoProxy.for_root`` discovers an already-cached repository.
+    """
+    try:
+        with repo._git_lock:
+            if getattr(repo, "repo", None) is not None:
+                repo.repo.close()
+    except Exception:
+        pass
+
+
 class CommitInfo:
     """
     Data-only container for extracted commit information.
@@ -121,14 +135,7 @@ class GitRepo:
         self.subtree_only = subtree_only
         self.git_commit_verify = git_commit_verify
         self.ignore_file_cache = {}
-        self.is_workspace = False
-        self.workspace_path = None
-        self.workspace_config = {}
-        self.workspace_layout = "clone"
-        self.workspace_ignore_specs = {}
-        self.workspace_ignore_ts = {}
         self._git_lock = threading.RLock()
-        # Workspace detection and config loading occurs later in __init__
 
         if git_dname:
             check_fnames = [git_dname]
@@ -159,36 +166,11 @@ class GitRepo:
         if num_repos == 0:
             raise FileNotFoundError
         if num_repos > 1:
-            from cecli.helpers.monorepo.config import load_workspace_config_file
-            from cecli.helpers.monorepo.local_workspace import (
-                find_workspace_config_file,
+            self.io.tool_error(
+                "Files are in different git repos. Each coder operates on a single base path."
             )
-
-            ws_file = find_workspace_config_file(Path(repo_paths[0]))
-            if not ws_file:
-                self.io.tool_error(
-                    "Files are in different git repos. Add a .cecli.workspaces.yml at a"
-                    " common ancestor with path: entries for each project."
-                )
-                raise FileNotFoundError
-            self.workspace_config = load_workspace_config_file(ws_file)
-            primary = next(
-                (p for p in self.workspace_config.get("projects", []) if p.get("primary")),
-                None,
-            )
-            if primary and primary.get("path"):
-                self._init_repo_path = str(Path(str(primary["path"])).expanduser().resolve())
-            else:
-                self._init_repo_path = str(Path(repo_paths[0]).resolve())
-        else:
-            self._init_repo_path = repo_paths.pop()
-
-        # Detect if we're in a workspace
-        self.workspace_path = self._detect_workspace_path(self._init_repo_path)
-        if self.workspace_path:
-            self.is_workspace = True
-            self._load_workspace_config()
-            self.refresh_cecli_ignore()
+            raise FileNotFoundError
+        self._init_repo_path = repo_paths.pop()
 
         self.init_repo()
         if cecli_ignore_file:
@@ -200,73 +182,11 @@ class GitRepo:
                 self.repo = git.Repo(self._init_repo_path, odbt=git.GitCmdObjectDB)
                 self.root = utils.safe_abs_path(self.repo.working_tree_dir)
 
-            if self.is_workspace:
-                self.root = self.workspace_path
-
             try:
                 self.repo.head.commit  # just access to check for errors, discard
             except ANY_GIT_ERROR:
-                if not self.is_workspace:
-                    self.repo = git.Repo(self._init_repo_path, odbt=git.GitCmdObjectDB)
-                    self.root = utils.safe_abs_path(self.repo.working_tree_dir)
-
-    def _load_workspace_config(self) -> None:
-        from cecli.helpers.monorepo.config import (
-            load_workspace_config,
-            load_workspace_config_file,
-        )
-        from cecli.helpers.monorepo.local_workspace import (
-            find_workspace_config_file,
-            read_workspace_metadata,
-            write_workspace_metadata,
-        )
-
-        ws_file = find_workspace_config_file(Path(self.workspace_path))
-        if ws_file:
-            self.workspace_layout = "local"
-            self.workspace_config = load_workspace_config_file(ws_file)
-            write_workspace_metadata(
-                Path(self.workspace_path), self.workspace_config, layout="local"
-            )
-            return
-        meta = read_workspace_metadata(Path(self.workspace_path))
-        if meta:
-            self.workspace_config, self.workspace_layout = meta
-            return
-        self.workspace_layout = "clone"
-        try:
-            self.workspace_config = load_workspace_config(name=Path(self.workspace_path).name)
-        except Exception:
-            self.workspace_config = {}
-
-    def _detect_workspace_path(self, start_path: str):
-        """Check if current directory is within a workspace"""
-        from cecli.helpers.monorepo.local_workspace import find_workspace_config_file
-
-        current = Path(start_path).resolve()
-        ws_file = find_workspace_config_file(current)
-        if ws_file:
-            return ws_file.parent.resolve()
-
-        workspace_root = Path("~/.cecli/workspaces").expanduser()
-
-        # Walk up directory tree looking for workspace root
-        while current != current.parent:
-            if workspace_root in current.parents or current == workspace_root:
-                # If we are inside the workspace root, the workspace is the first child of workspace_root
-                try:
-                    rel = current.relative_to(workspace_root)
-                    if rel.parts:
-                        return workspace_root / rel.parts[0]
-                except (IndexError, ValueError):
-                    pass
-
-            # Alternative check: look for .cecli-workspace.json
-            if (current / ".cecli-workspace.json").exists():
-                return current
-
-            current = current.parent
-        return None
+                self.repo = git.Repo(self._init_repo_path, odbt=git.GitCmdObjectDB)
+                self.root = utils.safe_abs_path(self.repo.working_tree_dir)
 
     def __del__(self):
         with self._git_lock:
@@ -343,9 +263,6 @@ class GitRepo:
         - User commit with explicit no-committer: coder_edits=False,
           --no-attribute-committer -> Author=You, Committer=You
         """
-        if self.is_workspace and getattr(self, "workspace_layout", "clone") == "local":
-            return await self._commit_local_workspace(fnames, context, message, coder_edits, coder)
-
         with self._git_lock:
             if not fnames and not self.repo.is_dirty():
                 return
@@ -682,170 +599,24 @@ class GitRepo:
 
             return res
 
-    async def _commit_local_workspace(
-        self, fnames=None, context=None, message=None, coder_edits=False, coder=None
-    ):
-        from collections import defaultdict
-
-        from cecli.helpers.monorepo.local_workspace import resolve_workspace_file_path
-
-        layout = getattr(self, "workspace_layout", "local")
-        config = self.workspace_config or {}
-        readonly = {
-            str(p.get("name"))
-            for p in config.get("projects", [])
-            if p.get("readonly") and p.get("name")
-        }
-
-        by_root: dict[str, list[str]] = defaultdict(list)
-        if fnames:
-            for fname in fnames:
-                resolved = resolve_workspace_file_path(
-                    Path(self.workspace_path), str(fname), config, layout=layout
-                )
-                if not resolved:
-                    continue
-                git_root, _abs_path, in_repo = resolved
-                parts = Path(str(fname)).parts
-                if parts and parts[0] in readonly:
-                    continue
-                if in_repo:
-                    by_root[str(git_root)].append(in_repo)
-        else:
-            for proj in config.get("projects", []):
-                name = proj.get("name")
-                if not name or name in readonly:
-                    continue
-                from cecli.helpers.monorepo.local_workspace import project_git_root
-
-                git_root = project_git_root(Path(self.workspace_path), proj, layout=layout)
-                if not git_root:
-                    continue
-                sub = GitRepo(self.io, [str(git_root)], None)
-                for rel in sub.get_dirty_files() or []:
-                    by_root[str(git_root)].append(rel)
-
-        last = None
-        for root, rels in by_root.items():
-            sub = GitRepo(self.io, [root], None)
-            last = await sub.commit(
-                rels, context=context, message=message, coder_edits=coder_edits, coder=coder
-            )
-        return last
-
-    def get_workspace_files(self):
-        """
-        If in a workspace, return all tracked files from all projects.
-        Paths are relative to the workspace root.
-        """
-        if not self.workspace_path:
-            return self.get_tracked_files()
-
-        import hashlib
-
-        layout = getattr(self, "workspace_layout", "clone")
-        config = self.workspace_config or {}
-        if not config.get("projects"):
-            return self.get_tracked_files()
-
-        from cecli.helpers.monorepo.local_workspace import (
-            project_head_shas,
-            union_tracked_files,
-        )
-
-        project_shas = project_head_shas(Path(self.workspace_path), config, layout=layout)
-        cache_key = hashlib.sha1(",".join(project_shas).encode()).hexdigest()
-
-        if hasattr(self, "_workspace_files_cache"):
-            cached_key, cached_files = self._workspace_files_cache
-            if cached_key == cache_key:
-                return cached_files
-
-        if layout == "local":
-            all_files = union_tracked_files(
-                Path(self.workspace_path),
-                config,
-                layout=layout,
-                ignored_file=self.ignored_file,
-            )
-            self._workspace_files_cache = (cache_key, all_files)
-            return all_files
-
-        import json
-        import subprocess
-
-        metadata_path = self.workspace_path / ".cecli-workspace.json"
-        if not metadata_path.exists():
-            return self.get_tracked_files()
-
-        try:
-            with safe_open(metadata_path, "r") as f:
-                config = json.load(f)
-        except Exception:
-            return self.get_tracked_files()
-
-        all_files = []
-        for proj in config.get("projects", []):
-            proj_name = proj.get("name")
-            if not proj_name:
-                continue
-
-            proj_root = self.workspace_path / proj_name / "main"
-            if not proj_root.exists():
-                continue
-
-            try:
-                res = subprocess.check_output(
-                    ["git", "-C", str(proj_root), "ls-files"],
-                    stderr=subprocess.DEVNULL,
-                    encoding="utf-8",
-                ).splitlines()
-
-                for f in res:
-                    rel_path = f"{proj_name}/main/{f}"
-                    if not self.ignored_file(rel_path):
-                        all_files.append(rel_path)
-            except Exception:
-                continue
-
-        self._workspace_files_cache = (cache_key, all_files)
-        return all_files
-
     def normalize_path(self, path):
         orig_path = path
         res = self.normalized_path.get(orig_path)
         if res:
             return res
 
-        if self.is_workspace:
-            try:
-                # In workspace mode, try to make it relative to workspace_path first
-                path = str(
-                    Path(
-                        PurePosixPath(
-                            (Path(self.workspace_path) / path).relative_to(self.workspace_path)
-                        )
-                    )
-                )
-            except ValueError:
-                # Fallback to standard relative_to(self.root)
-                path = str(Path(PurePosixPath((Path(self.root) / path).relative_to(self.root))))
-        else:
-            path = str(Path(PurePosixPath((Path(self.root) / path).relative_to(self.root))))
+        path = str(Path(PurePosixPath((Path(self.root) / path).relative_to(self.root))))
 
         self.normalized_path[orig_path] = path
         return path
 
     def refresh_cecli_ignore(self):
-        if not self.cecli_ignore_file and not self.is_workspace:
+        if not self.cecli_ignore_file:
             return
 
         current_time = time.time()
         if current_time - self.cecli_ignore_last_check < 1:
             return
-
-        if self.is_workspace:
-            self._refresh_workspace_ignores()
 
         self.cecli_ignore_last_check = current_time
 
@@ -861,35 +632,6 @@ class GitRepo:
                 pathspec.patterns.GitWildMatchPattern,
                 lines,
             )
-
-    def _refresh_workspace_ignores(self):
-        if not hasattr(self, "workspace_config") or not self.workspace_config:
-            return
-
-        if not hasattr(self, "workspace_ignore_specs"):
-            self.workspace_ignore_specs = {}
-            self.workspace_ignore_ts = {}
-
-        projects = self.workspace_config.get("projects", [])
-        for proj in projects:
-            proj_name = proj.get("name")
-            ignore_file = proj.get("ignore")
-            if not proj_name or not ignore_file:
-                continue
-
-            ignore_path = self.workspace_path / f"{proj_name}.ignore"
-            if not ignore_path.is_file():
-                continue
-
-            mtime = ignore_path.stat().st_mtime
-            if mtime != self.workspace_ignore_ts.get(proj_name):
-                self.workspace_ignore_ts[proj_name] = mtime
-                self.ignore_file_cache = {}
-                lines = ignore_path.read_text().splitlines()
-                self.workspace_ignore_specs[proj_name] = pathspec.PathSpec.from_lines(
-                    pathspec.patterns.GitWildMatchPattern,
-                    lines,
-                )
 
     def _get_gitignore_spec(self, dir_path):
         """Get or create a GitIgnoreSpec for a directory, caching for performance."""
@@ -1002,32 +744,6 @@ class GitRepo:
             if cwd_path not in fname_path.parents and fname_path != cwd_path:
                 return True
 
-        if self.is_workspace:
-            # Check project-specific ignores
-            try:
-                fname_rel = self.normalize_path(fname)
-                parts = Path(fname_rel).parts
-                if parts:
-                    proj_name = parts[0]
-                    if (
-                        hasattr(self, "workspace_ignore_specs")
-                        and proj_name in self.workspace_ignore_specs
-                    ):
-                        # Check against project-specific spec
-                        # The spec expects paths relative to the project root (usually proj/main/)
-                        layout = getattr(self, "workspace_layout", "clone")
-                        if layout == "clone" and len(parts) > 2 and parts[1] == "main":
-                            proj_rel_path = str(Path(*parts[2:]))
-                        else:
-                            proj_rel_path = str(Path(*parts[1:]))
-
-                        if self.workspace_ignore_specs[proj_name].match_file(proj_rel_path):
-                            return True
-                # If not matched by project-specific ignore, continue to global ignore
-                # but don't return False yet as there might be a global .cecli.ignore
-            except (ValueError, IndexError):
-                pass
-
         if not self.cecli_ignore_file or not self.cecli_ignore_file.is_file():
             return False
 
@@ -1070,22 +786,8 @@ class GitRepo:
 
     def get_repo_files(self) -> list[str]:
         """
-        Get all relevant files from the repository, respecting workspace
-        structure and custom ignore rules.
-
-        This is a unified file collection method that encapsulates the
-        logic for choosing the right file source depending on the repo's
-        configuration:
-
-        - Workspace repos (``workspace_path`` is set) → ``get_workspace_files()``
-        - Non-workspace with ``cecli_ignore`` file → ``get_non_ignored_files_from_root()``
-        - Non-workspace without ``cecli_ignore`` → ``get_tracked_files()``
-
-        Returns:
-            Sorted list of root-relative file paths
+        Get all relevant files from the repository for this single base path.
         """
-        if hasattr(self, "workspace_path") and self.workspace_path:
-            return self.get_workspace_files()
         if self.cecli_ignore_file and self.cecli_ignore_file.is_file():
             return self.get_non_ignored_files_from_root()
         return self.get_tracked_files()
@@ -1127,19 +829,6 @@ class GitRepo:
         return self.normalize_path(path) in tracked_files
 
     def abs_root_path(self, path):
-        if self.is_workspace and getattr(self, "workspace_layout", "clone") == "local":
-            from cecli.helpers.monorepo.local_workspace import (
-                resolve_workspace_file_path,
-            )
-
-            resolved = resolve_workspace_file_path(
-                Path(self.workspace_path),
-                str(path),
-                self.workspace_config or {},
-                layout="local",
-            )
-            if resolved:
-                return utils.safe_abs_path(resolved[1])
         res = Path(self.root) / path
         return utils.safe_abs_path(res)
 
@@ -1278,6 +967,64 @@ class GitRepoProxy:
             max_workers=1, thread_name_prefix="git-repo"
         )
 
+    _instances: dict[str, "GitRepoProxy"] = {}
+
+    @classmethod
+    def for_root(
+        cls,
+        root: str | None,
+        io,
+        fnames=None,
+        git_dname=None,
+        cecli_ignore_file=None,
+        **kwargs,
+    ) -> "GitRepoProxy":
+        """
+        Return a per-base-path ``GitRepoProxy`` singleton.
+
+        Coders that share a base path share one proxy (and its underlying
+        ``git.Repo`` plus single-thread executor), so multi-repository work can
+        keep each repository on its own proxy while coders on the same base path
+        stay consistent. Coders on different base paths get independent proxies.
+
+        If *root* is provided it is used as the registry key and to discover the
+        repository; otherwise it is derived from *fnames* (the same discovery the
+        ``GitRepo`` constructor performs).
+        """
+        if root is None:
+            target = GitRepo(io, fnames, git_dname, cecli_ignore_file, **kwargs)
+            key = os.path.normpath(os.path.abspath(target.root))
+            proxy = cls._instances.get(key)
+            if proxy is None:
+                proxy = cls(target)
+                cls._instances[key] = proxy
+            else:
+                _close_git_repo(target)  # Discard the just-opened duplicate
+            return proxy
+
+        key = os.path.normpath(os.path.abspath(root))
+        proxy = cls._instances.get(key)
+        if proxy is None:
+            target = GitRepo(io, fnames or [root], git_dname, cecli_ignore_file, **kwargs)
+            proxy = cls(target)
+            cls._instances[key] = proxy
+        return proxy
+
+    @classmethod
+    def evict(cls, root: str | None = None) -> None:
+        """Drop the proxy for a base path (e.g. on coder teardown)."""
+        if root is None:
+            return
+        key = os.path.normpath(os.path.abspath(root))
+        cls._instances.pop(key, None)
+
+    @classmethod
+    def reset_instances(cls) -> None:
+        """Reset all per-base-path proxies — used primarily in test teardown."""
+        cls._instances.clear()
+
+    # ------------------------------------------------------------------
+    # Sync methods that access self.repo (the git.Repo object)
     # ------------------------------------------------------------------
     # Sync methods that access self.repo (the git.Repo object)
     # ------------------------------------------------------------------
@@ -1350,9 +1097,6 @@ class GitRepoProxy:
     def get_repo_files(self):
         return self._executor.submit(self._target.get_repo_files).result()
 
-    def get_workspace_files(self):
-        return self._executor.submit(self._target.get_workspace_files).result()
-
     # ------------------------------------------------------------------
     # Async methods  –  called from the main asyncio task only, and
     # already protected by ``_git_lock`` on the target; we do *not*
@@ -1360,7 +1104,7 @@ class GitRepoProxy:
     # with LLM calls (``get_commit_message``) that must stay async.
     # ------------------------------------------------------------------
 
-    # commit() and _commit_local_workspace() are forwarded via __getattr__
+    # commit() is forwarded via __getattr__
 
     # ------------------------------------------------------------------
     # Access to the raw ``git.Repo``  –  return a sub-proxy that routes

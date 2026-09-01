@@ -17,7 +17,7 @@ from cecli.helpers.conversation.tags import MessageTag
 from cecli.io import InputOutput
 from cecli.mcp import McpServerManager
 from cecli.models import Model
-from cecli.repo import GitRepo
+from cecli.repo import GitRepo, GitRepoProxy
 from cecli.sendchat import sanity_check_messages
 from cecli.utils import GitTemporaryDirectory
 
@@ -38,10 +38,11 @@ class TestCoder:
         self.mock_webbrowser = self.webbrowser_patcher.start()
         # Reset conversation system before each test
         ConversationService.get_chunks(self).reset()
-        # Reset FileSystemService singleton for test isolation
+        # Reset per-root singletons for test isolation
         from cecli.helpers.file_system import FileSystemService
 
         FileSystemService.reset_instance()
+        GitRepoProxy.reset_instances()
         yield
         # Cleanup after each test
         self.webbrowser_patcher.stop()

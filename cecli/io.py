@@ -1354,6 +1354,13 @@ class InputOutput:
                 while True:
                     try:
                         if self.prompt_session:
+                            if (
+                                getattr(
+                                    getattr(self.prompt_session, "app", None), "_is_running", False
+                                )
+                                is True
+                            ):
+                                return True
                             # Call prompt_async directly instead of using input_task
                             # This allows KeyboardInterrupt to propagate properly
                             res = await self.prompt_session.prompt_async(question)

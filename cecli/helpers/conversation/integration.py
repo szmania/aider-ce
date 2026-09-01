@@ -1,4 +1,5 @@
 import json
+import os
 import random
 import time
 import weakref
@@ -501,6 +502,8 @@ class ConversationChunks:
         """
         Get rules file messages for reference.
         These are always reloaded from disk and use the RULES tag.
+        If no explicit rules files are configured, fall back to AGENTS.md
+        and CLAUDE.md files found in the coder root directory.
         """
         coder = self.get_coder()
         if not coder:
@@ -514,10 +517,21 @@ class ConversationChunks:
                 return []
 
         messages = []
-        if not hasattr(coder, "abs_rules_fnames") or not coder.abs_rules_fnames:
+        rules_files = []
+        if hasattr(coder, "abs_rules_fnames") and coder.abs_rules_fnames:
+            rules_files = sorted(coder.abs_rules_fnames)
+        else:
+            # No explicit rules configured; fall back to convention files
+            # (AGENTS.md / CLAUDE.md) found in the coder root directory.
+            for fallback_name in ("AGENTS.md", "CLAUDE.md"):
+                fallback_path = coder.abs_root_path(fallback_name)
+                if os.path.isfile(fallback_path):
+                    rules_files.append(fallback_path)
+
+        if not rules_files:
             return messages
 
-        for fname in sorted(coder.abs_rules_fnames):
+        for fname in rules_files:
             # Read file content directly from disk
             try:
                 content = coder.io.read_text(fname)
@@ -953,10 +967,10 @@ class ConversationChunks:
         if not hasattr(coder, "use_enhanced_context") or not coder.use_enhanced_context:
             return
 
-        if not hasattr(coder, "get_child_agent_states"):
+        if not hasattr(coder, "get_sub_agent_states"):
             return
 
-        block = coder.get_child_agent_states()
+        block = coder.get_sub_agent_states()
         if not block:
             return
 

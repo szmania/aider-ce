@@ -127,7 +127,7 @@ class ChdirTemporaryDirectory(IgnorantTemporaryDirectory):
     def __enter__(self):
         res = super().__enter__()
         os.chdir(Path(self.temp_dir.name).resolve())
-        return res
+        return str(Path(res).resolve())
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         if self.cwd:
@@ -299,16 +299,61 @@ def get_pip_install(args):
     return cmd
 
 
+def get_self_upgrade_command():
+    """Return the command used to upgrade cecli for the current install method."""
+    # pipx sets these environment variables inside each tool's venv
+    if os.environ.get("PIPX_VENV_DIR") or os.environ.get("PIPX_PACKAGE_DIR"):
+        return ["pipx", "upgrade", "cecli-dev"]
+
+    if _is_uv_tool_env():
+        return ["uv", "tool", "upgrade", "cecli-dev"]
+
+    return get_pip_install(["cecli-dev"])
+
+
+def _is_pip_install_command(cmd):
+    """Return True if cmd is a `python -m pip install ...` invocation."""
+    try:
+        i = cmd.index("-m")
+    except ValueError:
+        return False
+    return i + 2 < len(cmd) and cmd[i + 1] == "pip" and cmd[i + 2] == "install"
+
+
+def _is_uv_tool_env():
+    """Return True if running inside a `uv tool install` environment."""
+    cfg = Path(sys.prefix) / "pyvenv.cfg"
+    try:
+        if not (cfg.exists() and "uv = " in cfg.read_text(errors="replace")):
+            return False
+    except OSError:
+        return False
+
+    prefix = Path(sys.prefix)
+    tool_dir = os.environ.get("UV_TOOL_DIR")
+    if tool_dir:
+        try:
+            if prefix.is_relative_to(tool_dir):
+                return True
+        except (ValueError, OSError):
+            pass
+
+    # Default uv tool installs live under ".../uv/tools/<name>".
+    # A plain `uv venv` project venv does not have the uv/tools path parts.
+    return "uv" in prefix.parts and "tools" in prefix.parts
+
+
 def run_install(cmd):
     print()
     print("Installing:", printable_shell_command(cmd))
 
-    # First ensure pip is available
-    ensurepip_cmd = [sys.executable, "-m", "ensurepip", "--upgrade"]
-    try:
-        subprocess.run(ensurepip_cmd, capture_output=True, check=False)
-    except Exception:
-        pass  # Continue even if ensurepip fails
+    if _is_pip_install_command(cmd):
+        # First ensure pip is available
+        ensurepip_cmd = [sys.executable, "-m", "ensurepip", "--upgrade"]
+        try:
+            subprocess.run(ensurepip_cmd, capture_output=True, check=False)
+        except Exception:
+            pass  # Continue even if ensurepip fails
 
     try:
         from cecli.waiting import Spinner
@@ -386,7 +431,9 @@ def touch_file(fname):
         return False
 
 
-async def check_pip_install_extra(io, module, prompt, pip_install_cmd, self_update=False):
+async def check_pip_install_extra(
+    io, module, prompt, pip_install_cmd=None, self_update=False, cmd=None
+):
     if module:
         for _attempt in range(2):
             try:
@@ -403,7 +450,8 @@ async def check_pip_install_extra(io, module, prompt, pip_install_cmd, self_upda
             except (ImportError, ModuleNotFoundError, RuntimeError):
                 break
 
-    cmd = get_pip_install(pip_install_cmd)
+    if cmd is None:
+        cmd = get_pip_install(pip_install_cmd or [])
 
     if prompt:
         io.tool_warning(prompt)
@@ -414,9 +462,13 @@ async def check_pip_install_extra(io, module, prompt, pip_install_cmd, self_upda
         print(printable_shell_command(cmd))  # plain print so it doesn't line-wrap
         return
 
-    if not await io.confirm_ask(
-        "Run pip install?", default="y", subject=printable_shell_command(cmd)
-    ):
+    run_prompt = "Run pip install?"
+    if cmd and cmd[0] == "uv":
+        run_prompt = "Run uv tool upgrade?"
+    elif cmd and cmd[0] == "pipx":
+        run_prompt = "Run pipx upgrade?"
+
+    if not await io.confirm_ask(run_prompt, default="y", subject=printable_shell_command(cmd)):
         return
 
     success, output = run_install(cmd)

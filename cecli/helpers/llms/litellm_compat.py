@@ -395,6 +395,8 @@ class _FacadeException(Exception):
     ) -> None:
         super().__init__(message or "")
         self.status_code = status_code
+        for k, v in kwargs.items():
+            setattr(self, k, v)
 
 
 class APIConnectionError(_FacadeException):
@@ -508,21 +510,23 @@ def _translate_http_error(err: httpx.HTTPStatusError) -> _FacadeException:
     if status == 400 and any(
         token in body for token in ("context", "context_length", "maximum context")
     ):
-        return ContextWindowExceededError(message=message, status_code=status)
+        return ContextWindowExceededError(
+            message=message, status_code=status, response=err.response
+        )
 
     if status in (401, 403):
-        return AuthenticationError(message=message, status_code=status)
+        return AuthenticationError(message=message, status_code=status, response=err.response)
 
     if status == 404:
-        return NotFoundError(message=message, status_code=status)
+        return NotFoundError(message=message, status_code=status, response=err.response)
 
     if status == 429:
-        return RateLimitError(message=message, status_code=status)
+        return RateLimitError(message=message, status_code=status, response=err.response)
 
     if status >= 500:
-        return InternalServerError(message=message, status_code=status)
+        return InternalServerError(message=message, status_code=status, response=err.response)
 
-    return APIError(message=message, status_code=status)
+    return APIError(message=message, status_code=status, response=err.response)
 
 
 # ---------------------------------------------------------------------------

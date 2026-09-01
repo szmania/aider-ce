@@ -63,13 +63,17 @@ class ToolRegistry:
         return list(cls._tools.keys())
 
     @classmethod
-    def build_registry(cls, agent_config: Optional[Dict] = None) -> Dict[str, Type]:
+    def build_registry(
+        cls, agent_config: Optional[Dict] = None, root: Optional[str] = None
+    ) -> Dict[str, Type]:
         """
         Build a filtered registry of tools based on agent configuration.
 
         Args:
             agent_config: Agent configuration dictionary with optional
                          tools_includelist/tools_excludelist keys
+            root: Optional base directory used to resolve relative
+                 ``tools_paths``. Defaults to the working directory.
 
         Returns:
             A dictionary mapping normalized tool names to tool classes.
@@ -78,12 +82,34 @@ class ToolRegistry:
         if agent_config is None:
             agent_config = {}
 
+        # Resolve tools_paths relative to root when provided (used by
+        # workspace sub-agents so custom tools resolve against the primary
+        # workspace root, not the sub-agent's overridden local root).
+        base = Path(root).expanduser().resolve() if root else None
+
+        def _resolve(tool_path: str) -> Path:
+            raw = Path(tool_path).expanduser()
+            if raw.is_absolute():
+                return raw.resolve()
+            if base is not None:
+                return (base / raw).resolve()
+            return raw.resolve()
+
         # Load tools from tool_paths if specified
         tools_paths = agent_config.get("tools_paths", agent_config.get("tool_paths", []))
         loaded_custom_tools = []
 
+        # Always scan the default custom-tools directories: the global default
+        # in the user's home and the local default under the given root. The
+        # global default is scanned first, the local default next so it takes
+        # precedence, and any explicitly configured tools_paths last.
+        default_tools_dirs = [Path.home() / ".cecli" / "tools"]
+        if base is not None:
+            default_tools_dirs.append(base / ".cecli" / "tools")
+        tools_paths = [str(p) for p in default_tools_dirs] + list(tools_paths)
+
         for tool_path in tools_paths:
-            path = Path(tool_path)
+            path = _resolve(tool_path)
             if path.is_dir():
                 # Find all Python files in the directory
                 for py_file in path.glob("*.py"):

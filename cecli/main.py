@@ -627,7 +627,7 @@ async def main_async(
     from cecli.mcp import McpServerManager, load_mcp_servers
     from cecli.models import ModelSettings
     from cecli.onboarding import offer_openrouter_oauth, select_default_model
-    from cecli.repo import GitRepo, GitRepoProxy
+    from cecli.repo import GitRepoProxy
     from cecli.report import report_uncaught_exceptions, set_args_error_data
     from cecli.versioncheck import check_version
     from cecli.watch import FileWatcher
@@ -689,13 +689,14 @@ async def main_async(
     args, unknown = parser.parse_known_args(argv)
     os.unlink(_tmp_cfg)
 
-    uses_workspace = False
     if args.workspaces or args.workspace_name:
-        from cecli.helpers.monorepo.config import (
+        from cecli.helpers.workspaces.config import (
             find_active_workspace_name,
             load_workspace_config,
+            workspace_layout,
         )
-        from cecli.helpers.monorepo.workspace import WorkspaceManager
+        from cecli.helpers.workspaces.subagents import register_workspace_subagents
+        from cecli.helpers.workspaces.workspace import WorkspaceManager
 
         # Interpolate environment variables in the workspaces argument
         if args.workspaces:
@@ -705,40 +706,23 @@ async def main_async(
         ws_name = args.workspace_name or find_active_workspace_name(ws_config_arg)
         if ws_name:
             config = load_workspace_config(ws_config_arg, name=ws_name)
-            workspace_manager = WorkspaceManager(ws_name, config)
 
-            if not workspace_manager.exists():
-                workspace_manager.initialize()
+            # Clone workspaces must be materialised so the implicit ws:{name}
+            # sub-agents can point their roots at the cloned checkouts. The
+            # primary agent's root is left unchanged: workspaces are just
+            # sub-agents with overridden roots.
+            if workspace_layout(config) == "clone":
+                wm = WorkspaceManager(ws_name, config)
+                if not wm.exists():
+                    wm.initialize()
 
-            os.chdir(workspace_manager.get_working_directory())
-            git_root = get_git_root()
-            uses_workspace = True
+            register_workspace_subagents(config)
 
     if git_root:
         git_conf = Path(git_root) / conf_fname
         if git_conf not in all_config_paths:
             all_config_paths.append(str(git_conf))
             cecli_conf_yml_files.append(str(git_conf))
-
-    # ── Re-merge if workspace changed git_root ─────────────────────────
-    if uses_workspace:
-        merged_config = config_utils.read_and_merge_all_configs(
-            all_config_paths, conf_yml_files, cecli_conf_yml_files
-        )
-
-        _tmp_fd, _tmp_cfg = tempfile.mkstemp(suffix=".yml", prefix="cecli_merged_")
-        os.close(_tmp_fd)
-
-        with safe_open(_tmp_cfg, "w") as f:
-            yaml.dump(merged_config, f)
-
-        parser = get_parser([_tmp_cfg], git_root)
-        args, unknown = parser.parse_known_args(argv)
-
-        # Re-load dotenv files in case the new git_root has an env_file
-        loaded_dotenvs = load_dotenv_files(git_root, args.env_file, args.encoding)
-        os.unlink(_tmp_cfg)
-        args, unknown = parser.parse_known_args(argv)
 
     set_args_error_data(args)
 
@@ -1004,7 +988,7 @@ async def main_async(
             return await main_async(argv, input, output, right_repo_root, return_coder=return_coder)
 
     if (args.check_update or args.upgrade) and not args.just_check_update and not suppress_pre_init:
-        await check_version(pre_init_io, verbose=args.verbose)
+        await check_version(pre_init_io, verbose=args.verbose, upgrade=args.upgrade)
     elif args.just_check_update:
         update_available = await check_version(pre_init_io, just_check=True, verbose=args.verbose)
         return await graceful_exit(None, 0 if not update_available else 1)
@@ -1185,22 +1169,21 @@ async def main_async(
     repo = None
     if args.git:
         try:
-            repo = GitRepoProxy(
-                GitRepo(
-                    io,
-                    fnames,
-                    git_dname,
-                    args.cecli_ignore,
-                    models=main_model.commit_message_models(),
-                    attribute_author=args.attribute_author,
-                    attribute_committer=args.attribute_committer,
-                    attribute_commit_message_author=args.attribute_commit_message_author,
-                    attribute_commit_message_committer=args.attribute_commit_message_committer,
-                    commit_prompt=args.commit_prompt,
-                    subtree_only=args.subtree_only,
-                    git_commit_verify=args.git_commit_verify,
-                    attribute_co_authored_by=args.attribute_co_authored_by,
-                )
+            repo = GitRepoProxy.for_root(
+                None,
+                io,
+                fnames=fnames,
+                git_dname=git_dname,
+                cecli_ignore_file=args.cecli_ignore,
+                models=main_model.commit_message_models(),
+                attribute_author=args.attribute_author,
+                attribute_committer=args.attribute_committer,
+                attribute_commit_message_author=args.attribute_commit_message_author,
+                attribute_commit_message_committer=args.attribute_commit_message_committer,
+                commit_prompt=args.commit_prompt,
+                subtree_only=args.subtree_only,
+                git_commit_verify=args.git_commit_verify,
+                attribute_co_authored_by=args.attribute_co_authored_by,
             )
         except FileNotFoundError:
             pass
@@ -1441,7 +1424,10 @@ async def main_async(
         pre_init_io.tool_output()
         webbrowser.open(urls.release_notes)
         return await graceful_exit(coder)
-    elif args.show_release_notes is None and is_first_run:
+    elif args.show_release_notes is None and is_first_run and not args.yes_always:
+        # Suppress the first-run release-notes prompt when --yes-always is set,
+        # so automated/headless runs don't have the browser hijacked by an
+        # auto-confirmed offer_url. Explicit --show-release-notes still opens.
         pre_init_io.tool_output()
         await pre_init_io.offer_url(
             urls.release_notes,
@@ -1798,13 +1784,21 @@ async def graceful_exit(coder=None, exit_code=0):
                         if (now - mtime) > week_seconds:
                             shutil.rmtree(agent_folder, ignore_errors=True)
                         else:
-                            # Remove empty sub-folders in remaining folders
-                            for sub_folder in agent_folder.iterdir():
-                                if sub_folder.is_dir():
-                                    try:
+                            # Find all nested subdirectories inside this agent folder
+                            all_subdirs = [d for d in agent_folder.rglob("*") if d.is_dir()]
+
+                            # Sort them by depth (deepest first) so child dirs are processed before parents
+                            all_subdirs.sort(key=lambda x: len(x.parts), reverse=True)
+
+                            for sub_folder in all_subdirs:
+                                try:
+                                    # rmdir() safely fails if a file is present
+                                    # any() checks if the directory has any files or remaining folders
+                                    if not any(sub_folder.iterdir()):
                                         sub_folder.rmdir()
-                                    except OSError:
-                                        pass
+                                except OSError:
+                                    pass
+
                     except (OSError, PermissionError):
                         pass
     except Exception:

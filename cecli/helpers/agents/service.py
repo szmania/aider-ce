@@ -14,6 +14,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from uuid import uuid4
 
 import cecli.models as models
+from cecli.helpers import nested
 from cecli.helpers.coroutines import fire_and_forget
 
 logger = logging.getLogger(__name__)
@@ -137,6 +138,15 @@ class AgentService:
         return cls._global_registry
 
     @classmethod
+    def get_primary_uuid(cls) -> Optional[str]:
+        """Return the primary coder's uuid for the current session (memoized).
+
+        Fixed on the first :meth:`get_instance` call, so every agent spawned
+        in a session resolves to the same shared base uuid.
+        """
+        return cls._primary_agent_uuid
+
+    @classmethod
     def get_all_agents(cls) -> List[Any]:
         """Return all live coder instances tracked in the global uuid map.
 
@@ -186,7 +196,7 @@ class AgentService:
                     return
 
     @classmethod
-    def build_registry(cls, paths: List[str]) -> None:
+    def build_registry(cls, paths: List[str], root: Optional[str] = None) -> None:
         """Scan directories for .md sub-agent definition files and load them.
 
         Each .md file should contain YAML front matter with:
@@ -204,15 +214,44 @@ class AgentService:
             ``<agent_model>``  - The parent coder's agent model
             ``<main_model>``   - The parent coder's main model
             ``<current>``      - The currently active (foreground) coder's main model
+
+        Args:
+            paths: Directories to scan for sub-agent ``.md`` definition files.
+            root: Optional base directory used to resolve relative ``paths``
+                (e.g. the workspace or project root in multi-project workspaces).
         """
         from pathlib import Path
 
         from .config import parse_subagent_file
 
+        # Resolve relative sub-agent directories against ``root`` so
+        # multi-project workspaces can reference local sub-agent definitions
+        # relative to their project/workspace root. Absolute and ``~`` paths
+        # are left untouched.
+        base = Path(root).expanduser().resolve() if root else None
+
+        def _resolve(directory: str) -> str:
+            raw = Path(directory).expanduser()
+            if raw.is_absolute():
+                return str(raw)
+            if base is not None:
+                return str((base / raw).resolve())
+            return str(raw)
+
+        paths = [_resolve(directory) for directory in paths]
+
         # Always check the default sub-agents directory in the user's home
         default_dir = str(Path.home() / ".cecli" / "subagents")
         if default_dir not in paths:
             paths = [default_dir] + list(paths)
+
+        # Also check the local default sub-agents directory under the given root
+        # (e.g. {root}/.cecli/subagents) before the user-configured paths so
+        # project-scoped sub-agents take precedence over the global default.
+        if base is not None:
+            local_default_dir = str(base / ".cecli" / "subagents")
+            if local_default_dir not in paths:
+                paths.insert(1, local_default_dir)
 
         # Also scan the built-in defaults directory for .yml definitions
         import cecli.helpers.agents.defaults as _defaults_pkg
@@ -546,12 +585,28 @@ class AgentService:
 
         async with self._get_lock(self._spawn_locks, parent_coder.uuid):
             self._check_max_sub_agents()
-            new_uuid = str(uuid4())
+            new_uuid = str(uuid4()).split("-")[0]
 
         from cecli.coders import Coder
 
         metadata = getattr(config, "metadata", {}).copy()
         agent_config = metadata.get("agent-config", {})
+
+        # Optional per-sub-agent root override for multi-project workspaces.
+        configured_root = metadata.get("root")
+        if not configured_root and isinstance(agent_config, dict):
+            configured_root = agent_config.get("root")
+
+        # Workspace sub-agents (ws:*) inherit the parent/primary coder's
+        # agent_config as their default and additionally enable nested
+        # delegation so they can themselves serve as delegation bases. The
+        # ws-agent's own metadata agent-config is merged on top.
+        if name.startswith("ws:"):
+            inherited = dict(nested.getter(parent_coder, "agent_config", {}) or {})
+            incoming = dict(agent_config)
+            inherited.update(incoming)
+            inherited["allow_nested_delegation"] = True
+            agent_config = inherited
 
         kwargs = dict(
             io=parent_coder.io,
@@ -563,6 +618,8 @@ class AgentService:
             map_tokens=0,
             init_metadata={"agent_config": agent_config},
         )
+        if configured_root:
+            kwargs["root"] = configured_root
 
         if agent_config:
             # Reset the per-instance tool/server filters so AgentCoder.post_init()
@@ -758,6 +815,53 @@ class AgentService:
             lambda t: _raise_if_signal(t.exception()) if not t.cancelled() else None
         )
         return task
+
+    def wake_primary(self, primary_coder: Any, message: str) -> str:
+        """Wake the primary coder so it processes *message*.
+
+        Unlike sub-agents, the primary coder does not use the
+        ``start_generate_task`` architecture; when it is idle its input loop
+        blocks in ``wait_for_input()``. Preserving the behaviour of
+        ``on_input_area_submit()``, we wake it by pushing the message onto its
+        per-coder input queue. If the primary is already generating, the
+        message is queued into its conversation instead so the running
+        ``generate`` loop picks it up.
+
+        Args:
+            primary_coder: The primary coder instance (``service.coder``).
+            message: The message text to deliver to the primary.
+
+        Returns:
+            A short mode string describing delivery: ``queued`` when the
+            primary is actively generating (message queued into its
+            conversation), ``started`` when the primary was idle and woken via
+            its input queue.
+        """
+        from cecli.helpers import queues
+        from cecli.helpers.conversation.service import ConversationService
+        from cecli.helpers.conversation.tags import MessageTag
+        from cecli.helpers.coroutines import is_active
+
+        def _queue_to_conversation() -> None:
+            ConversationService.get_manager(primary_coder).queue_message(
+                message_dict={"role": "user", "content": message},
+                tag=MessageTag.CUR,
+                hash_key=("broadcast", str(primary_coder.uuid), str(time.monotonic_ns())),
+            )
+
+        if is_active(getattr(primary_coder.io, "output_task", None)):
+            _queue_to_conversation()
+            return "queued"
+
+        delivered = queues.push_coder_input(
+            str(primary_coder.uuid),
+            {"text": message, "coder_uuid": str(primary_coder.uuid)},
+        )
+        if not delivered:
+            _queue_to_conversation()
+            return "queued"
+
+        return "started"
 
     async def _inject_sub_agent_result(self, info: SubAgentInfo) -> None:
         """Inject the sub-agent's result (summary/error) into the parent's conversation.

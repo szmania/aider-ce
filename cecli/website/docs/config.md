@@ -36,7 +36,7 @@ CECLI_TUI=true
 
 ## Default File Locations
 
-Cecli also checks several default locations inside `~/.cecli/` for configuration, environment variables, and agent resources. These are always included with lower precedence than project-level equivalents, so a setting in a project `.cecli.conf.yml` or `.env` file will override the `~/.cecli/` default.
+Cecli also checks several default locations inside `~/.cecli/` for configuration, environment variables, and agent resources. These are always included with lower precedence than project-level equivalents, so a setting in a project `.cecli.conf.yml` or `.env` file will override the `~/.cecli/` default. The agent resource registries below each also look for a **local** default under an agent's working root, which takes precedence over the global default.
 
 ### `~/.cecli/conf.yml`
 
@@ -48,11 +48,21 @@ An environment file loaded before any other `.env` file, so project-level `.env`
 
 ### `~/.cecli/skills/`
 
-A directory containing skill packages (each a sub-directory with a `SKILL.md` file). Skills here are discoverable alongside those in any user-configured skills paths.
+`Local: .cecli/skills/`
+
+A directory containing skill packages (each a sub-directory with a `SKILL.md` file).
 
 ### `~/.cecli/subagents/`
 
-A directory containing sub-agent definition files (`.md` files with YAML front matter). Sub-agents here are registered alongside those in any user-configured sub-agent paths.
+`Local: .cecli/subagents/`
+
+A directory containing sub-agent definition files (`.md` files with YAML front matter).
+
+### `~/.cecli/tools/`
+
+`Local: .cecli/tools/`
+
+A directory containing custom tool packages (`.py` files exposing a `Tool` class).
 
 > **Tip:**
 > See the [API key configuration docs](config/api-keys.html) for information on how to configure and store your API keys.

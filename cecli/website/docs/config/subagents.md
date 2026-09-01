@@ -73,6 +73,7 @@ agent-config:
 |---------|-------------|
 | `/spawn-agent <name>` | Spawn a sub-agent without a prompt (non-blocking — waits for user input) |
 | `/spawn-agent <name> <prompt>` | Spawn a sub-agent with a prompt (non-blocking — starts processing immediately) |
+| `/open <name> <path>` | Register and open a `ws:{name}` workspace sub-agent rooted at `<path>` (ad-hoc, no config file required) |
 | `/reap-agent` | Force destroy the currently active sub-agent |
 
 > **Tip**: `/spawn-agent` supports tab completion of sub-agent names.
@@ -163,7 +164,7 @@ You are a code review specialist.
 ```
 
 - **`/spawn-agent`** always spawns sub-agents with `auto_reap=false` — since these agents are created manually by the user, they should persist until explicitly reaped with `/reap-agent`.
-- **`Delegate` tool** uses the sub-agent's configured `auto_reap` value from its definition. If not set in the `.md` front matter, it defaults to `true`.
+- **`Delegate` tool** uses the sub-agent's configured `auto_reap` value from its definition. If not set in the `.md` front matter, it defaults to `true`. A delegation may set `persist: true` to keep that sub-agent alive by passing `auto_reap: false`; by default `persist` is `false`, deferring to the sub-agent's configured behavior.
 
 Sub-agents with `auto_reap: true` that finish their work are candidates for automatic cleanup when the agent limit is reached. Sub-agents with `auto_reap: false` are never automatically reaped and must be cleaned up manually.
 

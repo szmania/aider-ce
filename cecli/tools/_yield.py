@@ -33,6 +33,15 @@ class Tool(BaseTool):
                             "and returned to the parent agent."
                         ),
                     },
+                    "wait": {
+                        "type": "integer",
+                        "description": (
+                            "Optional time in seconds (between 15 and 120) to wait "
+                            "before returning. When provided, the tool simply sleeps "
+                            "for the specified duration and returns, "
+                            "allowing for other tasks to proceed."
+                        ),
+                    },
                 },
                 "required": [],
             },
@@ -53,6 +62,45 @@ class Tool(BaseTool):
         response = ToolResponse(cls.NORM_NAME)
 
         if coder:
+            wait = kwargs.get("wait")
+            if wait is not None and wait != "":
+                if isinstance(wait, bool):
+                    wait_seconds = 30
+                else:
+                    try:
+                        wait_seconds = int(wait)
+                    except (ValueError, TypeError):
+                        wait_seconds = 30
+
+                wait_seconds = max(15, min(120, wait_seconds))
+
+                # Plain wait — sleep for the requested duration without checking
+                # sub-agents or marking the task as finished.
+                interrupt_event = coder.interrupt_event
+                if interrupt_event is None:
+                    interrupt_event = ThreadSafeEvent()
+
+                interrupt_task = asyncio.create_task(interrupt_event.wait())
+                sleep_task = asyncio.create_task(asyncio.sleep(wait_seconds))
+                done, pending = await asyncio.wait(
+                    {sleep_task, interrupt_task},
+                    return_when=asyncio.FIRST_COMPLETED,
+                )
+
+                for task in pending:
+                    task.cancel()
+                    try:
+                        await task
+                    except (asyncio.CancelledError, Exception):
+                        pass
+
+                if interrupt_task in done:
+                    response.append_result(f"Wait interrupted after {wait_seconds} seconds.")
+                else:
+                    response.append_result(f"Waited for {wait_seconds} seconds.")
+
+                return response
+
             waited_for_sub_agents = False
             # Check for active child sub-agents and await their tasks before finishing
             try:
@@ -61,7 +109,9 @@ class Tool(BaseTool):
                 active_tasks = [
                     info.generate_task
                     for info in children
-                    if info.generate_task is not None and not info.generate_task.done()
+                    if not info.independent
+                    and info.generate_task is not None
+                    and not info.generate_task.done()
                 ]
 
                 if active_tasks:
@@ -235,6 +285,13 @@ class Tool(BaseTool):
         except ToolError:
             coder.io.tool_error("Invalid Tool JSON")
             return
+
+        wait = params.get("wait")
+        if wait:
+            coder.io.tool_output("")
+            coder.io.tool_output(f"{color_start}Wait:{color_end}")
+            coder.io.tool_output(f"{wait} seconds")
+            coder.io.tool_output("")
 
         summary = params.get("summary")
         if summary:

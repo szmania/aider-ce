@@ -12,12 +12,15 @@ from uuid import uuid4 as generate_unique_id
 
 import yaml
 
-from cecli import __version__
+from cecli import __version__, utils
 from cecli.decoding import safe_open
 from cecli.dump import dump
 from cecli.exceptions import LiteLLMExceptions
 from cecli.helpers import coroutines, nested
-from cecli.helpers.file_searcher import generate_search_path_list, handle_core_files
+from cecli.helpers.file_searcher import (
+    generate_search_path_list,
+    handle_core_files,
+)
 from cecli.helpers.model_config import get_default_config
 from cecli.helpers.model_config.utils import get_entry_from_raw
 from cecli.helpers.model_providers import ModelProviderManager
@@ -289,7 +292,9 @@ class ModelInfoManager:
             import re
 
             if re.search(
-                f"The model\\s*.*{re.escape(url_part)}.* is not available", html, re.IGNORECASE
+                f"The model\\s*.*{re.escape(url_part)}.* is not available",
+                html,
+                re.IGNORECASE,
             ):
                 print(f"\x1b[91mError: Model '{url_part}' is not available\x1b[0m")
                 return {}
@@ -497,7 +502,8 @@ class Model(ModelSettings):
                 "editor_model", nested.getter(from_model, "editor_model", None)
             )
             editor_edit_format = kwargs.get(
-                "editor_edit_format", nested.getter(from_model, "editor_edit_format", None)
+                "editor_edit_format",
+                nested.getter(from_model, "editor_edit_format", None),
             )
         else:
             agent_model = kwargs.get("agent_model", None)
@@ -538,7 +544,8 @@ class Model(ModelSettings):
         self.editor_model = None
         self.agent_model = None
         self.extra_model_settings = next(
-            (ms for ms in MODEL_SETTINGS if ms.name == "cecli/extra_params"), None
+            (ms for ms in MODEL_SETTINGS if ms.name == "cecli/extra_params"),
+            None,
         )
         self.info = self.get_model_info(model)
         self.model_config_defaults = get_default_config(
@@ -654,18 +661,24 @@ class Model(ModelSettings):
         for key, value in config.items():
             if key in ("agent", "model_settings", "model-settings"):
                 if not isinstance(value, dict):
-                    raise ValueError(f"override_kwargs '{key}' must be a dict, got {type(value)}")
+                    raise ValueError(
+                        f"override_kwargs '{key}' must be a dict, got" f" {type(value)}"
+                    )
 
                 for setting_key, setting_value in value.items():
                     if setting_key not in valid_model_settings_fields:
                         raise ValueError(
-                            f"Invalid model_settings key '{setting_key}'. "
-                            f"Must be one of: {sorted(valid_model_settings_fields)}"
+                            f"Invalid model_settings key '{setting_key}'. Must"
+                            f" be one of: {sorted(valid_model_settings_fields)}"
                         )
 
                     setattr(self, setting_key, setting_value)
 
-            elif has_structured_keys and key in ("api", "api_settings", "api-settings"):
+            elif has_structured_keys and key in (
+                "api",
+                "api_settings",
+                "api-settings",
+            ):
                 # api_settings: merge each sub-key into extra_params
                 if not isinstance(value, dict):
                     raise ValueError(f"override_kwargs '{key}' must be a dict, got {type(value)}")
@@ -687,11 +700,18 @@ class Model(ModelSettings):
                     if isinstance(api_value, dict) and isinstance(
                         self.extra_params.get(api_key), dict
                     ):
-                        self.extra_params[api_key] = {**self.extra_params[api_key], **api_value}
+                        self.extra_params[api_key] = {
+                            **self.extra_params[api_key],
+                            **api_value,
+                        }
                     else:
                         self.extra_params[api_key] = api_value
 
-            elif has_structured_keys and key in ("llm", "llm_settings", "llm-settings"):
+            elif has_structured_keys and key in (
+                "llm",
+                "llm_settings",
+                "llm-settings",
+            ):
                 # llm_settings: merge into self.info
                 if not isinstance(value, dict):
                     raise ValueError(f"override_kwargs '{key}' must be a dict, got {type(value)}")
@@ -1213,7 +1233,10 @@ class Model(ModelSettings):
                 elif "reasoning" in extra_body:
                     del extra_body["reasoning"]
             elif num_tokens > 0:
-                extra_body["thinking"] = {"type": "enabled", "budget_tokens": num_tokens}
+                extra_body["thinking"] = {
+                    "type": "enabled",
+                    "budget_tokens": num_tokens,
+                }
                 # extra_body is authoritative; drop any legacy top-level copy.
                 self.extra_params.pop("thinking", None)
             else:
@@ -1322,7 +1345,8 @@ class Model(ModelSettings):
 
         if effective_tools:
             sorted_tools = sorted(
-                effective_tools, key=lambda x: x.get("function", {}).get("name", "Invalid Name")
+                effective_tools,
+                key=lambda x: x.get("function", {}).get("name", "Invalid Name"),
             )
 
             try:
@@ -1352,7 +1376,10 @@ class Model(ModelSettings):
             if "name" in function:
                 tool_name = function.get("name")
                 if tool_name:
-                    kwargs["tool_choice"] = {"type": "function", "function": {"name": tool_name}}
+                    kwargs["tool_choice"] = {
+                        "type": "function",
+                        "function": {"name": tool_name},
+                    }
 
         if self.extra_params:
             kwargs.update(self.extra_params)
@@ -1456,10 +1483,15 @@ class Model(ModelSettings):
                 if ex_info.name == "ServiceUnavailableError":
                     should_retry = should_retry or self.retry_on_unavailable
 
-                if should_retry:
+                custom_retry_delay = self._extract_retry_delay(err)
+                if custom_retry_delay is not None:
+                    retry_delay = custom_retry_delay
+                    should_retry = True
+                elif should_retry:
                     retry_delay *= self.retry_backoff_factor
-                    if retry_delay > self.retry_timeout:
-                        should_retry = False
+
+                if retry_delay > self.retry_timeout:
+                    should_retry = False
 
                 # Check for non-retryable RateLimitError within ServiceUnavailableError
                 if (
@@ -1550,10 +1582,16 @@ class Model(ModelSettings):
                 if ex_info.description:
                     print(ex_info.description)
                 should_retry = ex_info.retry
-                if should_retry:
+                custom_retry_delay = self._extract_retry_delay(err)
+                if custom_retry_delay is not None:
+                    retry_delay = custom_retry_delay
+                    should_retry = True
+                elif should_retry:
                     retry_delay *= 2
-                    if retry_delay > RETRY_TIMEOUT:
-                        should_retry = False
+
+                if retry_delay > RETRY_TIMEOUT:
+                    should_retry = False
+
                 if not should_retry:
                     return None
                 print(f"Retrying in {retry_delay:.1f} seconds...")
@@ -1574,7 +1612,7 @@ class Model(ModelSettings):
                     finish_reason="stop",
                     index=0,
                     message=litellm.Message(
-                        content="Model API Response Error. Please retry the previous request"
+                        content=("Model API Response Error. Please retry the previous request")
                     ),
                 )
             ],
@@ -1584,6 +1622,104 @@ class Model(ModelSettings):
     async def model_error_response_stream(self):
         yield self.model_error_response()
 
+    def _extract_retry_delay(self, err):
+        """
+        Extract suggested retry delay (in seconds) from a 429 rate-limit error.
+
+        1. Gemini payload body: Google RPC APIs return `google.rpc.RetryInfo` with
+           a `retryDelay` field (e.g. "15.2s") inside the `error.details` array.
+        2. HTTP headers fallback: Standard providers (OpenAI, Anthropic, Groq, etc.)
+           supply `retry-after` (seconds) or `retry-after-ms` (milliseconds) headers.
+        """
+        status_code = nested.getter(err, ["status_code", "response.status_code"], None)
+        if isinstance(status_code, (int, str, float)) and str(status_code) != "429":
+            return None
+
+        # 1. Check Gemini response payload for google.rpc.RetryInfo retryDelay
+        candidates = []
+        response = nested.getter(err, "response")
+        if callable(getattr(response, "json", None)):
+            try:
+                data = response.json()
+                if isinstance(data, dict):
+                    candidates.append(data)
+            except Exception:
+                pass
+
+        sources = [
+            response,
+            nested.getter(err, "message"),
+            nested.getter(err, "body"),
+            nested.getter(err, "error"),
+            nested.getter(err, "raw_response"),
+            str(err) if isinstance(err, Exception) else None,
+            err,
+        ]
+
+        for src in sources:
+            if not src:
+                continue
+            if isinstance(src, dict):
+                candidates.append(src)
+            elif isinstance(src, (str, bytes)):
+                text_str = src.decode("utf-8", errors="ignore") if isinstance(src, bytes) else src
+                for chunk in utils.split_concatenated_json(text_str):
+                    try:
+                        parsed = json.loads(chunk)
+                        if isinstance(parsed, dict):
+                            candidates.append(parsed)
+                    except Exception:
+                        pass
+            else:
+                text = nested.getter(src, ["text", "content"])
+                if isinstance(text, (str, bytes)):
+                    text_str = (
+                        text.decode("utf-8", errors="ignore") if isinstance(text, bytes) else text
+                    )
+                    for chunk in utils.split_concatenated_json(text_str):
+                        try:
+                            parsed = json.loads(chunk)
+                            if isinstance(parsed, dict):
+                                candidates.append(parsed)
+                        except Exception:
+                            pass
+
+        for candidate in candidates:
+            if not isinstance(candidate, dict):
+                continue
+
+            details = nested.getter(candidate, "error.details")
+            if isinstance(details, list):
+                for item in details:
+                    delay_val = nested.getter(item, "retryDelay")
+                    if delay_val is not None:
+                        delay_str = str(delay_val).strip()
+                        if delay_str.endswith("s"):
+                            delay_str = delay_str[:-1]
+                        try:
+                            return float(delay_str)
+                        except (ValueError, TypeError):
+                            pass
+
+        # 2. Check HTTP headers fallback (retry-after, retry-after-ms)
+        headers = nested.getter(err, ["response.headers", "headers"], None)
+        if headers is not None:
+            retry_after = nested.getter(headers, ["retry-after"], None)
+            if retry_after is not None:
+                try:
+                    return float(str(retry_after).strip())
+                except (ValueError, TypeError):
+                    pass
+
+            retry_after_ms = nested.getter(headers, ["retry-after-ms"], None)
+            if retry_after_ms is not None:
+                try:
+                    return float(str(retry_after_ms).strip()) / 1000.0
+                except (ValueError, TypeError):
+                    pass
+
+        return None
+
     def _log_messages(self, messages, name="message"):
         """
         Log conversation messages to a JSON file.
@@ -1591,7 +1727,11 @@ class Model(ModelSettings):
         os.makedirs(".cecli/logs/messages", exist_ok=True)
         with safe_open(f".cecli/logs/messages/{name}-{time.time()}.log", "w") as f:
             json.dump(
-                messages, f, indent=4, ensure_ascii=False, default=lambda o: "<not serializable>"
+                messages,
+                f,
+                indent=4,
+                ensure_ascii=False,
+                default=lambda o: "<not serializable>",
             )
 
     def _log_request(self, model_call_dict):
@@ -1691,8 +1831,8 @@ async def sanity_check_model(io, model):
             io.tool_output(f"- {key}: {status}")
         if platform.system() == "Windows":
             io.tool_output(
-                "Note: You may need to restart your terminal or command prompt for `setx` to take"
-                " effect."
+                "Note: You may need to restart your terminal or command prompt"
+                " for `setx` to take effect."
             )
     elif not model.keys_in_environment:
         show = True
@@ -1721,7 +1861,10 @@ async def check_for_dependencies(io, model_name):
     """
     if model_name.startswith("bedrock/"):
         await check_pip_install_extra(
-            io, "boto3", "AWS Bedrock models require the boto3 package.", ["boto3"]
+            io,
+            "boto3",
+            "AWS Bedrock models require the boto3 package.",
+            ["boto3"],
         )
     elif model_name.startswith("vertex_ai/"):
         await check_pip_install_extra(

@@ -502,18 +502,17 @@ class TUI(App):
         self.update_key_hints_left(KeyHints.DEFAULT_LEFT_TEXT)
 
     def _load_git_info(self):
-        """Load git branch and dirty count (deferred to avoid blocking startup)."""
+        """Load git branch (deferred to avoid blocking startup)."""
         footer = self.query_one(MainFooter)
         if self.worker.coder.repo:
             try:
                 branch = self.worker.coder.repo.repo.active_branch.name or "main"
-                dirty = self.worker.coder.repo.get_dirty_files()
-                footer.update_git(branch, len(dirty) if dirty else 0)
+                footer.update_git(branch)
             except Exception:
                 if self.worker.coder.repo:
-                    footer.update_git("main", 0)
+                    footer.update_git("main")
                 else:
-                    footer.update_git("No Repo", 0)
+                    footer.update_git("No Repo")
 
     def check_output_queue(self):
         """Process messages from coder worker."""
@@ -1247,6 +1246,8 @@ class TUI(App):
         # Update input autocomplete data for the primary agent
         self.enable_input({}, coder=self.worker.coder)
 
+        self._refresh_footer()
+
     def action_switch_prev_agent(self) -> None:
         """Switch to the previous agent (primary or sub-agent), wrapping around."""
         if not self._sub_agent_containers:
@@ -1320,6 +1321,8 @@ class TUI(App):
             coder = agent_service.foreground_coder
             self.enable_input({}, coder=coder)
 
+        self._refresh_footer()
+
     def create_sub_agent_container(self, uuid: str, name: str) -> None:
         """Create an OutputContainer for a sub-agent."""
         from cecli.helpers.agents.service import AgentService
@@ -1378,9 +1381,44 @@ class TUI(App):
             agent_service.foreground_uuid = None
             primary = self.query_one("#output", OutputContainer)
             primary.display = True
+            self._refresh_footer()
 
         # Sync border title with mode and sub-agent info
         self._sync_sub_agent_display()
+
+    def _project_name_for_coder(self, coder) -> str:
+        """Compute a display project name for a coder's root (home-shortened)."""
+        home = str(Path.home())
+        repo = getattr(coder, "repo", None)
+        root = str(getattr(coder, "root", "") or "")
+        if not root and repo:
+            root = str(repo.root)
+        if not root:
+            root = str(Path.cwd())
+        if root.startswith(home):
+            project_name = root.replace(home, "~", 1)
+        else:
+            project_name = root
+        if len(project_name) >= 64:
+            project_name = project_name.split("/")[-1]
+        return project_name
+
+    def _refresh_footer(self):
+        """Refresh the footer with the active coder's project/root and git branch."""
+        try:
+            footer = self.query_one(MainFooter)
+            coder = self._get_visible_coder()
+            project_name = self._project_name_for_coder(coder)
+            branch = ""
+            repo = getattr(coder, "repo", None)
+            if repo:
+                try:
+                    branch = repo.repo.active_branch.name or "main"
+                except Exception:
+                    branch = branch or "main"
+            footer.update_info(project_name, branch)
+        except Exception:
+            pass
 
     def _sync_sub_agent_display(self) -> None:
         """Update the InputContainer border title with mode and sub-agent pills.
@@ -1598,12 +1636,14 @@ class TUI(App):
             tuple[list[str], set[str]]: A tuple of (ordered_list, fast_lookup_set)
                 containing the matched path completions.
         """
-        coder = self.worker.coder
+        coder = AgentService.get_instance(self.worker.coder).foreground_coder
         root = Path(coder.root) if hasattr(coder, "root") else Path.cwd()
 
         # Try FileSystemService first for efficient lookups
         try:
-            fs = FileSystemService.get_instance()
+            fs = getattr(coder, "fs", None) or FileSystemService.for_root(
+                str(root), repo=getattr(coder, "repo", None)
+            )
             if prefix:
                 if fs.trie:
                     is_fuzzy = False
