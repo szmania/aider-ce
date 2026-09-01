@@ -1781,13 +1781,21 @@ async def graceful_exit(coder=None, exit_code=0):
                         if (now - mtime) > week_seconds:
                             shutil.rmtree(agent_folder, ignore_errors=True)
                         else:
-                            # Remove empty sub-folders in remaining folders
-                            for sub_folder in agent_folder.iterdir():
-                                if sub_folder.is_dir():
-                                    try:
+                            # Find all nested subdirectories inside this agent folder
+                            all_subdirs = [d for d in agent_folder.rglob("*") if d.is_dir()]
+
+                            # Sort them by depth (deepest first) so child dirs are processed before parents
+                            all_subdirs.sort(key=lambda x: len(x.parts), reverse=True)
+
+                            for sub_folder in all_subdirs:
+                                try:
+                                    # rmdir() safely fails if a file is present
+                                    # any() checks if the directory has any files or remaining folders
+                                    if not any(sub_folder.iterdir()):
                                         sub_folder.rmdir()
-                                    except OSError:
-                                        pass
+                                except OSError:
+                                    pass
+
                     except (OSError, PermissionError):
                         pass
     except Exception:

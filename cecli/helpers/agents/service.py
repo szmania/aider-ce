@@ -138,6 +138,15 @@ class AgentService:
         return cls._global_registry
 
     @classmethod
+    def get_primary_uuid(cls) -> Optional[str]:
+        """Return the primary coder's uuid for the current session (memoized).
+
+        Fixed on the first :meth:`get_instance` call, so every agent spawned
+        in a session resolves to the same shared base uuid.
+        """
+        return cls._primary_agent_uuid
+
+    @classmethod
     def get_all_agents(cls) -> List[Any]:
         """Return all live coder instances tracked in the global uuid map.
 
@@ -576,7 +585,7 @@ class AgentService:
 
         async with self._get_lock(self._spawn_locks, parent_coder.uuid):
             self._check_max_sub_agents()
-            new_uuid = str(uuid4())
+            new_uuid = str(uuid4()).split("-")[0]
 
         from cecli.coders import Coder
 

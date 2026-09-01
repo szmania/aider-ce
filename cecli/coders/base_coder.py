@@ -474,14 +474,14 @@ class Coder(metaclass=UsageMeta):
             self._inherited_tools = True
 
         self.interrupt_event = ThreadSafeEvent()
-        self.uuid = str(generate_unique_id())
+        self.uuid = str(generate_unique_id()).split("-")[0]
         self.reflected_message = None
 
         if uuid:
-            self.uuid = str(uuid)
+            self.uuid = str(uuid).split("-")[0]
 
         if parent_uuid:
-            self.parent_uuid = str(parent_uuid)
+            self.parent_uuid = str(parent_uuid).split("-")[0]
 
         self.map_cache_dir = map_cache_dir
 
@@ -4962,13 +4962,44 @@ class Coder(metaclass=UsageMeta):
         return edits
 
     def local_agent_folder(self, path):
+        primary_uuid = self._resolve_primary_agent_uuid()
+        primary_root = os.path.abspath(self.primary_root)
+
+        stripped = path.lstrip("/")
+
+        if self.uuid == primary_uuid:
+            rel_dir = f"{primary_root}/.cecli/agents/{GLOBAL_DATE}/{primary_uuid}"
+        else:
+            rel_dir = f"{primary_root}/.cecli/agents/{GLOBAL_DATE}/{primary_uuid}/s/{self.uuid}"
+
         os.makedirs(
-            self.abs_root_path(f".cecli/agents/{GLOBAL_DATE}/{self.uuid}"),
+            self.abs_root_path(rel_dir),
             exist_ok=True,
         )
 
-        stripped = path.lstrip("/")
-        return f".cecli/agents/{GLOBAL_DATE}/{self.uuid}/{stripped}"
+        return f"{rel_dir}/{stripped}"
+
+    def _resolve_primary_agent_uuid(self):
+        """Return the primary coder's uuid for this session (memoized).
+
+        All agents spawned under a primary coder share the same base folder,
+        so sub-agent files nest under one location regardless of delegation
+        depth. Falls back to this coder's own uuid when the service is
+        unavailable (e.g. in unit tests).
+        """
+        if getattr(self, "_primary_agent_uuid", None):
+            return self._primary_agent_uuid
+
+        primary_uuid = self.uuid
+        try:
+            from cecli.helpers.agents.service import AgentService
+
+            primary_uuid = AgentService.get_primary_uuid() or self.uuid
+        except Exception:
+            pass
+
+        self._primary_agent_uuid = primary_uuid
+        return primary_uuid
 
     async def auto_save_session(self, force=False):
         """Automatically save the current session to {auto-save-session-name}.json."""
