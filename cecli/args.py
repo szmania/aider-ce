@@ -332,6 +332,12 @@ def get_parser(default_config_files, git_root):
         help="Maximum number of retries a model gets on malformed outputs (default: 3)",
     )
     group.add_argument(
+        "--max-tool-calls",
+        type=int,
+        default=25,
+        help="Maximum number of tool calls allowed per message (default: 25)",
+    )
+    group.add_argument(
         "--cost-limit",
         type=float,
         default=None,

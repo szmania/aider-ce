@@ -9,6 +9,7 @@ from functools import lru_cache
 from pathlib import Path
 
 import textual.strip
+import xxhash
 from rich.color import ColorSystem
 from rich.style import Style
 from textual import events
@@ -364,16 +365,18 @@ class TUI(App):
         "cyan2",
         "cyan1",
         "bright_white",
+        "medium_spring_green",
     ]
 
+    E = f"[bold {BANNER_COLORS[6]}]▓▓▓[/bold {BANNER_COLORS[6]}]"
     # ASCII banner for startup
     BANNER = f"""
-[bold {BANNER_COLORS[0]}]   ▒▒▒▒▒▒╗▒▒▒▒▒▒▒╗ ▒▒▒▒▒▒╗▒▒╗     ▒▒╗[/bold {BANNER_COLORS[0]}]
-[bold {BANNER_COLORS[1]}]  ▒▒╔════╝▒▒╔════╝▒▒╔════╝▒▒║     ▒▒║[/bold {BANNER_COLORS[1]}]
-[bold {BANNER_COLORS[2]}]  ▒▒║     ▒▒▒▒▒╗  ▒▒║     ▒▒║     ▒▒║[/bold {BANNER_COLORS[2]}]
-[bold {BANNER_COLORS[3]}]  ▒▒║     ▒▒╔══╝  ▒▒║     ▒▒║     ▒▒║[/bold {BANNER_COLORS[3]}]
-[bold {BANNER_COLORS[4]}]  ╚▒▒▒▒▒▒╗▒▒▒▒▒▒▒╗╚▒▒▒▒▒▒╗▒▒▒▒▒▒▒╗▒▒║[/bold {BANNER_COLORS[4]}]
-[bold {BANNER_COLORS[5]}]   ╚═════╝╚══════╝ ╚═════╝╚══════╝╚═╝ v{__version__}[/bold {BANNER_COLORS[5]}]
+[bold {BANNER_COLORS[0]}]                       ▒▒╗▒▒╗[/bold {BANNER_COLORS[0]}]
+[bold {BANNER_COLORS[1]}]   ▒▒▒▒▒╗ ▒▒▒▒▒╗ ▒▒▒▒▒╗▒▒║╚═╝[/bold {BANNER_COLORS[1]}]
+[bold {BANNER_COLORS[2]}]  ▒▒╔═══╝▒▒{E}▒║▒▒╔═══╝▒▒║▒▒╗[/bold {BANNER_COLORS[2]}]
+[bold {BANNER_COLORS[3]}]  ▒▒║    ▒▒╔═══╝▒▒║    ▒▒║▒▒║[/bold {BANNER_COLORS[3]}]
+[bold {BANNER_COLORS[4]}]  ╚▒▒▒▒▒╗╚▒▒▒▒▒╗╚▒▒▒▒▒╗▒▒║▒▒║[/bold {BANNER_COLORS[4]}]
+[bold {BANNER_COLORS[5]}]   ╚════╝ ╚════╝ ╚════╝╚═╝╚═╝ v{__version__}[/bold {BANNER_COLORS[5]}]
 
 """
 
@@ -499,18 +502,17 @@ class TUI(App):
         self.update_key_hints_left(KeyHints.DEFAULT_LEFT_TEXT)
 
     def _load_git_info(self):
-        """Load git branch and dirty count (deferred to avoid blocking startup)."""
+        """Load git branch (deferred to avoid blocking startup)."""
         footer = self.query_one(MainFooter)
         if self.worker.coder.repo:
             try:
                 branch = self.worker.coder.repo.repo.active_branch.name or "main"
-                dirty = self.worker.coder.repo.get_dirty_files()
-                footer.update_git(branch, len(dirty) if dirty else 0)
+                footer.update_git(branch)
             except Exception:
                 if self.worker.coder.repo:
-                    footer.update_git("main", 0)
+                    footer.update_git("main")
                 else:
-                    footer.update_git("No Repo", 0)
+                    footer.update_git("No Repo")
 
     def check_output_queue(self):
         """Process messages from coder worker."""
@@ -871,6 +873,26 @@ class TUI(App):
             self._switch_to_container(target_uuid)
             return
 
+        # Intercept /spawn-agent command to handle immediately without LLM
+        # processing so a new agent can be spawned even while the primary
+        # coder is generating.
+        if stripped == "/spawn-agent" or stripped.startswith("/spawn-agent "):
+            self._handle_spawn_agent_command(user_input, stripped)
+            return
+
+        # Intercept queue management commands (/queue, /list-queue, /remove-queue)
+        # to dispatch immediately without a full generation cycle - they only
+        # modify the active coder's prompt_queue.
+        if (
+            stripped == "/queue"
+            or stripped.startswith("/queue ")
+            or stripped == "/list-queue"
+            or stripped == "/remove-queue"
+            or stripped.startswith("/remove-queue ")
+        ):
+            self._handle_queue_command(stripped)
+            return
+
         # Save to history before clearing
         input_area = self.query_one("#input", InputArea)
         input_area.save_to_history(user_input)
@@ -922,16 +944,16 @@ class TUI(App):
 
             # Default (primary coder, actively generating sub-agent,
             # or sub-agent not found in tracking): append to conversation
-            ConversationService.get_manager(foreground_coder).add_message(
+            ConversationService.get_manager(foreground_coder).queue_message(
                 message_dict=dict(
                     role="user", content=foreground_coder.wrap_user_input(user_input)
                 ),
                 tag=MessageTag.CUR,
-                hash_key=("user_message", user_input, str(time.monotonic_ns())),
-                promotion=ConversationService.get_manager(
-                    foreground_coder
-                ).DEFAULT_TAG_PROMOTION_VALUE,
-                mark_for_demotion=1,
+                hash_key=(
+                    "user_message",
+                    xxhash.xxh3_128_hexdigest(user_input.encode("utf-8", errors="replace")),
+                    str(time.monotonic_ns()),
+                ),
             )
         else:
             self.update_key_hints(generating=True)
@@ -942,11 +964,120 @@ class TUI(App):
             )
             # Route to per-coder queue when available
             if coder_uuid and coder_uuid in queues._per_coder_queues:
-                queues._per_coder_queues[coder_uuid].put(
-                    {"text": user_input, "coder_uuid": coder_uuid}
-                )
+                queues.push_coder_input(coder_uuid, {"text": user_input, "coder_uuid": coder_uuid})
             else:
                 self.input_queue.put({"text": user_input, "coder_uuid": coder_uuid})
+                queues.wake_input_waiters()
+
+    def _handle_queue_command(self, stripped: str) -> None:
+        """Dispatch /queue, /list-queue and /remove-queue immediately.
+
+        These commands only mutate the active coder's ``prompt_queue``, so they
+        are handled here without running a full generation cycle.
+        """
+        from cecli.helpers import command_queue
+        from cecli.helpers.agents.service import AgentService
+
+        input_area = self.query_one("#input", InputArea)
+        input_area.save_to_history(stripped)
+        input_area.value = ""
+        self.add_user_message(stripped)
+
+        active_coder = (
+            AgentService.get_instance(self.worker.coder).foreground_coder or self.worker.coder
+        )
+        cmd, _, args = stripped.partition(" ")
+        args = args.strip()
+
+        if cmd == "/queue":
+            if not args:
+                self.show_error("Usage: /queue <prompt text>")
+                return
+
+            try:
+                item = command_queue.enqueue_prompt(active_coder, args)
+            except (ValueError, RuntimeError) as e:
+                self.show_error(str(e))
+                return
+
+            position = command_queue.get_queue_length(active_coder)
+            self._get_visible_container().add_output(
+                f"Prompt queued at position {position} (id: {item['id']})"
+            )
+
+        elif cmd == "/list-queue":
+            items = command_queue.list_queue(active_coder)
+            if not items:
+                self._get_visible_container().add_output("Queue is empty.")
+                return
+
+            lines = []
+            for index, item in enumerate(items):
+                text = item["text"]
+                preview = text[:80] + ("..." if len(text) > 80 else "")
+                stamp = time.strftime("%H:%M:%S", time.localtime(item["timestamp"]))
+                lines.append(f"[{index + 1}] {preview} ({stamp})")
+
+            self._get_visible_container().add_output("\n".join(lines))
+
+        elif cmd == "/remove-queue":
+            if not args:
+                self.show_error("Usage: /remove-queue <index|*>")
+                return
+
+            if args == "*":
+                removed = command_queue.clear_queue(active_coder)
+                self._get_visible_container().add_output(
+                    f"Removed all {len(removed)} queued prompt(s)."
+                )
+                return
+
+            try:
+                index = int(args)
+            except ValueError:
+                self.show_error("Usage: /remove-queue <index|*>")
+                return
+
+            removed = command_queue.remove_from_queue(active_coder, index - 1)
+            if removed is None:
+                self.show_error(f"No queued prompt at index {index}.")
+                return
+
+            self._get_visible_container().add_output(
+                f"Removed queued prompt {index}: {removed['text'][:80]}"
+            )
+
+    def _handle_spawn_agent_command(self, user_input: str, stripped: str) -> None:
+        """Dispatch /spawn-agent immediately without a full generation cycle.
+
+        The spawn is scheduled on the worker's event loop so a new agent can
+        be started even while the primary coder is generating.
+        """
+        from cecli.commands.spawn_agent import SpawnAgentCommand
+
+        parts = stripped.split(maxsplit=1)
+        spawn_args = parts[1].strip() if len(parts) > 1 else ""
+
+        input_area = self.query_one("#input", InputArea)
+        input_area.value = ""
+
+        if not spawn_args:
+            self.show_error("Usage: /spawn-agent <name> [<prompt>]")
+            return
+
+        # Save to history and echo the command before dispatching
+        input_area.save_to_history(user_input)
+        self.add_user_message(user_input)
+
+        coder = self.worker.coder
+        if self.worker.loop is None:
+            self.show_error("Worker loop not available. Cannot spawn sub-agent.")
+            return
+
+        async def _run_spawn():
+            await SpawnAgentCommand.execute(coder.io, coder, spawn_args)
+
+        self.worker.loop.call_soon_threadsafe(lambda: self.worker.loop.create_task(_run_spawn()))
 
     def set_input_value(self, text) -> None:
         """Find the input widget and set focus to it."""
@@ -1115,6 +1246,8 @@ class TUI(App):
         # Update input autocomplete data for the primary agent
         self.enable_input({}, coder=self.worker.coder)
 
+        self._refresh_footer()
+
     def action_switch_prev_agent(self) -> None:
         """Switch to the previous agent (primary or sub-agent), wrapping around."""
         if not self._sub_agent_containers:
@@ -1188,6 +1321,8 @@ class TUI(App):
             coder = agent_service.foreground_coder
             self.enable_input({}, coder=coder)
 
+        self._refresh_footer()
+
     def create_sub_agent_container(self, uuid: str, name: str) -> None:
         """Create an OutputContainer for a sub-agent."""
         from cecli.helpers.agents.service import AgentService
@@ -1246,9 +1381,44 @@ class TUI(App):
             agent_service.foreground_uuid = None
             primary = self.query_one("#output", OutputContainer)
             primary.display = True
+            self._refresh_footer()
 
         # Sync border title with mode and sub-agent info
         self._sync_sub_agent_display()
+
+    def _project_name_for_coder(self, coder) -> str:
+        """Compute a display project name for a coder's root (home-shortened)."""
+        home = str(Path.home())
+        repo = getattr(coder, "repo", None)
+        root = str(getattr(coder, "root", "") or "")
+        if not root and repo:
+            root = str(repo.root)
+        if not root:
+            root = str(Path.cwd())
+        if root.startswith(home):
+            project_name = root.replace(home, "~", 1)
+        else:
+            project_name = root
+        if len(project_name) >= 64:
+            project_name = project_name.split("/")[-1]
+        return project_name
+
+    def _refresh_footer(self):
+        """Refresh the footer with the active coder's project/root and git branch."""
+        try:
+            footer = self.query_one(MainFooter)
+            coder = self._get_visible_coder()
+            project_name = self._project_name_for_coder(coder)
+            branch = ""
+            repo = getattr(coder, "repo", None)
+            if repo:
+                try:
+                    branch = repo.repo.active_branch.name or "main"
+                except Exception:
+                    branch = branch or "main"
+            footer.update_info(project_name, branch)
+        except Exception:
+            pass
 
     def _sync_sub_agent_display(self) -> None:
         """Update the InputContainer border title with mode and sub-agent pills.
@@ -1365,11 +1535,12 @@ class TUI(App):
         coder_uuid = self._confirmation_coder_uuid
         # Route to per-coder queue when available
         if coder_uuid and coder_uuid in queues._per_coder_queues:
-            queues._per_coder_queues[coder_uuid].put(
-                {"confirmed": message.result, "coder_uuid": coder_uuid}
+            queues.push_coder_input(
+                coder_uuid, {"confirmed": message.result, "coder_uuid": coder_uuid}
             )
         else:
             self.input_queue.put({"confirmed": message.result, "coder_uuid": coder_uuid})
+            queues.wake_input_waiters()
         # Release the confirmation lock and process any pending confirmations
         self._confirmation_lock = False
         self._process_pending_confirmation()
@@ -1465,12 +1636,14 @@ class TUI(App):
             tuple[list[str], set[str]]: A tuple of (ordered_list, fast_lookup_set)
                 containing the matched path completions.
         """
-        coder = self.worker.coder
+        coder = AgentService.get_instance(self.worker.coder).foreground_coder
         root = Path(coder.root) if hasattr(coder, "root") else Path.cwd()
 
         # Try FileSystemService first for efficient lookups
         try:
-            fs = FileSystemService.get_instance()
+            fs = getattr(coder, "fs", None) or FileSystemService.for_root(
+                str(root), repo=getattr(coder, "repo", None)
+            )
             if prefix:
                 if fs.trie:
                     is_fuzzy = False

@@ -2,6 +2,7 @@ import json
 import os
 from typing import Dict, List
 
+from cecli.helpers import nested
 from cecli.helpers.hashline import hashline_formatted, strip_hashline
 from cecli.helpers.hashpos.transformations import (
     apply_contextual_marker,
@@ -38,24 +39,22 @@ class Tool(BaseTool):
         "function": {
             "name": "ReadFile",
             "description": (
-                "Get prefixed content between start and end markers. Accepts an array of `read` objects "
-                "(file_path, range_start, range_end). Range markers can be text patterns (up to 3 lines), "
-                "file boundaries (@000, 000@), or exact line numbers (@L10). "
-                "Contextual end markers (@C{num}, @P{num}, @N{num}) expand symmetrically, previously, or next "
-                "around a single unique range_start match."
-                " Use line hints (e.g., 'my_func @L150', '@A{{def foo}}', '@B{{return x}}') to disambiguate. "
-                "@A{{regex}} keeps only the closest match **after** the regex hit; "
-                "@B{{regex}} keeps only the closest match **before** the regex hit. "
+                "Read lines from one or more files. Each returned line carries a virtual identifier "
+                "you can pass straight to EditFile. Batch reads by passing an array of "
+                "{file_path, range_start, range_end} objects."
                 ""
-                "File lines are prefixed with virtual, deterministic identifiers generated on-the-fly: "
-                "Because identifiers track global occurrences, "
-                "adding or deleting a line can instantly change the prefix "
-                "of identical lines anywhere else in the file as well as content after the edit."
-                "Always re-read the file to get fresh IDs after making edits."
+                "Markers for range_start / range_end:"
+                "  - exact text patterns (preferred usage) (up to 5 lines; anchor on meaningful names like function signatures)"  # noqa
+                "  - '@000' / '000@' for the first / last line"
+                "  - hint suffixes to disambiguate repeated patterns: ' @L<num>' (nearest match), "
+                "    '@A{{regex}}' (closest match after the regex hit), '@B{{regex}}' (closest match before)"
+                "  - when range_start matches one location, range_end accepts '@C{num}' (context both sides), "
+                "    '@P{num}' (lines before the match), '@N{num}' (lines after the match)"
                 ""
-                "Avoid generic keywords; use meaningful identifiers like function names. Do not use empty strings. "
-                "Always use ReadFile instead of CLI tools. Ranges >200 lines return a structural preview. "
-                "Call sequentially with increasingly fine-grained searches to drill down into large files."
+                "File edits may update prefixes of identical lines, requiring re-reading to get fresh identifiers."
+                ""
+                "Large structured ranges (line-number or boundary reads) return a structural outline "
+                "instead of full contents; read in smaller targeted ranges for full detail."
             ),
             "parameters": {
                 "type": "object",
@@ -67,28 +66,26 @@ class Tool(BaseTool):
                             "properties": {
                                 "file_path": {
                                     "type": "string",
-                                    "description": "File path to search in.",
+                                    "description": (
+                                        "The file to read, absolute or relative to the project root."
+                                    ),
                                 },
                                 "range_start": {
                                     "type": "string",
                                     "description": (
-                                        "The text marking the beginning of the range."
-                                        " Use '@000' for the first line on empty files."
-                                        " Append ' @L<num>' (e.g., 'my_func @L1506') as a"
-                                        " proximity hint to help select among multiple matches."
+                                        "The start of the range: an exact text pattern (up to 5 lines), "
+                                        "'@000' for the first line. "
+                                        "Append ' @L<num>' (e.g., 'my_func @L1506') to pick among multiple matches, "
+                                        "or '@A{{regex}}' / '@B{{regex}}' for closest match after/before the regex hit."
                                     ),
                                 },
                                 "range_end": {
                                     "type": "string",
                                     "description": (
-                                        "The text marking the end of the range."
-                                        " Use '000@' for the last line on empty files."
-                                        " When range_start uniquely matches one location, you"
-                                        " may use contextual markers: '@C{number}' (e.g., '@C5')"
-                                        " for lines on both sides of the match, '@P{number}'"
-                                        " for lines BEFORE the match (the match is the range"
-                                        " end), or '@N{number}' for lines AFTER the match"
-                                        " (the match is the range start)."
+                                        "The end of the range: an exact text pattern (up to 5 lines), '000@' for "
+                                        "the last line. When range_start "
+                                        "matches one location, use '@C{num}' for context on both sides, "
+                                        "'@P{num}' for lines before the match, or '@N{num}' for lines after the match."
                                     ),
                                 },
                             },
@@ -142,8 +139,10 @@ class Tool(BaseTool):
             for read_index, read_op in enumerate(read):
                 # Extract parameters for this read operation
                 file_path = read_op.get("file_path")
-                range_start = read_op.get("range_start")
-                range_end = read_op.get("range_end")
+                range_start = nested.getter(
+                    read_op, ["range_start", "start_line", "line_start", "start"]
+                )
+                range_end = nested.getter(read_op, ["range_end", "end_line", "line_end", "end"])
                 padding = 0
 
                 if file_path is None:
@@ -263,6 +262,7 @@ class Tool(BaseTool):
                 start_line_idx = -1
                 end_line_idx = -1
                 both_structured = False
+                both_special = False
 
                 if range_start is not None and range_end is not None:
                     # Step 1: Classify the search type
@@ -340,6 +340,7 @@ class Tool(BaseTool):
                             error_outputs.append(err)
                         continue
 
+                    both_special = rt["start_is_special"] and rt["end_is_special"]
                     both_structured = rt["both_structured"]
                     mixed_special_search = rt["mixed_special"]
 
@@ -377,7 +378,7 @@ class Tool(BaseTool):
                         coder, abs_path, start_idx=s_idx, end_idx=e_idx, line_numbers=True
                     )
 
-                    if abs_path not in coder.abs_fnames:
+                    if abs_path not in coder.abs_fnames and both_special:
                         # Track special marker usage for auto-editable detection
                         if token_count <= coder.large_file_token_threshold:
                             cls._special_marker_count[abs_path] = (
@@ -890,8 +891,12 @@ class Tool(BaseTool):
             coder.io.tool_output("")
             for i, read_op in enumerate(read_ops):
                 file_path = read_op.get("file_path", "")
-                range_start = strip_hashline(read_op.get("range_start", "")).strip()
-                range_end = strip_hashline(read_op.get("range_end", "")).strip()
+                range_start = strip_hashline(
+                    nested.getter(read_op, ["range_start", "start_line", "line_start", "start"])
+                ).strip()
+                range_end = strip_hashline(
+                    nested.getter(read_op, ["range_end", "end_line", "line_end", "end"])
+                ).strip()
 
                 # Format as "read: • file_path • range_start • range_end • padding"
                 formatted_query = (

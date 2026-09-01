@@ -545,122 +545,43 @@ def build_orchestration_context_block(agent_config: dict[str, Any]) -> str | Non
     orchestration_config = agent_config.get("orchestration", {})
 
     context = """<context name="orchestration" from="agent">
-The `Orchestrate` tool lets you batch multiple tool calls in a single step by writing Python code in a limited, secure sandbox.
-This is much more efficient than making individual tool calls for loop-heavy workflows.
-Variables and methods defined in a script are persisted in subsequent turns.
-As such, results from previous calls can be reused and helper methods can be defined to enhance ease of use within the environment.
+The `Orchestrate` tool runs Python in a sandbox where you can script other tools programmatically. 
+Use it for batch, loop-heavy, and repeat-able workflows.
+Variables and helpers persist across calls; `state` persists across all Orchestrate calls in the session.
+You may need to explore the below primitives to understand how to use the sandbox effectively.
 
 ### Primitives
 
-| Primitive | Description |
-|-----------|-------------|
-| `Agent.allowed_methods()` | List all available builtin function names |
-| `Agent.allowed_tools()` | List all available tool names |
+| Primitive | What it does |
+|-----------|--------------|
+| `Agent.allowed_methods()` / `Agent.allowed_tools()` | List helper methods and available tools |
+| `Agent.get_tool(name)` | Get a tool proxy (case-insensitive; `Local--` / `{{Server Name}}--` prefixes ok) |
+| `await tool.call(**params)` | Run a tool; returns `{"result": [...], "errors": [...], "details": [...]}`, items with shape `{"content", "_"}` |
+| `Agent.peek(result)` / `Agent.get_value(result, path, default?)` | Inspect / extract values from tool results. path is dot-separated string |
+| `Agent.resolve_regions(path, specs)` / `Agent.edit_region(path, edits)` | Resolve text boundaries once, then apply edits |
+| `gather(**tasks)` | Run tasks concurrently; results expose `.key` and `["key"]` |
+| `state` / `shared_state` | Persistent dicts; `state.get(k)` falls back to `shared_state` |
+| `print(...)` / `reset(local_vars=True, state=False)` | Emit output / clear namespaces |
+| `typeof(x)`, `isinstance(x, t)`, `hasattr(x, n)`, `repr(x)`, `vars(obj)` | Type inspection and debugging |
 
-| `Agent.get_tool(name)` | Get a tool proxy (case-insensitive, accepts `Local--` or `{{Server}}--` prefix) |
-| `await tool.call(**params)` | Execute a tool; returns `{"result": [...], "errors": [...], "details": [...]}` — each result item is `{"content": ..., "_": {...}}` |
+### Region editing
 
-| `Agent.peek(result)` | Inspect a tool result's structure and leaf content — returns a string; use `print(Agent.peek(result))` to see it |
-| `Agent.get_value(result, path, default?)` | Safely access nested values in tool results using dot-notation (e.g. `"result.0.content"`)  |
+- `resolve_regions(path, specs)`: 
+  `specs` = `[{"name", "start", "end", "start_line_hint"?, "end_line_hint"?}]`; `start`/`end` are line text, `@L{num}`, or a content ID. 
+  Returns `regions` with `.get(name)` -> `{"start", "end", "start_line", "end_line"}` plus `.get_start(name)` / `.get_end(name)`.
+- `edit_region(path, edits)`: 
+  `edits` = `[{"region": regions.get(name), "text", "operation" ("replace"|"delete", default "replace")}]`.
 
-| `Agent.get_content_id(path, text)` | Resolve a content ID from `@L{num}` or line text for EditFile |
-| `Agent.resolve_regions(path, regions)` | Batch-resolve text patterns to content IDs. Use `start_line_hint` / `end_line_hint` in region spec entries for disambiguation. Unlike ReadFile (where hints are embedded inline), hints are passed as **separate keys**. For `@L<num>` hints, using an **integer** (e.g., `start_line_hint=394`) is preferred over a string (e.g., `start_line_hint="@L394"`). Ambiguous patterns raise immediately. The returned `AgentRegion` has `.get_start(name)`, `.get_end(name)`, `.names()`, `.get(name)` |
-| `Agent.edit_region(path, edits)` | Thin wrapper around EditFile that accepts pre-resolved region dicts `{"start": content_id, "end": content_id}`. Returns the EditFile ToolResult. Use with `Agent.resolve_regions()` and `regions.get(name)` |
+### Modules
 
-| `await Agent.sleep(seconds)` | Pause execution (0-120s max) |
+Pre-imported, read-only: `re`, `math`, `itertools`, `collections`, `datetime`, `pathlib` (I/O blocked), `json`, `traceback`. Any other import fails.
 
-| `gather(**named_tasks)` | Run tasks concurrently; returns an iterable with `.key` / `["key"]` access |
-| `state` / `shared_state` | `state` persists across *all* `Orchestrate` calls within the same agent session (not just one call). `state.get(key)` falls through to ``shared_state`` when the key is not local. `shared_state` persists across *all* agent sessions globally |
-| `print(...)` / `reset(local_vars=True, state=False)` | Output messages; clear local namespace (and optionally state) |
-| `typeof(x)` / `isinstance(x, t)` / `hasattr(x, n)` / `repr(x)` / `vars(obj)` | Type inspection and debugging |
+### Conventions
 
-### Available Modules
-
-Pre-imported, read-only standard library modules:
-
-| Module | Common uses |
-|--------|-------------|
-| `re` | Regular expressions: `re.search(r"pat", s)`, `re.findall(...)` |
-| `math` | Math functions: `math.ceil(n)`, `math.sqrt(n)` |
-| `itertools` | Combinatorics: `itertools.chain(a, b)`, `itertools.product(...)` |
-| `collections` | Container helpers: `collections.Counter(...)`, `collections.defaultdict(...)` |
-| `datetime` | Date/time: `datetime.datetime.now()`, `datetime.timedelta(...)` |
-| `pathlib` | Safe filesystem paths: `pathlib.Path("/tmp/foo")`, `.parent`, `.name`, `/` joining. I/O methods (``read_text``, ``write_text``, etc.) blocked |
-| `json` | Parse / serialize: `json.loads(s)`, `json.dumps(obj, indent=2)` |
-| `traceback` | Traceback formatting: `traceback.format_exc()`, `traceback.format_tb(...)` |
-
-All other module imports will fail.
-
-### Usage
-
-```python
-tool = Agent.get_tool("delegate")
-tool_outputs = await gather(
-    a=tool.call(prompt="A"),
-    b=tool.call(prompt="B"),
-)
-print(tool_outputs.a)              # attribute access
-print(tool_outputs["b"])           # key access
-```
-
-### Working with Results
-
-Use `Agent.peek()` to discover a result's structure, then `Agent.get_value()`
-to extract specific fields by dot-path::
-
-    result = await read_tool.call(file_path="foo.py", range_start="@000", range_end="000@")
-    print(Agent.peek(result))
-    # Shows: result[0].content: str = '...'
-    #        result[0]._.file_path: str = 'foo.py'
-
-    content = Agent.get_value(result, "result.0.content")
-    file_path = Agent.get_value(result, "result.0._.file_path", "unknown")
-
-Result list items are plain dicts — use item['content'] / item.get('content')
-and item['_'] / item.get('_') to access data and metadata respectively.
-
-
-### Editing with Regions
-
-Use `Agent.resolve_regions()` to convert text patterns into content IDs, then `Agent.edit_region()` to apply edits using the resolved IDs.
-
-#### Step 1 —  resolve region boundaries once
-
-```python
-regions = Agent.resolve_regions("foo.py", [
-    {"name": "my_func", "start": "def my_func", "end": "return result"},
-    {"name": "init",    "start": "def __init__", "end": "self.x = x"},
-])
-```
-
-#### Step 2 — Use `regions.get(name)` with `Agent.edit_region()` (recommended shorthand)
-
-```python
-result = await Agent.edit_region(
-    file_path="foo.py",
-    edits=[
-        {"region": regions.get("my_func"), "text": "def my_func():\n    return 42"},
-    ],
-)
-
-# edit_region calls EditFile under the hood
-change_id = Agent.get_value(result, "result.0._.change_id")                                                                                                          
-```
-
-#### Alternative: Call `EditFile` directly with `regions.get_start()` / `regions.get_end()`
-
-### Gotchas
-
-- **Types**: compare with `typeof(x) == dict` or `isinstance(x, dict)` — NOT `typeof(x) == "dict"`
-- **Args**: use keyword args only — `tool.call(file_path="f", ...)`
-- **gather**: always use named `gather(x=a, y=b)` — positional args are not supported
-
-### Rules
-
-1. No imports - use only the primitives and modules above
-2. Do not access attributes starting with `_` (private/dunder)
-3. All tool calls must be awaited
-4. Use `print(...)` to output results — only printed output is returned
+- Keyword args only; `gather()` takes named tasks
+- Do not touch private (`_`) attributes or `__builtins__`
+- Always `await` tool calls
+- Inspect tool results with `Agent.peek()` / `Agent.get_value()`; edit files via `Agent.resolve_regions()` + `Agent.edit_region()` or `EditFile` directly
 </context>"""
 
     # Task 6: Append sandbox configuration overrides when non-empty

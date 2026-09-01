@@ -1,7 +1,12 @@
+import pytest
+
 from cecli.helpers.hashline import (
     ContentHashError,
+    apply_hashline_operations,
+    get_hashline_diff,
     hashline,
     parse_hashline,
+    resolve_content_to_hashline_ids,
     strip_hashline,
 )
 
@@ -170,3 +175,187 @@ def test_parse_hashline():
         assert False, "Expected ContentHashError for invalid input"
     except ContentHashError:
         pass  # Expected behavior
+
+
+def test_resolve_stripped_unique_line_preview_and_edit_aligned():
+    """Stripped-whitespace unique line content resolves in preview AND edit paths.
+
+    Regression test for issue #630: EditFile previews (get_hashline_diff) and
+    actual edits (apply_hashline_operations) must resolve selectors identically.
+    A selector with normalized/stripped whitespace that matches exactly one
+    unique line must resolve to a content ID in BOTH paths.
+    """
+    original_content = "        xyz\n        abc\n        def\n"
+
+    # 'abc' matches exactly one unique line '        abc' (whitespace stripped)
+    resolved_start, resolved_end = resolve_content_to_hashline_ids(original_content, "abc", "abc")
+    assert resolved_start != "abc"
+    assert resolved_end != "abc"
+    assert resolved_start == resolved_end
+
+    # Preview path must succeed (previously raised ContentHashError)
+    diff = get_hashline_diff(
+        original_content=strip_hashline(original_content),
+        start_line_hash=resolved_start,
+        end_line_hash=resolved_end,
+        operation="replace",
+        text="NEW\n",
+        pretty=False,
+    )
+    assert diff != ""
+
+    # Actual edit path must succeed identically
+    new_content, successful, failed = apply_hashline_operations(
+        original_content,
+        [
+            {
+                "start_line_hash": resolved_start,
+                "end_line_hash": resolved_end,
+                "operation": "replace",
+                "text": "NEW",
+            }
+        ],
+    )
+    assert successful == [0]
+    assert failed == []
+    assert "NEW\n" in new_content
+    assert "        abc" not in new_content
+
+
+def test_resolve_stripped_ambiguous_line_stays_unchanged_in_both_paths():
+    """Ambiguous stripped selectors remain unresolved in both paths.
+
+    The uniqueness guard must be preserved: a stripped selector matching
+    multiple lines must be returned unchanged so the preview and actual
+    edit fail consistently instead of guessing which occurrence to target.
+    """
+    original_content = (
+        "        xyz\n" "        abc\n" "        def\n" "        ghi\n" "        xyz\n"
+    )
+
+    # 'xyz' appears (stripped) in two lines -> ambiguous
+    resolved_start, resolved_end = resolve_content_to_hashline_ids(original_content, "xyz", "xyz")
+    assert resolved_start == "xyz"
+    assert resolved_end == "xyz"
+
+    # Preview path must fail with ContentHashError
+    with pytest.raises(ContentHashError):
+        get_hashline_diff(
+            original_content=strip_hashline(original_content),
+            start_line_hash=resolved_start,
+            end_line_hash=resolved_end,
+            operation="replace",
+            text="NEW\n",
+            pretty=False,
+        )
+
+    # Actual edit path must fail too (reported as a failed operation)
+    new_content, successful, failed = apply_hashline_operations(
+        original_content,
+        [
+            {
+                "start_line_hash": resolved_start,
+                "end_line_hash": resolved_end,
+                "operation": "replace",
+                "text": "NEW",
+            }
+        ],
+    )
+    assert successful == []
+    assert len(failed) == 1
+    assert new_content == original_content
+
+
+def test_noop_replace_last_line_without_trailing_newline_is_failed():
+    """An identical replacement of a final unterminated line is a no-op."""
+    original_content = "first\nlast"
+    _, last_line_id = resolve_content_to_hashline_ids(original_content, "last", "last")
+
+    new_content, successful, failed = apply_hashline_operations(
+        original_content,
+        [
+            {
+                "start_line_hash": last_line_id,
+                "end_line_hash": last_line_id,
+                "operation": "replace",
+                "text": "last",
+            }
+        ],
+    )
+
+    assert new_content == original_content
+    assert successful == []
+    assert failed[0]["failure_type"] == "no_change"
+
+
+def test_mixed_noop_and_real_replace_reports_only_real_success():
+    """A no-op in a batch must not be counted as a successful operation."""
+    original_content = "first\nmiddle\nlast"
+    first_id, _ = resolve_content_to_hashline_ids(original_content, "first", "first")
+    _, last_id = resolve_content_to_hashline_ids(original_content, "last", "last")
+    lines = [first_id, last_id]
+
+    new_content, successful, failed = apply_hashline_operations(
+        original_content,
+        [
+            {
+                "start_line_hash": lines[0],
+                "end_line_hash": lines[0],
+                "operation": "replace",
+                "text": "changed",
+            },
+            {
+                "start_line_hash": lines[1],
+                "end_line_hash": lines[1],
+                "operation": "replace",
+                "text": "last",
+            },
+        ],
+    )
+
+    assert new_content == "changed\nmiddle\nlast"
+    assert successful == [0]
+    assert [op["index"] for op in failed] == [1]
+    assert failed[0]["failure_type"] == "no_change"
+
+
+def test_insert_and_replace_same_anchor_are_both_applied():
+    """Insert and replace operations sharing an anchor remain independent."""
+    original_content = "anchor\nend\n"
+    anchor_id, _ = resolve_content_to_hashline_ids(original_content, "anchor", "anchor")
+
+    new_content, successful, failed = apply_hashline_operations(
+        original_content,
+        [
+            {
+                "start_line_hash": anchor_id,
+                "end_line_hash": anchor_id,
+                "operation": "replace",
+                "text": "replaced",
+            },
+            {
+                "start_line_hash": anchor_id,
+                "operation": "insert",
+                "text": "inserted",
+            },
+        ],
+    )
+
+    assert new_content == "replaced\ninserted\nend\n"
+    assert sorted(successful) == [0, 1]
+    assert failed == []
+
+
+def test_empty_insert_is_a_noop():
+    """An empty insert must not mutate content or anchor formatting."""
+    original_content = "anchor\n"
+    anchor_id, _ = resolve_content_to_hashline_ids(original_content, "anchor", "anchor")
+
+    new_content, successful, failed = apply_hashline_operations(
+        original_content,
+        [{"start_line_hash": anchor_id, "operation": "insert", "text": ""}],
+    )
+
+    assert new_content == original_content
+    assert successful == []
+    assert failed[0]["failure_type"] == "no_change"

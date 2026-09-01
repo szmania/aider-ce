@@ -272,6 +272,9 @@ class SessionManager:
                 "tools_excludelist": self.coder.agent_config.get("tools_excludelist", []),
             }
 
+        # Flush any queued messages so the saved chat history is complete
+        ConversationService.get_manager(self.coder).flush_queue()
+
         return {
             "version": 1,
             "session_name": session_name,

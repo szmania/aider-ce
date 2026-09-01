@@ -74,10 +74,8 @@ class HashPos:
         rf"^({UNIQUE_HASH_DELIMITER}|{HASH_DELIMITER}[{_B1024_REGEX_SET}]{{4}}{HASH_DELIMITER})$"
     )
 
-    # Loose prefix for robust stripping: Matches a tilde-wrapped 4-char string containing non-ASCII
-    _LOOSE_PREFIX_RE = re.compile(
-        rf"^{HASH_DELIMITER}(?=.{{0,3}}[^\x00-\x7f]).{{4}}{HASH_DELIMITER}"
-    )
+    # Loose prefix for robust stripping: Matches a emdash-wrapped 8-char string containing non-ASCII
+    _LOOSE_PREFIX_RE = re.compile(rf"^[{HASH_DELIMITER}]?\S{{0,8}}{HASH_DELIMITER}")
 
     def __init__(self, source_text: str = ""):
         self.lines = source_text.splitlines()
@@ -206,6 +204,8 @@ class HashPos:
 
     @staticmethod
     def strip_prefix(text: str) -> str:
+        if text is None:
+            return ""
         lines = text.splitlines(keepends=True)
         result_lines = []
         for line in lines:

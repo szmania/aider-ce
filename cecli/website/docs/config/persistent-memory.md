@@ -42,17 +42,17 @@ A virtual FTS5 table (`facts_fts`) is kept in sync automatically via SQL trigger
 
 ## How to Enable
 
-Agent Memory is **enabled by default** (`--auto-memory`). You can control it with the `--auto-memory` / `--no-auto-memory` flag:
+Agent Memory is **disabled by default** as it adds to overall system token usage. You can control it with the `--auto-memory` / `--no-auto-memory` flag:
 
 ```bash
-# Enable (default)
+# Enable
 cecli --auto-memory
 
-# Disable
+# Disable (default)
 cecli --no-auto-memory
 ```
 
-You can also set this in your [configuration file](/config/options.html):
+You can also set this in your [configuration file](options.html):
 
 ```yaml
 # .cecli.yml or other config file
@@ -163,11 +163,11 @@ sqlite3 .cecli/memory.v1/cache.db "SELECT * FROM Facts;"
 rm -rf .cecli/memory.v1/
 ```
 
-cecli will automatically recreate the database with an empty schema on the next invocation.
+Cecli will automatically recreate the database with an empty schema on the next invocation.
 
 ---
 
 ## Related
 
-- [Sub-Agents](/docs/config/subagents.html) — Learn more about the sub-agent system that powers the memorizer
-- [Options Reference](/docs/config/options.html) — All available CLI flags including `--auto-memory`
+- [Sub-Agents](subagents.html) — Learn more about the sub-agent system that powers the memorizer
+- [Options Reference](options.html) — All available CLI flags including `--auto-memory`

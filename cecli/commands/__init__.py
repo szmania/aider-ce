@@ -13,6 +13,7 @@ from .agent_model import AgentModelCommand
 from .agent_tree import AgentTreeCommand
 from .architect import ArchitectCommand
 from .ask import AskCommand
+from .auto_memory import AutoMemoryCommand
 from .clear import ClearCommand
 from .code import CodeCommand
 from .command_prefix import CommandPrefixCommand
@@ -39,6 +40,7 @@ from .hot_reload import HotReloadCommand
 from .include_skill import IncludeSkillCommand
 from .lint import LintCommand
 from .list_mcp import ListMcpCommand
+from .list_queue import ListQueueCommand
 from .list_sessions import ListSessionsCommand
 from .list_skills import ListSkillsCommand
 from .load import LoadCommand
@@ -53,7 +55,9 @@ from .merge import MergeCommand
 from .model import ModelCommand
 from .models import ModelsCommand
 from .multiline_mode import MultilineModeCommand
+from .open import OpenCommand
 from .paste import PasteCommand
+from .queue import QueueCommand
 from .quit import QuitCommand
 from .read_only import ReadOnlyCommand
 from .read_only_stub import ReadOnlyStubCommand
@@ -61,6 +65,8 @@ from .reap_agent import ReapAgentCommand
 from .reasoning_effort import ReasoningEffortCommand
 from .remove_hook import RemoveHookCommand
 from .remove_mcp import RemoveMcpCommand
+from .remove_memory import RemoveMemoryCommand
+from .remove_queue import RemoveQueueCommand
 from .remove_skill import RemoveSkillCommand
 from .report import ReportCommand
 from .reset import ResetCommand
@@ -68,6 +74,7 @@ from .rules import RulesCommand
 from .run import RunCommand
 from .save import SaveCommand
 from .save_session import SaveSessionCommand
+from .search_memory import SearchMemoryCommand
 from .settings import SettingsCommand
 from .spawn_agent import SpawnAgentCommand
 from .switch_agent import SwitchAgentCommand
@@ -100,6 +107,7 @@ CommandRegistry.register(AgentModelCommand)
 CommandRegistry.register(AgentTreeCommand)
 CommandRegistry.register(ArchitectCommand)
 CommandRegistry.register(AskCommand)
+CommandRegistry.register(AutoMemoryCommand)
 CommandRegistry.register(ClearCommand)
 CommandRegistry.register(CodeCommand)
 CommandRegistry.register(CommandPrefixCommand)
@@ -129,6 +137,7 @@ CommandRegistry.register(SwitchAgentCommand)
 CommandRegistry.register(IncludeSkillCommand)
 CommandRegistry.register(LintCommand)
 CommandRegistry.register(ListMcpCommand)
+CommandRegistry.register(ListQueueCommand)
 CommandRegistry.register(ListSessionsCommand)
 CommandRegistry.register(ListSkillsCommand)
 CommandRegistry.register(LoadCommand)
@@ -143,13 +152,17 @@ CommandRegistry.register(MergeCommand)
 CommandRegistry.register(ModelCommand)
 CommandRegistry.register(ModelsCommand)
 CommandRegistry.register(MultilineModeCommand)
+CommandRegistry.register(OpenCommand)
 CommandRegistry.register(PasteCommand)
+CommandRegistry.register(QueueCommand)
 CommandRegistry.register(QuitCommand)
 CommandRegistry.register(ReadOnlyCommand)
 CommandRegistry.register(ReadOnlyStubCommand)
 CommandRegistry.register(ReasoningEffortCommand)
 CommandRegistry.register(RemoveHookCommand)
 CommandRegistry.register(RemoveMcpCommand)
+CommandRegistry.register(RemoveMemoryCommand)
+CommandRegistry.register(RemoveQueueCommand)
 CommandRegistry.register(RemoveSkillCommand)
 CommandRegistry.register(ReportCommand)
 CommandRegistry.register(ResetCommand)
@@ -157,6 +170,7 @@ CommandRegistry.register(RulesCommand)
 CommandRegistry.register(RunCommand)
 CommandRegistry.register(SaveCommand)
 CommandRegistry.register(SaveSessionCommand)
+CommandRegistry.register(SearchMemoryCommand)
 CommandRegistry.register(SettingsCommand)
 CommandRegistry.register(TerminalSetupCommand)
 CommandRegistry.register(TestCommand)
@@ -176,6 +190,7 @@ __all__ = [
     "AgentTreeCommand",
     "ArchitectCommand",
     "AskCommand",
+    "AutoMemoryCommand",
     "BaseCommand",
     "ClearCommand",
     "CodeCommand",
@@ -227,9 +242,11 @@ __all__ = [
     "ModelCommand",
     "ModelsCommand",
     "MultilineModeCommand",
+    "OpenCommand",
     "parse_quoted_filenames",
     "PasteCommand",
     "quote_filename",
+    "QueueCommand",
     "QuitCommand",
     "ReadOnlyCommand",
     "ReadOnlyStubCommand",
@@ -237,6 +254,8 @@ __all__ = [
     "ReloadProgramSignal",
     "RemoveHookCommand",
     "RemoveMcpCommand",
+    "RemoveMemoryCommand",
+    "RemoveQueueCommand",
     "RemoveSkillCommand",
     "ReportCommand",
     "ResetCommand",
@@ -244,6 +263,7 @@ __all__ = [
     "RunCommand",
     "SaveCommand",
     "SaveSessionCommand",
+    "SearchMemoryCommand",
     "SettingsCommand",
     "SwitchCoderSignal",
     "TerminalSetupCommand",

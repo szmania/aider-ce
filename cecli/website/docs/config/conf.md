@@ -4,10 +4,9 @@ nav_order: 15
 description: How to configure cecli with a YAML config file.
 ---
 
-# YAML config file
+# YAML Config File
 
-Most of cecli's options can be set in an `.cecli.conf.yml` file.
-cecli will look for a this file in these locations:
+Most of cecli's options can be set in an `.cecli.conf.yml` file. cecli will look for a this file in these locations:
 
 - Your home directory.
 - The root of your git repo.
@@ -17,20 +16,21 @@ If the files above exist, they will be loaded in that order. Files loaded last w
 
 You can also specify the `--config <filename>` parameter, which will only load the one config file.
 
-{% include keys.md %}
+> **Tip:**
+> See the [API key configuration docs](api-keys.html) for information on how to configure and store your API keys.
 
 ## A note on lists
 
 Lists of values can be specified either as a bulleted list:
 
-## Deep merge behavior for `.cecli.conf.yml`
+## Merge Precedence
 
 There are two types of YAML config files with different merge behaviors:
 
 | Config File | Merge Behavior | Array Fields |
 |-------------|----------------|--------------|
 | `.cecli/conf.yml` | Shallow merge (later values replace earlier) | All fields |
-| `.cecli.conf.yml` | Deep merge (arrays are concatenated with deduplication) | Array fields only |
+| `.cecli.conf.yml` | Deep merge (and arrays are concatenated with deduplication) | Array fields only |
 
 ### How deep merge works
 
@@ -151,7 +151,6 @@ skills-includelist:
 # Result: ["skill-a", "skill-b", "skill-c"] (skill-b not duplicated)
 ```
 
-
 ```
 read:
   - CONVENTIONS.md
@@ -167,19 +166,8 @@ read: [CONVENTIONS.md, anotherfile.txt, thirdfile.py]
 
 ## Sample YAML config file
 
-Below is a sample of the YAML config file, which you
-can also
-[download from GitHub](https://github.com/cecli-dev/cecli/blob/main/cecli/website/assets/sample.cecli.conf.yml).
+Below is a sample of the YAML config file, which you can also [download from GitHub](https://github.com/cecli-dev/cecli/blob/main/cecli/website/assets/sample.cecli.conf.yml).
 
-<!--[[[cog
-from cecli.args import get_sample_yaml
-from pathlib import Path
-text=get_sample_yaml()
-Path("cecli/website/assets/sample.cecli.conf.yml").write_text(text)
-cog.outl("```")
-cog.out(text)
-cog.outl("```")
-]]]-->
 ```
 ##########################################################
 # Sample .cecli.conf.yml
@@ -639,4 +627,3 @@ cog.outl("```")
 #shell-completions: xxx
 
 ```
-<!--[[[end]]]-->

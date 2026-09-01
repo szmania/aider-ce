@@ -170,19 +170,23 @@ class TestWebSocketSignalBridgeBroadcasting:
         uri = f"ws://{bridge.host}:{bridge.port}"
 
         async def connect_and_get():
-            ws = await websockets.connect(uri)
-            await asyncio.sleep(0.1)  # Let connection register
+            # Use an explicit, generous open timeout: slow CI runners can
+            # occasionally exceed websockets' 10s default handshake timeout.
+            ws = await websockets.connect(uri, open_timeout=15.0)
             return ws
 
         ws1 = await connect_and_get()
         ws2 = await connect_and_get()
-        await asyncio.sleep(0.1)
+        # Wait until the server has registered both connections so the
+        # broadcast below cannot race connection registration.
+        await wait_for_registered_clients(bridge, count=2, timeout=5.0)
 
         await bridge._broadcast("tool_output", text="broadcast", coder_uuid="coder-1")
-        await asyncio.sleep(0.1)
 
-        msg1 = json.loads(await ws1.recv())
-        msg2 = json.loads(await ws2.recv())
+        # Bound the receives: a missed broadcast should fail fast with a
+        # clear TimeoutError instead of hanging the whole CI job.
+        msg1 = json.loads(await asyncio.wait_for(ws1.recv(), timeout=5.0))
+        msg2 = json.loads(await asyncio.wait_for(ws2.recv(), timeout=5.0))
 
         await ws1.close()
         await ws2.close()
@@ -374,3 +378,15 @@ async def connect_and_collect(bridge, broadcast_coro):
         await asyncio.sleep(0.1)
         msg = await ws.recv()
     return json.loads(msg)
+
+
+async def wait_for_registered_clients(bridge, count: int, timeout: float) -> None:
+    """Wait until the bridge has registered at least ``count`` connected clients."""
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + timeout
+    while len(bridge._connections) < count:
+        if loop.time() >= deadline:
+            raise TimeoutError(
+                f"bridge registered {len(bridge._connections)}/{count} clients within {timeout}s"
+            )
+        await asyncio.sleep(0.01)

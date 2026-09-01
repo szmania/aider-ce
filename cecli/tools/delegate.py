@@ -49,6 +49,13 @@ class Tool(BaseTool):
                                         " If false, wait for the result."
                                     ),
                                 },
+                                "persist": {
+                                    "type": "boolean",
+                                    "default": False,
+                                    "description": (
+                                        "If true, keep the sub-agent active after the task is complete."
+                                    ),
+                                },
                             },
                             "required": ["name", "prompt"],
                         },
@@ -69,7 +76,7 @@ class Tool(BaseTool):
 
         if not delegations or not isinstance(delegations, list):
             response.append_error(
-                "'delegations' parameter must be a non-empty array of {name, prompt, async} objects."
+                "'delegations' parameter must be a non-empty array of {name, prompt, async, persist} objects."
             )
             return response
 
@@ -90,23 +97,35 @@ class Tool(BaseTool):
         agent_service = AgentService.get_instance(coder)
 
         # Separate async (fire-and-forget) and sync (blocking) delegations
-        async_delegations = [(d["name"], d["prompt"]) for d in delegations if d.get("async", True)]
+        async_delegations = [
+            (d["name"], d["prompt"], d.get("persist", False))
+            for d in delegations
+            if d.get("async", True)
+        ]
         sync_delegations = [
-            (d["name"], d["prompt"]) for d in delegations if not d.get("async", True)
+            (d["name"], d["prompt"], d.get("persist", False))
+            for d in delegations
+            if not d.get("async", True)
         ]
 
-        async def _spawn_one(name: str, prompt: str) -> tuple:
+        async def _spawn_one(name: str, prompt: str, persist: bool) -> tuple:
             """Spawn a single sub-agent (fire-and-forget). Returns (name, uuid_or_error, error)."""
+            auto_reap = None if not persist else False
             try:
-                new_coder, info = await agent_service.spawn(name, prompt, parent=coder)
+                new_coder, info = await agent_service.spawn(
+                    name, prompt, parent=coder, auto_reap=auto_reap
+                )
                 return name, info.coder.uuid, None
             except Exception as e:
                 return name, None, f"failed: {e}"
 
-        async def _invoke_one(name: str, prompt: str) -> tuple:
+        async def _invoke_one(name: str, prompt: str, persist: bool) -> tuple:
             """Invoke a single sub-agent (blocking). Returns (name, summary_or_error, error)."""
+            auto_reap = None if not persist else False
             try:
-                summary = await agent_service.invoke(name, prompt, parent=coder)
+                summary = await agent_service.invoke(
+                    name, prompt, parent=coder, auto_reap=auto_reap
+                )
                 return name, summary or "(no summary)", None
             except Exception as e:
                 return name, None, f"failed: {e}"
@@ -114,13 +133,13 @@ class Tool(BaseTool):
         # Process async delegations (fire-and-forget spawn)
         async_results = []
         if async_delegations:
-            tasks = [_spawn_one(n, p) for n, p in async_delegations]
+            tasks = [_spawn_one(n, p, persist) for n, p, persist in async_delegations]
             async_results = list(await asyncio.gather(*tasks))
 
         # Process sync delegations (blocking invoke)
         sync_results = []
         if sync_delegations:
-            tasks = [_invoke_one(n, p) for n, p in sync_delegations]
+            tasks = [_invoke_one(n, p, persist) for n, p, persist in sync_delegations]
             sync_results = list(await asyncio.gather(*tasks))
 
         # Build response
@@ -185,9 +204,11 @@ class Tool(BaseTool):
                 name = d.get("name", "")
                 prompt = d.get("prompt", "")
                 is_async = d.get("async", True)
+                is_persist = d.get("persist", False)
                 coder.io.tool_output(f"{color_start}delegation_{i + 1}:{color_end}")
                 coder.io.tool_output(f"agent: {name}")
                 coder.io.tool_output(f"mode: {'async' if is_async else 'sync'}")
+                coder.io.tool_output(f"persist: {'true' if is_persist else 'false'}")
                 coder.io.tool_output(f"task: {prompt}")
                 if i < len(delegations) - 1:
                     coder.io.tool_output("")

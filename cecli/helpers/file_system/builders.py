@@ -8,6 +8,7 @@ Construction strategies for FileSystemService.
 import hashlib
 import os
 import subprocess
+import time
 from pathlib import Path
 
 from .ignore import FileIgnoreFilter
@@ -118,6 +119,8 @@ class ScandirBuilder:
         Walk filesystem collecting files relative to root using Breadth-First Search.
         Highly optimized: lazy iteration, single-pass evaluation, and raw string paths.
         """
+        start_time = time.monotonic()
+
         paths = []
 
         # Only use pathlib for initial resolution, then stick to raw strings for speed
@@ -132,6 +135,9 @@ class ScandirBuilder:
         path_count = 0
 
         while dirs_to_scan:
+            if time.monotonic() - start_time > 120:
+                break
+
             next_dirs = []
 
             for current_path, rel_dir, depth in dirs_to_scan:
@@ -159,7 +165,7 @@ class ScandirBuilder:
 
                             # --- Handle Files ---
                             elif entry.is_file(follow_symlinks=False):
-                                # Short-circuit if we hit the 64 file cap (saves ignore_filter overhead)
+                                # Short-circuit if we hit the 256 file cap (saves ignore_filter overhead)
                                 if not is_subfolder_of_user and file_count >= 256:
                                     continue
 
@@ -177,7 +183,7 @@ class ScandirBuilder:
                                 # Global safety hard-stop
                                 if not is_subfolder_of_user and path_count >= max_files:
                                     return sorted(paths)
-                except PermissionError:
+                except (PermissionError, OSError, TimeoutError):
                     continue  # Skip folders we don't have read access to
 
             dirs_to_scan = next_dirs

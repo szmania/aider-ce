@@ -73,6 +73,8 @@ def strip_hashline(text: str) -> str:
     """
     Remove HashPos prefixes from the start of every line.
     """
+    if text is None:
+        return ""
     return HashPos.strip_prefix(text)
 
 
@@ -382,6 +384,20 @@ def resolve_content_to_hashline_ids(
                     key=lambda idx: abs(idx - start_hint_line),
                 )
                 resolved_start = _resolve_to_hash_id(lines, resolved_start_idx, hp)
+            else:
+                # Fallback: the value may be line content whose whitespace was
+                # normalized (e.g. stripped indentation). Resolve it against a
+                # single unique line — mirroring apply_hashline_operations — so
+                # the preview resolves exactly like the actual edit.
+                unique_resolved = _try_resolve_as_unique_line(hp, first_line)
+                if unique_resolved is not None:
+                    resolved_start = unique_resolved
+                    try:
+                        candidates = hp.resolve_to_lines(normalize_hashline(unique_resolved))
+                        if candidates:
+                            resolved_start_idx = candidates[0]
+                    except (ContentHashError, ValueError):
+                        pass
     elif start_value is not None and _looks_like_content_id(start_value):
         # Already a content ID - try to resolve it to find the line position
         # for proximity matching with end_value
@@ -432,6 +448,14 @@ def resolve_content_to_hashline_ids(
                     key=lambda idx: abs(idx - resolved_start_idx),
                 )
                 resolved_end = _resolve_to_hash_id(lines, closest_idx, hp)
+            else:
+                # Fallback: the value may be line content whose whitespace was
+                # normalized (e.g. stripped indentation). Resolve it against a
+                # single unique line — mirroring apply_hashline_operations — so
+                # the preview resolves exactly like the actual edit.
+                unique_resolved = _try_resolve_as_unique_line(hp, first_line)
+                if unique_resolved is not None:
+                    resolved_end = unique_resolved
     elif end_value is not None and _looks_like_content_id(end_value):
         # Already a content ID - try to resolve it
         try:
@@ -1317,28 +1341,43 @@ def _honor_cancellations(resolved_ops):
 
 def _deduplicate_ranges(resolved_ops):
     """
-    Deduplicate operations that start on the same line.
-    If multiple operations start on the same line, keep only the latest one.
-    This handles cases where a model might generate multiple operations for the same line while "thinking"
+    Deduplicate operations that target the same line and operation type.
+
+    Inserts are anchored after their target line, so an insert and a replace
+    sharing a start index are independent operations and must both be retained.
+    Multiple operations of the same type still keep only the latest one.
+
+    Returns:
+        tuple: (deduplicated_ops, dropped_ops) where dropped_ops describes the
+        operations that were removed so callers can surface them as failures.
     """
     deduplicated_ops = []
-    # Group operations by start_idx
-    start_idx_to_ops = {}
-    # Loop to group operations by their start index
+    dropped = []
+    ops_by_key = {}
+
     for op in resolved_ops:
-        start_idx = op["start_idx"]
-        if start_idx not in start_idx_to_ops:
-            start_idx_to_ops[start_idx] = []
-        start_idx_to_ops[start_idx].append(op)
+        key = (op["start_idx"], op["op"]["operation"])
+        ops_by_key.setdefault(key, []).append(op)
 
-    # For each start_idx, keep only the operation with the highest original index (latest in the list)
-    # Loop to select only the latest operation per start index
-    for start_idx, ops in start_idx_to_ops.items():
-        # Sort by original index descending and take the first one
+    for ops in ops_by_key.values():
         ops.sort(key=lambda x: x["index"], reverse=True)
-        deduplicated_ops.append(ops[0])
+        kept = ops[0]
+        deduplicated_ops.append(kept)
 
-    return deduplicated_ops
+        for dropped_op in ops[1:]:
+            dropped.append(
+                {
+                    "index": dropped_op["index"],
+                    "error": (
+                        f"Edit {dropped_op['index'] + 1} targets the same start line and "
+                        f"operation type as Edit {kept['index'] + 1} and was not applied"
+                    ),
+                    "operation": dropped_op["op"],
+                    "failure_type": "not_applied",
+                }
+            )
+
+    return deduplicated_ops, dropped
 
 
 def _honor_special_markers(resolved_ops):
@@ -1352,9 +1391,21 @@ def _honor_special_markers(resolved_ops):
        starting between beginning of file and that end hash.
     3. If an operation has a normal start hash and "000@" as end hash,
        remove any operations ending between that start hash and end of file.
+
+    Returns:
+        tuple: (remaining_ops, dropped_ops) where dropped_ops describes the
+        operations removed by the special markers so callers can surface them
+        as failures instead of silently discarding them.
     """
     if not resolved_ops:
-        return resolved_ops
+        return resolved_ops, []
+
+    def _drop(op, reason):
+        return {
+            "index": op["index"],
+            "error": f"Edit {op['index'] + 1} {reason}",
+            "operation": op["op"],
+        }
 
     # Check for full file replacement (@000 to 000@)
     for op in resolved_ops:
@@ -1364,7 +1415,12 @@ def _honor_special_markers(resolved_ops):
 
         if start_hash == "@000" and end_hash == "000@":
             # This operation replaces the entire file, keep only this one
-            return [op]
+            dropped = [
+                _drop(other, "was superseded by a full-file replacement (@000..000@)")
+                for other in resolved_ops
+                if other is not op
+            ]
+            return [op], dropped
 
     # Track which operations have special markers
     has_special_marker = [False] * len(resolved_ops)
@@ -1375,8 +1431,8 @@ def _honor_special_markers(resolved_ops):
         if start_hash == "@000" or end_hash == "000@":
             has_special_marker[i] = True
 
-    # Mark operations for removal
-    ops_to_remove = set()
+    # Mark operations for removal, along with the reason they were removed
+    ops_to_remove = {}
 
     for i, op in enumerate(resolved_ops):
         original_op = op["op"]
@@ -1392,7 +1448,10 @@ def _honor_special_markers(resolved_ops):
                 if j != i and not has_special_marker[j]:
                     other_start_idx = other_op["start_idx"]
                     if other_start_idx <= end_idx:
-                        ops_to_remove.add(j)
+                        ops_to_remove.setdefault(
+                            j,
+                            "was superseded by an operation starting at the top of the file (@000)",
+                        )
         elif end_hash == "000@":
             # Operation ends at end of file
             # Remove any operations ending at or after this operation's start_idx
@@ -1402,26 +1461,39 @@ def _honor_special_markers(resolved_ops):
                 if j != i and not has_special_marker[j]:
                     other_end_idx = other_op["end_idx"]
                     if other_end_idx >= start_idx:
-                        ops_to_remove.add(j)
+                        ops_to_remove.setdefault(
+                            j,
+                            "was superseded by an operation ending at the bottom of the file (000@)",
+                        )
 
     # Filter out operations marked for removal
     result = []
+    dropped = []
     for i, op in enumerate(resolved_ops):
         if i not in ops_to_remove:
             result.append(op)
+        else:
+            dropped.append(_drop(op, ops_to_remove[i]))
 
-    return result
+    return result, dropped
 
 
 def _merged_contained_ranges(resolved_ops):
     """
     Discard inner ranges that are completely contained within outer ranges.
     This prevents redundant operations and potential errors.
+
+    Returns:
+        tuple: (optimized_ops, dropped_ops) where dropped_ops describes the
+        contained operations that were removed so callers can surface them
+        as failures instead of silently discarding them.
     """
     optimized_ops = []
+    dropped = []
     # Loop to remove operations that are completely contained within other operations
     for i, op_a in enumerate(resolved_ops):
         keep_op = True
+        container = None
 
         # Check if this operation is contained within any other operation
         for j, op_b in enumerate(resolved_ops):
@@ -1442,13 +1514,25 @@ def _merged_contained_ranges(resolved_ops):
                     # Keep both operations if they have different types
                     continue
                 # op_a is inside op_b, discard op_a
+                container = op_b
                 keep_op = False
                 break
 
         if keep_op:
             optimized_ops.append(op_a)
+        else:
+            dropped.append(
+                {
+                    "index": op_a["index"],
+                    "error": (
+                        f"Edit {op_a['index'] + 1} range is contained within "
+                        f"Edit {container['index'] + 1} and was not applied"
+                    ),
+                    "operation": op_a["op"],
+                }
+            )
 
-    return optimized_ops
+    return optimized_ops, dropped
 
 
 def sort_ranges(op):
@@ -1978,13 +2062,6 @@ def apply_hashline_operations(
 
     if not normalized_operations:
         return original_content, [], failed_ops
-    # Convert insert operations without @000 marker to inclusive replace operations
-    for op in normalized_operations:
-        if op["operation"] == "insert":
-            start_hash_fragment, _, _ = parse_hashline(op["start_line_hash"])
-            if start_hash_fragment != "@000" and start_hash_fragment != "000@":
-                op["operation"] = "replace"
-                op["end_line_hash"] = op["start_line_hash"]
 
     # Apply hashline to original content once
     # This converts content to hashed lines for line tracking
@@ -2005,6 +2082,9 @@ def apply_hashline_operations(
                     # Genesis anchor - if empty, insert at 0. If not empty, insert at -1
                     # so that hashed_lines.insert(found_start + 1, text) inserts at 0.
                     found_start = 0 if not hashed_lines else -1
+                elif start_hash_fragment == "000@":
+                    # Bottom-of-file anchor - insert after the last line
+                    found_start = len(hashed_lines) - 1 if hashed_lines else -1
                 else:
                     # Try exact match first for insert operations
                     found_start = find_hashline_by_exact_match(
@@ -2076,14 +2156,23 @@ def apply_hashline_operations(
 
     # Honor cancellations: remove operations that are cancelled by later cancel operations
     resolved_ops = _honor_cancellations(resolved_ops)
-    # Deduplicate: if multiple operations start on the same line, keep only the latest one
-    # This handles cases where a model might generate multiple operations for the same line while "thinking"
-    resolved_ops = _deduplicate_ranges(resolved_ops)
+    # Deduplicate: if multiple operations start on the same line, keep only the latest one.
+    # This handles cases where a model might generate multiple operations for the same line while "thinking".
+    # Dropped operations are surfaced as failures instead of being silently discarded.
+    resolved_ops, dropped = _deduplicate_ranges(resolved_ops)
+    for drop in dropped:
+        failed_ops.append(drop)
+
     # Honor special markers: handle @000 and 000@ special markers for whole-file or partial-file operations
-    resolved_ops = _honor_special_markers(resolved_ops)
-    # Optimize: discard inner ranges that are completely contained within outer ranges
-    # This prevents redundant operations and potential errors
-    resolved_ops = _merged_contained_ranges(resolved_ops)
+    resolved_ops, dropped = _honor_special_markers(resolved_ops)
+    for drop in dropped:
+        failed_ops.append(drop)
+
+    # Optimize: discard inner ranges that are completely contained within outer ranges.
+    # This prevents redundant operations and potential errors.
+    resolved_ops, dropped = _merged_contained_ranges(resolved_ops)
+    for drop in dropped:
+        failed_ops.append(drop)
     # Merge contiguous replace operations
     resolved_ops = _merge_replace_operations(resolved_ops)
 
@@ -2116,19 +2205,22 @@ def apply_hashline_operations(
             op = resolved["op"]
             start_idx = resolved["start_idx"]
             end_idx = resolved["end_idx"]
+            changed = True
 
             if op["operation"] == "insert":
                 text = op["text"]
-                if text and not text.endswith("\n"):
-                    text += "\n"
-                # Special handling for empty hashed_lines (genesis anchor case)
-                if hashed_lines:
-                    if not hashed_lines[start_idx].endswith("\n"):
-                        hashed_lines[start_idx] += "\n"
-                    hashed_lines.insert(start_idx + 1, text)
+                if not text:
+                    changed = False
                 else:
-                    # Empty content with genesis anchor - just add the text
-                    hashed_lines.append(text)
+                    if not text.endswith("\n"):
+                        text += "\n"
+                    # Special handling for empty hashed_lines (genesis anchor case)
+                    if hashed_lines:
+                        if not hashed_lines[start_idx].endswith("\n"):
+                            hashed_lines[start_idx] += "\n"
+                        hashed_lines.insert(start_idx + 1, text)
+                    else:
+                        hashed_lines.append(text)
             elif op["operation"] == "delete":
                 del hashed_lines[start_idx : end_idx + 1]
             elif op["operation"] == "replace":
@@ -2137,6 +2229,13 @@ def apply_hashline_operations(
                     end_idx = len(hashed_lines) - 1
 
                 text = op["text"]
+                # Snapshot the pre-edit range content so no-op replacements are
+                # not counted as successful edits. Normalize line endings because
+                # the apply path enforces a trailing newline on replacement lines.
+                before_range = [
+                    strip_hashline(line).rstrip("\r\n")
+                    for line in hashed_lines[start_idx : end_idx + 1]
+                ]
                 if text:
                     # Split text into lines, preserving trailing newline behavior
                     # If text doesn't end with newline, we add one to ensure proper line separation
@@ -2183,12 +2282,31 @@ def apply_hashline_operations(
 
                 else:
                     # Empty text - replace with nothing (delete)
+                    replacement_lines = []
                     hashed_lines[start_idx : end_idx + 1] = []
 
-            if "merged_indices" in resolved:
-                successful_ops.extend(resolved["merged_indices"])
+                replacement_content = [line.rstrip("\r\n") for line in replacement_lines]
+                if before_range == replacement_content:
+                    changed = False
+
+            if changed:
+                if "merged_indices" in resolved:
+                    successful_ops.extend(resolved["merged_indices"])
+                else:
+                    successful_ops.append(resolved["index"])
             else:
-                successful_ops.append(resolved["index"])
+                # No-op edit: report it as failed so the caller's success count
+                # reflects edits that actually changed the file
+                indices = resolved.get("merged_indices") or [resolved["index"]]
+                for idx in indices:
+                    failed_ops.append(
+                        {
+                            "index": idx,
+                            "error": "Edit resulted in no changes to the file content",
+                            "operation": op,
+                            "failure_type": "no_change",
+                        }
+                    )
         except Exception as e:
             failed_ops.append(
                 {"index": resolved["index"], "error": str(e), "operation": resolved["op"]}

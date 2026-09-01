@@ -1,12 +1,15 @@
-## Why `cecli`?
+<p align="center">
+  <img src="cecli/website/assets/cecli-temp-logo-dark.svg" alt="cecli logo" width="300" height="96">
+</p>
 
-`cecli` (probably pronounced like "Cecily") is yet another cli agent crafted for extensibility and customization. Originally a fork of the [Aider](https://cecli.dev/) AI pair programming tool, we aim to make agentic coding as maximally effective as it can be based on the incredible capabilities of large language models.
+
+`cecli` is yet another cli agent crafted for extensibility and customization. For folks who like seeing under the hood, welcome to the fold. Made for nerds, geeks, and the extremely curious.
 
 
 ### Links
 
-[Documentation](https://cecli.dev/docs/) 🞄
-[Discord Chat](https://discord.gg/AX9ZEA7nJn) 🞄
+[Documentation](https://cecli.dev/docs/)
+[Discord Chat](https://discord.gg/AX9ZEA7nJn)
 [Issue Queue](https://github.com/cecli-dev/cecli/issues)
 
 
@@ -52,91 +55,26 @@ uv tool install --native-tls --python python3.12 cecli-dev
 
 Use the tool installation so cecli doesn't interfere with your development environment
 
-## Configuration
-
-The documentation above contains the full set of allowed configuration options
-but I highly recommend using an `.cecli.conf.yml` file. A good place to get started is:
-
-```yaml
-model: <model of your choice>
-agent: true
-auto-commits: true
-auto-save: true
-cache-prompts: true
-check-update: true
-enable-context-compaction: true
-context-compaction-max-tokens: 0.8
-show-model-warnings: true
-
-agent-config:
-  large_file_token_threshold: 8192
-  skip_cli_confirmations: false
-
-mcp-servers:
-  mcpServers:
-    context7:
-      transport: http
-      url: https://mcp.context7.com/mcp
-```
-
-Use the adjacent .cecli.env file to store model api keys as environment variables, e.g:
-
-```
-ANTHROPIC_API_KEY="..."
-GEMINI_API_KEY="..."
-OPENAI_API_KEY="..."
-OPENROUTER_API_KEY="..."
-DEEPSEEK_API_KEY="..."
-```
-
-### Run Program
-
-If you are in the directory with your .cecli.conf.yml file, then simply running `cecli` will start the agent with your configuration. For best results, since terminal emulators can be finicky, we highly suggest running:
-
-```bash
-cecli --terminal-setup
-```
-
-On first run to configure keybindings for the program (notably `shift+enter`). Support for terminals is ongoing so feel free to make a github issue or chat in the discord for us to figure out what's needed to support automatically setting up a given terminal.
-
-If you want additional sandboxing, we publish a docker container that can be ran as follows:
-
-```bash
-docker pull dustinwashington/cecli
-docker run \
-  -it \
-  --user $(id -u):$(id -g) \
-  --volume $(pwd):/app \
-  --volume $(pwd)/.cecli.conf.yml:/.cecli.conf.yml \
-  --volume $(pwd)/.cecli.env:/.cecli.env \
-  dustinwashington/cecli \
-  --config /.cecli.conf.yml
-  --env-file /.cecli.env
-```
-
-This command will make sure all commands ran by the coding agent happen in context of the docker container to protect the host file system from any infamous agentic mishap
-
-## Documentation/Other Notes:
+## Features and Documentation:
 
 * [Agent Mode](https://github.com/cecli-dev/cecli/blob/main/cecli/website/docs/config/agent-mode.md)
 * [MCP Configuration](https://github.com/cecli-dev/cecli/blob/main/cecli/website/docs/config/mcp.md)
-* [TUI Configuration](https://github.com/cecli-dev/cecli/blob/main/cecli/website/docs/config/tui.md)
 * [Skills](https://github.com/cecli-dev/cecli/blob/main/cecli/website/docs/config/skills.md)
 * [Subagents](https://github.com/cecli-dev/cecli/blob/main/cecli/website/docs/config/subagents.md)
 * [Persistent Memory](https://github.com/cecli-dev/cecli/blob/main/cecli/website/docs/config/persistent-memory.md)
 * [Session Management](https://github.com/cecli-dev/cecli/blob/main/cecli/website/docs/sessions.md)
 * [Hooks](https://github.com/cecli-dev/cecli/blob/main/cecli/website/docs/config/hooks.md)
+* [TUI Configuration](https://github.com/cecli-dev/cecli/blob/main/cecli/website/docs/config/tui.md)
 * [Agent Client Protocol (ACP)](https://github.com/cecli-dev/cecli/blob/main/cecli/website/docs/config/api.md)
 * [Workspaces](https://github.com/cecli-dev/cecli/blob/main/cecli/website/docs/config/workspaces.md)
 * [Custom Commands](https://github.com/cecli-dev/cecli/blob/main/cecli/website/docs/config/custom-commands.md)
 * [Custom System Prompts](https://github.com/cecli-dev/cecli/blob/main/cecli/website/docs/config/custom-system-prompts.md)
 * [Custom Tools](https://github.com/cecli-dev/cecli/blob/main/cecli/website/docs/config/agent-mode.md#creating-custom-tools)
 * [Advanced Model Configuration](https://github.com/cecli-dev/cecli/blob/main/cecli/website/docs/config/model-aliases.md#advanced-model-settings)
-* [Additional Documentation](https://cecli.dev/)
+
+[Additional Documentation](https://cecli.dev/)
 
 ## Project Roadmap/Goals
-
-The current priorities are to improve core capabilities and user experience of the `cecli` project
 
 1. **Base Asynchronicity (cecli coroutine-experiment branch)**
   * [x] Refactor codebase to have the main loop run asynchronously
@@ -167,7 +105,6 @@ The current priorities are to improve core capabilities and user experience of t
   * [x] Renaming "navigator mode" to "agent mode" for simplicity
   * [x] Add an explicit "finished" internal tool
   * [x] Add a configuration json setting for agent mode to specify allowed local tools to use, tool call limits, etc.
-  * [ ] Add a RAG tool for the model to ask questions about the codebase
   * [x] Make the system prompts more aggressive about removing unneeded files/content from the context
   * [x] Add a plugin-like system for allowing agent mode to use user-defined tools in simple python files
   * [x] Add a dynamic tool discovery tool to allow the system to have only the tools it needs in context

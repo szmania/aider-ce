@@ -74,6 +74,9 @@ async def launch_tui(coder, output_queue, input_queue, args):
     Returns:
         Exit code from TUI
     """
+    # Pin tqdm's class lock before the TUI captures stdout/stderr (see _pin_tqdm_lock).
+    _pin_tqdm_lock()
+
     worker = None
     return_code = 0
     try:
@@ -100,3 +103,22 @@ async def launch_tui(coder, output_queue, input_queue, args):
         )
 
     return return_code
+
+
+def _pin_tqdm_lock():
+    """Pin tqdm's class lock to a plain threading.RLock before the TUI starts.
+
+    The Textual TUI redirects stdout/stderr to capture streams whose fileno()
+    returns -1. tqdm's first use builds a multiprocessing.RLock whose resource
+    tracker subprocess then fails with "ValueError: bad value(s) in fds_to_keep".
+    Scoped to the TUI launch path so non-TUI runs keep tqdm's default lock.
+    This makes the /help command work as intended.
+    """
+    try:
+        import threading
+
+        import tqdm.std
+
+        tqdm.std.tqdm.set_lock(threading.RLock())
+    except Exception:
+        pass

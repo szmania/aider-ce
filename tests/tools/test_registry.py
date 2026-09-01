@@ -184,6 +184,19 @@ class TestToolRegistry:
         assert "load_mcp" in params, "context_manager should have load_mcp param"
         assert "remove_mcp" in params, "context_manager should have remove_mcp param"
 
+    def test_build_registry_scans_default_tools_dirs(self, tmp_path):
+        """build_registry scans the global and local default tools directories."""
+        local_dir = tmp_path / ".cecli" / "tools"
+        local_dir.mkdir(parents=True)
+        (local_dir / "custom_tool.py").write_text(
+            "class Tool:\n"
+            "    NORM_NAME = 'custom_tool'\n"
+            "    SCHEMA = {'function': {'name': 'custom_tool', 'description': 'desc'}}\n"
+        )
+
+        registry = ToolRegistry.build_registry({}, root=str(tmp_path))
+        assert "custom_tool" in registry
+
 
 if __name__ == "__main__":
     # Run tests if executed directly

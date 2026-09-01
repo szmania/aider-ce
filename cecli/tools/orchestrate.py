@@ -19,13 +19,10 @@ class Tool(BaseTool):
         "function": {
             "name": "Orchestrate",
             "description": (
-                "Execute Python code in a sandboxed environment where you can call "
-                "other tools programmatically. Use this instead of making many "
-                "individual tool calls for batch operations. The environment provides "
-                "`Agent.get_tool(name)` to get tool proxies, `gather(*tasks)` for "
-                "parallel execution, and `state` for persistent storage across calls. "
-                "Use the `values` argument instead of writing string variables inline "
-                "to prevent string escaping issues."
+                "Run Python in a sandbox where you can call other tools programmatically. "
+                "Use for batch or loop-heavy workflows. Provides `Agent` tool proxies, "
+                "`gather()` for parallelism, and persistent `state`; use `values` to "
+                "inject variables without escaping issues."
             ),
             "parameters": {
                 "type": "object",

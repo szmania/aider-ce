@@ -1,5 +1,7 @@
 import json
+import os
 import random
+import time
 import weakref
 from typing import Any, Dict, List
 
@@ -500,6 +502,8 @@ class ConversationChunks:
         """
         Get rules file messages for reference.
         These are always reloaded from disk and use the RULES tag.
+        If no explicit rules files are configured, fall back to AGENTS.md
+        and CLAUDE.md files found in the coder root directory.
         """
         coder = self.get_coder()
         if not coder:
@@ -513,10 +517,21 @@ class ConversationChunks:
                 return []
 
         messages = []
-        if not hasattr(coder, "abs_rules_fnames") or not coder.abs_rules_fnames:
+        rules_files = []
+        if hasattr(coder, "abs_rules_fnames") and coder.abs_rules_fnames:
+            rules_files = sorted(coder.abs_rules_fnames)
+        else:
+            # No explicit rules configured; fall back to convention files
+            # (AGENTS.md / CLAUDE.md) found in the coder root directory.
+            for fallback_name in ("AGENTS.md", "CLAUDE.md"):
+                fallback_path = coder.abs_root_path(fallback_name)
+                if os.path.isfile(fallback_path):
+                    rules_files.append(fallback_path)
+
+        if not rules_files:
             return messages
 
-        for fname in sorted(coder.abs_rules_fnames):
+        for fname in rules_files:
             # Read file content directly from disk
             try:
                 content = coder.io.read_text(fname)
@@ -952,20 +967,30 @@ class ConversationChunks:
         if not hasattr(coder, "use_enhanced_context") or not coder.use_enhanced_context:
             return
 
-        if not hasattr(coder, "get_child_agent_states"):
+        if not hasattr(coder, "get_sub_agent_states"):
             return
 
-        block = coder.get_child_agent_states()
+        block = coder.get_sub_agent_states()
         if not block:
             return
+
+        if not hasattr(coder, "_last_child_agent_hash") or not coder._last_child_agent_hash:
+            coder._last_child_agent_hash = ""
+
+        message_hash = xxhash.xxh3_128_hexdigest(block.encode("utf-8"))
+
+        if message_hash == coder._last_child_agent_hash:
+            return  # No change in sub-agent states, skip adding message
+
+        coder._last_child_agent_hash = message_hash
 
         ConversationService.get_manager(coder).add_message(
             message_dict={"role": "user", "content": block},
             tag=MessageTag.STATIC,
-            priority=DEFAULT_TAG_PRIORITY[MessageTag.REMINDER] + 25,  # After post_message blocks
-            mark_for_delete=0,
-            hash_key=("sub_agent_states",),
-            force=True,
+            priority=DEFAULT_TAG_PRIORITY[
+                MessageTag.CUR
+            ],  # Inject on change in normal message sequence
+            hash_key=("sub_agent_states", str(time.monotonic_ns())),
         )
 
     def defer_removal(self, file_path: str):

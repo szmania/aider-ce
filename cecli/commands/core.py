@@ -89,6 +89,54 @@ class Commands:
         self.cmd_running_event.set()
         self.last_command_show_notification = True
 
+        # Commands that should NOT trigger auto-processing of the queue
+        self._MANAGEMENT_COMMANDS = {"queue", "list-queue", "remove-queue"}
+
+    # ── Queue Management Methods (CLI-33) ────────────────────────────── #
+    #
+    # The prompt queue itself lives on the coder (Coder.prompt_queue) and
+    # is managed by cecli.helpers.command_queue. These thin wrappers keep
+    # the /queue, /list-queue and /remove-queue command implementations
+    # stable while operating on the coder that owns this Commands
+    # instance, so each sub-agent's commands manage that sub-agent's own
+    # queue.
+
+    @property
+    def prompt_queue(self):
+        """Proxy to the owning coder's prompt queue."""
+        coder = self.coder
+        return coder.prompt_queue if coder is not None else []
+
+    def _enqueue_prompt(self, text: str) -> dict:
+        """Add a prompt to the owning coder's queue."""
+        from cecli.helpers import command_queue
+
+        return command_queue.enqueue_prompt(self.coder, text)
+
+    def _dequeue_prompt(self) -> dict | None:
+        """Remove and return the first item from the owning coder's queue."""
+        from cecli.helpers import command_queue
+
+        return command_queue.dequeue_prompt(self.coder)
+
+    def _get_queue_length(self) -> int:
+        """Return the current number of items in the owning coder's queue."""
+        from cecli.helpers import command_queue
+
+        return command_queue.get_queue_length(self.coder)
+
+    def _remove_from_queue(self, index: int) -> dict | None:
+        """Remove and return the item at the given index from the owning coder's queue."""
+        from cecli.helpers import command_queue
+
+        return command_queue.remove_from_queue(self.coder, index)
+
+    def _clear_queue(self) -> list:
+        """Remove all items from the owning coder's queue and return them."""
+        from cecli.helpers import command_queue
+
+        return command_queue.clear_queue(self.coder)
+
     def _load_custom_commands(self, custom_commands):
         """
         Load custom commands from plugin paths.
@@ -183,7 +231,8 @@ class Commands:
             return
 
         self.last_command_show_notification = command_class.show_completion_notification
-        self.cmd_running_event.clear()
+        if cmd_name not in self._MANAGEMENT_COMMANDS:
+            self.cmd_running_event.clear()
 
         try:
             kwargs.update(
@@ -226,6 +275,12 @@ class Commands:
         return matching_commands, first_word, rest_inp
 
     async def run(self, inp, coder=None, **kwargs):
+        if inp.startswith("/"):
+            words = inp.strip().split()
+            cmd_name = words[0][1:]
+            rest_inp = inp[len(words[0]) :].strip()
+            return await self.execute(cmd_name, rest_inp, coder=coder, **kwargs)
+
         if inp.startswith("!!!"):
             return await self.execute(
                 "run", inp[3:], coder=coder, background=True, suppress_add=True
