@@ -468,35 +468,16 @@ class HttpStreamingServer(HttpBasedMcpServer):
         return streamable_http_client(url, http_client=http_client)
 
 
-class SseServer(McpServer):
-    """SSE (Server-Sent Events) MCP server using mcp.client.sse_client."""
+class SseServer(HttpBasedMcpServer):
+    """SSE (Server-Sent Events) MCP server using mcp.client.sse_client.
 
-    async def connect(self):
-        current_loop = asyncio.get_running_loop()
-        if self.session is not None:
-            if self._connection_loop is current_loop:
-                logging.info(f"Using existing session for SSE MCP server: {self.name}")
-                return self.session
-            logging.info(f"Reconnecting SSE MCP server {self.name} (event loop changed)")
-            await self.disconnect()
+    Inherits keepalive pings and exponential-backoff auto-reconnect from
+    HttpBasedMcpServer so dropped SSE connections recover automatically.
+    """
 
-        logging.info(f"Establishing new connection to SSE MCP server: {self.name}")
-        try:
-            url = self.config.get("url")
-            headers = self.config.get("headers", {})
-            sse_transport = await self.exit_stack.enter_async_context(
-                sse_client(url, headers=headers)
-            )
-            read, write = sse_transport
-            session = await self.exit_stack.enter_async_context(ClientSession(read, write))
-            await session.initialize()
-            self.session = session
-            self._connection_loop = current_loop
-            return session
-        except Exception as e:
-            logging.error(f"Error initializing SSE server {self.name}: {e}")
-            await self.disconnect()
-            raise
+    def _create_transport(self, url, http_client):
+        """Create the SSE transport. The shared http_client is used for keepalive pings."""
+        return sse_client(url, headers=self.config.get("headers", {}))
 
 
 class LocalServer(McpServer):
