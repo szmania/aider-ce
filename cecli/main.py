@@ -1374,8 +1374,7 @@ async def main_async(
     if args.copy_paste:
         ClipboardWatcher(coder.io, verbose=args.verbose)
     if args.show_prompts:
-        coder.cur_messages += [dict(role="user", content="Hello!")]
-        messages = coder.format_messages().all_messages()
+        messages = coder.format_messages()
         utils.show_messages(messages)
         return await graceful_exit(coder)
     if args.lint:
