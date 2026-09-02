@@ -346,3 +346,126 @@ def test_on_input_area_submit_intercepts_spawn_agent(tui_instance):
         "/spawn-agent reviewer review the code",
         "/spawn-agent reviewer review the code",
     )
+
+
+# ---------------------------------------------------------------------------
+# Git branch dynamic update (_refresh_git_branch) — CLI-63
+# ---------------------------------------------------------------------------
+
+
+class _DetachedHeadBranch:
+    """Simulates GitPython's active_branch in a detached HEAD state.
+
+    Accessing ``.name`` raises ``AttributeError``, matching the real
+    ``git.refs.symbolic.SymbolicReference`` behavior when HEAD is detached.
+    """
+
+    @property
+    def name(self):
+        raise AttributeError("detached HEAD")
+
+
+def _make_footer(branch=""):
+    """Create a mock MainFooter with a git_branch attribute."""
+    footer = MagicMock()
+    footer.git_branch = branch
+    return footer
+
+
+def _make_coder(repo=None):
+    """Create a mock coder with an optional repo."""
+    coder = MagicMock()
+    coder.repo = repo
+    return coder
+
+
+def _make_repo(branch="main"):
+    """Create a mock repo wrapper exposing .repo.active_branch.name."""
+    repo = MagicMock()
+    repo.repo.active_branch.name = branch
+    return repo
+
+
+def _wire_refresh(tui_instance, coder, footer):
+    """Wire the mocks needed by _refresh_git_branch onto the TUI instance."""
+    tui_instance._get_visible_coder = MagicMock(return_value=coder)
+    tui_instance.query_one = MagicMock(return_value=footer)
+
+
+def test_refresh_git_branch_updates_on_change(tui_instance):
+    """update_git is called with the new branch when the branch changes."""
+    footer = _make_footer(branch="main")
+    coder = _make_coder(repo=_make_repo(branch="feature-alpha"))
+    _wire_refresh(tui_instance, coder, footer)
+
+    tui_instance._refresh_git_branch()
+
+    footer.update_git.assert_called_once_with("feature-alpha")
+
+
+def test_refresh_git_branch_no_update_when_unchanged(tui_instance):
+    """update_git is NOT called when the branch name is unchanged."""
+    footer = _make_footer(branch="main")
+    coder = _make_coder(repo=_make_repo(branch="main"))
+    _wire_refresh(tui_instance, coder, footer)
+
+    tui_instance._refresh_git_branch()
+
+    footer.update_git.assert_not_called()
+
+
+def test_refresh_git_branch_no_repo_clears_stale_branch(tui_instance):
+    """No repo clears a previously displayed branch (update_git(''))."""
+    footer = _make_footer(branch="main")
+    coder = _make_coder(repo=None)
+    _wire_refresh(tui_instance, coder, footer)
+
+    tui_instance._refresh_git_branch()
+
+    footer.update_git.assert_called_once_with("")
+
+
+def test_refresh_git_branch_no_repo_empty_branch_noop(tui_instance):
+    """No repo with an already-empty branch does not call update_git."""
+    footer = _make_footer(branch="")
+    coder = _make_coder(repo=None)
+    _wire_refresh(tui_instance, coder, footer)
+
+    tui_instance._refresh_git_branch()
+
+    footer.update_git.assert_not_called()
+
+
+def test_refresh_git_branch_detached_head_silent(tui_instance):
+    """AttributeError on active_branch access returns silently (preserves text)."""
+    footer = _make_footer(branch="main")
+    repo = MagicMock()
+    repo.repo.active_branch = _DetachedHeadBranch()
+    coder = _make_coder(repo=repo)
+    _wire_refresh(tui_instance, coder, footer)
+
+    tui_instance._refresh_git_branch()
+
+    footer.update_git.assert_not_called()
+
+
+def test_refresh_git_branch_visible_coder_error_silent(tui_instance):
+    """AttributeError from _get_visible_coder returns silently (no query_one)."""
+    tui_instance._get_visible_coder = MagicMock(side_effect=AttributeError("not initialized"))
+    tui_instance.query_one = MagicMock()
+
+    tui_instance._refresh_git_branch()
+
+    tui_instance.query_one.assert_not_called()
+
+
+def test_refresh_git_branch_uses_foreground_coder(tui_instance):
+    """The branch is read from the foreground coder's repo (sub-agent aware)."""
+    footer = _make_footer(branch="main")
+    sub_agent_coder = _make_coder(repo=_make_repo(branch="sub-agent-branch"))
+    _wire_refresh(tui_instance, sub_agent_coder, footer)
+
+    tui_instance._refresh_git_branch()
+
+    tui_instance._get_visible_coder.assert_called_once()
+    footer.update_git.assert_called_once_with("sub-agent-branch")
