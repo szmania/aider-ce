@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from typing import Dict, Optional
 
-from .identifiers import is_anthropic, is_claude_5_plus, is_gemini_2_5
+from .identifiers import is_anthropic, is_claude_5_plus, is_gemini_2_5, is_glm, is_kimi
 from .registry import get_default
 from .utils import supports_reasoning
 
@@ -22,6 +22,9 @@ _THINKING_BUDGET_TOKENS = 2048
 _GEMINI_THINKING_BUDGET_TOKENS = 8192
 #: Default reasoning effort for reasoning-capable models.
 _DEFAULT_REASONING_EFFORT = "medium"
+#: Default reasoning effort for some newer models, which use ``low``/``high``/
+#: ``max`` levels instead of the ``low``/``medium``/``high`` ladder.
+_DEFAULT_HIGH_REASONING_EFFORT = "high"
 
 
 def derive_api_config(
@@ -46,7 +49,12 @@ def derive_api_config(
     defaults = get_default(model_name) if model_name else {}
 
     if reasoning and not gemini_2_5:
-        effort = _resolve_reasoning_effort(defaults.get("reasoning"))
+        default_effort = _DEFAULT_REASONING_EFFORT
+
+        if is_glm(provider, route, record) or is_kimi(provider, route, record):
+            default_effort = _DEFAULT_HIGH_REASONING_EFFORT
+
+        effort = _resolve_reasoning_effort(defaults.get("reasoning"), default_effort)
 
         if effort:
             api["reasoning_effort"] = effort
@@ -72,14 +80,14 @@ def derive_api_config(
     return api
 
 
-def _resolve_reasoning_effort(registered):
+def _resolve_reasoning_effort(registered, default=_DEFAULT_REASONING_EFFORT):
     """Return the default reasoning effort for a model.
 
-    ``"none"`` opts out (no default), a missing/empty registered value keeps the
-    built-in ``medium`` default, and any other value is used verbatim.
+    ``"none"`` opts out (no default), a missing/empty registered value keeps
+    ``default``, and any other value is used verbatim.
     """
     if registered is None or registered == "":
-        return _DEFAULT_REASONING_EFFORT
+        return default
 
     if registered == "none":
         return None
