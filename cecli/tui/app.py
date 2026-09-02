@@ -60,6 +60,12 @@ class TUI(App):
         # Binding("escape", "interrupt", "Interrupt", show=True),
     ]
 
+    # How often (seconds) to poll the foreground coder's git branch and
+    # refresh the footer. 1s satisfies the <5s detection-to-UI SLA with wide
+    # margin while keeping CPU load negligible (GitPython reads .git/HEAD
+    # directly, no subprocess).
+    GIT_BRANCH_POLL_INTERVAL = 1.0
+
     def __init__(self, coder_worker, output_queue, input_queue, args):
         """Initialize the cecli TUI app."""
         super().__init__()
@@ -402,6 +408,43 @@ class TUI(App):
 
         # Load git info in background to avoid blocking startup
         self.call_later(self._load_git_info)
+        self.set_interval(self.GIT_BRANCH_POLL_INTERVAL, self._refresh_git_branch)
+
+    def _refresh_git_branch(self):
+        """Poll the foreground coder's git branch and update the footer.
+
+        Runs on the UI thread via set_interval; safe for reactive updates.
+        Short-circuits when no repo is present.
+
+        ponytail: 1s polling ceiling. Upgrade path = watchfiles/watchdog on
+        .git/HEAD if latency requirements ever tighten below 1s
+        (unlikely; 1s << 5s SLA).
+        """
+        try:
+            coder = self._get_visible_coder()
+        except (AttributeError, TypeError):
+            return  # worker/coder not fully initialized or shutting down
+
+        repo = getattr(coder, "repo", None)
+        footer = self.query_one(MainFooter)
+
+        if repo is None:
+            # Clear stale branch display only if we previously showed one
+            if footer.git_branch:
+                footer.update_git("")
+            return
+
+        try:
+            branch = repo.repo.active_branch.name
+        except (TypeError, AttributeError):
+            # Detached HEAD (TypeError) or any git plumbing error
+            return  # preserve prior footer text instead of blanking
+
+        if branch != footer.git_branch:
+            footer.update_git(branch)
+
+    # ponytail: 1s polling ceiling. Upgrade path = watchfiles/watchdog on .git/HEAD
+    # if latency requirements ever tighten below 1s (unlikely; 1s << 5s SLA).
 
     def on_mouse_down(self, event: events.MouseDown) -> None:
         """Handle mouse down events to start the selection hint timer."""
