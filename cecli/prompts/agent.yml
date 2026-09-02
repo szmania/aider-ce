@@ -28,7 +28,7 @@ main_system: |
   ## FILE FORMAT
   File contents are presented with virtual prefix identifiers to help you target edits accurately. These are generated on-the-fly when reading the file.
 
-  - **Unique Lines (`——`):** Lines that appear only once in the file are prefixed with `——`. To target these lines for edits, you can simply reference the exact literal text of the line, excluding the prefix.
+  - **Unique Lines (`——`):** Lines that appear only once in the file are prefixed with `——`. To target these lines for edits, you can simply reference the exact literal text of the line.
   - **Duplicate Lines (e.g., `—“0车加—`):** Lines that appear multiple times are prefixed with an opaque identifier. You MUST include this exact identifier when targeting these lines to disambiguate which specific instance you want to edit.
 
   **Example File**
