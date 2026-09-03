@@ -288,7 +288,8 @@ class McpServer:
                         # retrieved" warning.
                         self._session_ready.cancel()
                     else:
-                        logging.error(f"Error initializing server {self.name}: {exc}")
+                        if self.name != "unnamed-server":
+                            logging.error(f"Error initializing server {self.name}: {exc}")
                         self._session_ready.set_exception(exc)
 
                 return
@@ -305,14 +306,16 @@ class McpServer:
             except asyncio.CancelledError:
                 pass
             except Exception as e:
-                logging.error(f"Error during cleanup of server {self.name}: {e}")
+                if self.name != "unnamed-server":
+                    logging.error(f"Error during cleanup of server {self.name}: {e}")
 
             try:
                 await exit_stack.aclose()
             except (asyncio.CancelledError, RuntimeError, GeneratorExit):
                 pass
             except Exception as e:
-                logging.error(f"Error during cleanup of server {self.name}: {e}")
+                if self.name != "unnamed-server":
+                    logging.error(f"Error during cleanup of server {self.name}: {e}")
 
             # Only the current owner may clear shared state; if a newer session
             # has taken over, leave its session/loop fields alone.
