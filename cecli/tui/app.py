@@ -1477,7 +1477,7 @@ class TUI(App):
         branch, so its content alone is enough to detect a displayed-branch-name
         change without running git.  Returns ``None`` when there is no usable repo.
         """
-        repo = getattr(self.worker.coder, "repo", None)
+        repo = getattr(self._get_visible_coder(), "repo", None)
         if not repo:
             return None
 
