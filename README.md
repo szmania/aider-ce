@@ -74,17 +74,6 @@ Use the tool installation so cecli doesn't interfere with your development envir
 
 [Additional Documentation](https://cecli.dev/)
 
-## SSE Keep-Alive & Reconnection
-
-To maintain stable SSE connections, the `SseServer` implements a keep-alive mechanism and automatic reconnection strategy.
-
-### Configuration
-The server reads the following settings from the MCP server configuration:
-
-- **`keepalive_interval`**: (int) Interval in seconds for pinging the client (range: 5–300). If unset, heartbeats are disabled.
-- **Pings**: Sent as `OPTIONS` requests with +/- 10% jitter.
-- **Reconnection**: After three failed pings, the connection is marked `DISCONNECTED` and initiates an exponential backoff strategy (1s, 2s, 4s..., capped at 300s, +/- 20% jitter).
-
 ## Project Roadmap/Goals
 
 1. **Base Asynchronicity (cecli coroutine-experiment branch)**
