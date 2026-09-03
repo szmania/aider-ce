@@ -590,20 +590,16 @@ class HttpStreamingServer(HttpBasedMcpServer):
         return streamable_http_client(url, http_client=http_client)
 
 
-class SseServer(McpServer):
-    """SSE (Server-Sent Events) MCP server using mcp.client.sse_client."""
+class SseServer(HttpBasedMcpServer):
+    """SSE (Server-Sent Events) MCP server using mcp.client.sse_client.
 
-    async def _open_session(self):
-        url = self.config.get("url")
-        headers = self.config.get("headers", {})
+    Inherits keepalive pings and exponential-backoff auto-reconnect from
+    HttpBasedMcpServer so dropped SSE connections recover automatically.
+    """
 
-        sse_transport = await self.exit_stack.enter_async_context(sse_client(url, headers=headers))
-        read, write = sse_transport
-        session = await self.exit_stack.enter_async_context(ClientSession(read, write))
-        await session.initialize()
-        self.session = session
-
-        return session
+    def _create_transport(self, url, http_client):
+        """Create the SSE transport. The shared http_client is used for keepalive pings."""
+        return sse_client(url, headers=self.config.get("headers", {}))
 
 
 class LocalServer(McpServer):
