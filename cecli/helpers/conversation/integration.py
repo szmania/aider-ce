@@ -762,8 +762,8 @@ class ConversationChunks:
             if not ranges:
                 continue
 
-            # Generate context content
-            context_content = ConversationService.get_files(coder).get_file_context(file_path)
+            # Generate context content (append-only delta: only new ranges are emitted)
+            context_content = ConversationService.get_files(coder).get_new_file_context(file_path)
             if not context_content:
                 continue
 
@@ -774,6 +774,9 @@ class ConversationChunks:
                 "role": "user",
                 "content": f"ID-Prefixed Context For:\n{rel_fname}\n\n{context_content}",
             }
+
+            # Append-only: new FILE_CONTEXTS blocks are added, never removed, so
+            # the conversation message stream stays a log (no prefix rewrite).
 
             # Add to conversation manager
             content_hash = xxhash.xxh3_128_hexdigest(context_content.encode("utf-8"))
